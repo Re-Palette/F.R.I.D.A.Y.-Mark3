@@ -12,6 +12,9 @@ function PanelHead({ title, accent, extra }: { title: string; accent?: string; e
   );
 }
 
+/** Phase 1 の右パネルはサンプル表示（未接続） */
+const SAMPLE_TITLE = "サンプルデータ（連携は今後のアップデートで対応）";
+
 export function RightPanel() {
   return (
     <aside className="rightbar">
@@ -20,8 +23,8 @@ export function RightPanel() {
         <span>— F.R.I.D.A.Y.</span>
       </p>
 
-      <section className="panel">
-        <PanelHead title="WEATHER /" accent={SAMPLE_WEATHER.city} extra="SAMPLE" />
+      <section className="panel" title={SAMPLE_TITLE}>
+        <PanelHead title="WEATHER /" accent={SAMPLE_WEATHER.city} />
         <div className="weather">
           <Icon name="weather" size={44} className="weather__icon" />
           <div className="weather__now">
@@ -41,8 +44,8 @@ export function RightPanel() {
         </div>
       </section>
 
-      <section className="panel">
-        <PanelHead title="TODAY'S" accent="SCHEDULE" extra="SAMPLE" />
+      <section className="panel" title={SAMPLE_TITLE}>
+        <PanelHead title="TODAY'S" accent="SCHEDULE" extra="VIEW ALL" />
         <ul className="schedule">
           {SAMPLE_SCHEDULE.map((s) => (
             <li key={s.time} data-accent={s.accent || undefined}>
@@ -55,8 +58,8 @@ export function RightPanel() {
         </ul>
       </section>
 
-      <section className="panel">
-        <PanelHead title="CURRENT" accent="PROJECTS" extra="SAMPLE" />
+      <section className="panel" title={SAMPLE_TITLE}>
+        <PanelHead title="CURRENT" accent="PROJECTS" extra="VIEW ALL" />
         <ul className="projects">
           {SAMPLE_PROJECTS.map((p) => (
             <li key={p.name}>

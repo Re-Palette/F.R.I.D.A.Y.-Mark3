@@ -57,7 +57,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ ph
   return (
     <div className="composer" data-busy={busy || undefined}>
       <div className="composer__mic" title="音声入力（今後対応）" aria-hidden="true">
-        <Icon name="mic" size={22} />
+        <Icon name="mic" size={26} strokeWidth={1.8} />
       </div>
       <div className="composer__main">
         <div className="composer__row">
@@ -86,23 +86,22 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ ph
               className="composer__send"
               onClick={submit}
               disabled={!value.trim() || disabled}
-              title="送信 (Enter)"
+              title="送信 (Enter / Shift+Enter で改行)"
             >
-              <Icon name="send" size={20} strokeWidth={2.2} />
+              <Icon name="chevrons" size={20} strokeWidth={2.4} />
             </button>
           )}
         </div>
         <div className="composer__tools">
           <button type="button" className="tool-btn" disabled title="今後対応">
-            <Icon name="mic" size={13} /> 音声入力
+            <Icon name="mic" size={14} /> 音声入力
           </button>
           <button type="button" className="tool-btn" disabled title="今後対応">
-            <Icon name="clip" size={13} /> ファイル添付
+            <Icon name="clip" size={14} /> ファイル添付
           </button>
           <button type="button" className="tool-btn" disabled title="今後対応">
-            <Icon name="image" size={13} /> 画像生成
+            <Icon name="image" size={14} /> 画像生成
           </button>
-          <span className="composer__hint">Enter 送信 · Shift+Enter 改行</span>
           <span className="composer__voice" title="今後対応">
             VOICE MODE
             <span className="eq">

@@ -96,8 +96,14 @@ export function Dashboard() {
   return (
     <div className="app">
       <div className="bg" aria-hidden="true">
-        <div className="bg__grid" />
+        <div className="bg__circuit" />
         <div className="bg__glow" />
+        <div className="bg__streaks">
+          <i />
+          <i />
+          <i />
+          <i />
+        </div>
       </div>
 
       <Header />

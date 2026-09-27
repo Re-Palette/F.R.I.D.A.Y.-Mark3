@@ -62,11 +62,29 @@ export function Header() {
 
   return (
     <header className="topbar">
+      <svg className="topbar__frame" viewBox="0 0 1000 72" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="frameGrad" x1="0" x2="1">
+            <stop offset="0" stopColor="#ff8a1f" stopOpacity="0.1" />
+            <stop offset="0.3" stopColor="#ff8a1f" stopOpacity="0.9" />
+            <stop offset="0.7" stopColor="#ff8a1f" stopOpacity="0.55" />
+            <stop offset="1" stopColor="#ff8a1f" stopOpacity="0.15" />
+          </linearGradient>
+        </defs>
+        <path d="M0 70 H345 L365 58 H700 L716 70 H1000" fill="none" stroke="url(#frameGrad)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+        <path d="M365 58 H700" fill="none" stroke="#ffb458" strokeWidth="2" strokeOpacity="0.5" vectorEffect="non-scaling-stroke" className="topbar__frame-hi" />
+      </svg>
       <div className="brand">
         <svg className="brand__mark" viewBox="0 0 40 40" aria-hidden="true">
-          <path d="M20 2 38 20 20 38 2 20Z" fill="none" stroke="#ff8a1f" strokeWidth="2.5" />
-          <path d="M20 10 30 20 20 30 10 20Z" fill="#ff8a1f" />
-          <path d="M20 15 25 20 20 25 15 20Z" fill="#07090d" />
+          <defs>
+            <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#ffc46e" />
+              <stop offset="1" stopColor="#ff6a00" />
+            </linearGradient>
+          </defs>
+          <path d="M20 1 39 20 20 39 1 20Z" fill="url(#brandGrad)" />
+          <path d="M20 8 32 20 20 32 8 20Z" fill="#0a0806" />
+          <path d="M20 13 27 20 20 27 13 20Z" fill="url(#brandGrad)" />
         </svg>
         <span className="brand__name">F.R.I.D.A.Y.</span>
         <span className="brand__mk">Mark3</span>

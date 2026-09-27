@@ -64,7 +64,7 @@ export function Sidebar({
               onClick={n.view ? () => onNavigate(n.view!) : undefined}
               title={n.view ? n.label : `${n.label}（今後対応）`}
             >
-              <Icon name={n.icon} size={20} />
+              <Icon name={n.icon} size={23} strokeWidth={1.5} />
               <span className="nav__label">{n.label}</span>
               {!n.view && <span className="nav__soon">SOON</span>}
             </button>
@@ -80,7 +80,7 @@ export function Sidebar({
           <div>
             <div className="sys-status__title">SYSTEM STATUS</div>
             <div className={`sys-status__state ${ok ? "is-ok" : chatStatus === "checking" ? "" : "is-warn"}`}>
-              {ok ? "CHAT AGENT ONLINE" : chatStatus === "checking" ? "CHECKING…" : "API KEY REQUIRED"}
+              {ok ? "CHAT SYSTEM ONLINE" : chatStatus === "checking" ? "CHECKING…" : "API KEY REQUIRED"}
             </div>
           </div>
         </div>
