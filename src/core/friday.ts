@@ -5,7 +5,7 @@
  */
 import type { ChatMessage, StreamEvent } from "@/core/types";
 import { routeRequest } from "@/core/router";
-import { getContextConfig, getGeminiConfig, getTimezone } from "@/lib/config";
+import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/lib/config";
 import { FridayError, toFridayError } from "@/lib/errors";
 import { buildConversationWindow } from "@/memory/context";
 import { getLongTermMemory } from "@/memory/long-term";
@@ -41,7 +41,7 @@ export function preflight(): void {
   if (!getGeminiConfig().apiKey) {
     throw new FridayError(
       "MISSING_API_KEY",
-      "Gemini API キーが設定されていません。.env.local に GEMINI_API_KEY を設定してサーバーを再起動してください。",
+      `Gemini API キーが設定されていません。${settingsHint("GEMINI_API_KEY")}`,
       503,
     );
   }

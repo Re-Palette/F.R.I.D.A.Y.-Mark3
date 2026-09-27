@@ -160,9 +160,7 @@ export function Dashboard() {
           <div className="banner" role="status">
             <b>CHAT AI OFFLINE</b>
             <span>
-              {agent.reason === "GEMINI_API_KEY が未設定です"
-                ? "Gemini APIキーが設定されていません。.env.local に GEMINI_API_KEY を設定してサーバーを再起動してください。"
-                : (agent.reason ?? "Gemini に接続できません。")}
+              {agent.reason ?? "Gemini に接続できません。"}
             </span>
             <button type="button" className="ghost-btn" onClick={() => void agent.refresh()}>
               再確認

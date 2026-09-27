@@ -4,7 +4,7 @@
  * どの Agent からも使える汎用レイヤー。Agent 固有の知識はここに置かない。
  */
 import { FridayError } from "@/lib/errors";
-import type { GeminiConfig } from "@/lib/config";
+import { settingsHint, type GeminiConfig } from "@/lib/config";
 
 export interface GeminiContent {
   role: "user" | "model";
@@ -84,14 +84,14 @@ async function mapHttpError(res: Response, model: string): Promise<FridayError> 
   ) {
     return new FridayError(
       "INVALID_API_KEY",
-      "Gemini API キーが無効か、権限がありません。.env.local の GEMINI_API_KEY を確認してください。",
+      `Gemini API キーが無効か、権限がありません。${settingsHint("GEMINI_API_KEY")}`,
       401,
     );
   }
   if (res.status === 404) {
     return new FridayError(
       "MODEL_NOT_FOUND",
-      `モデル「${model}」が見つかりません。.env.local の GEMINI_MODEL を確認してください。`,
+      `モデル「${model}」が見つかりません。${settingsHint("GEMINI_MODEL")}`,
       404,
     );
   }
@@ -303,7 +303,7 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
   if (!opts.config.apiKey) {
     throw new FridayError(
       "MISSING_API_KEY",
-      "Gemini API キーが設定されていません。.env.local に GEMINI_API_KEY を設定してサーバーを再起動してください。",
+      `Gemini API キーが設定されていません。${settingsHint("GEMINI_API_KEY")}`,
       503,
     );
   }

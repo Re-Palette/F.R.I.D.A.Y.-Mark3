@@ -72,3 +72,10 @@ export function getContextConfig(): ContextConfig {
 export function getTimezone(): string {
   return process.env.FRIDAY_TIMEZONE?.trim() || "Asia/Tokyo";
 }
+
+/** 設定場所の案内（Vercel 上とローカルで出し分ける） */
+export function settingsHint(key: string): string {
+  return process.env.VERCEL
+    ? `Vercel の Settings → Environment Variables で ${key} を設定し、Redeploy してください。`
+    : `.env.local の ${key} を設定し、サーバーを再起動してください。`;
+}

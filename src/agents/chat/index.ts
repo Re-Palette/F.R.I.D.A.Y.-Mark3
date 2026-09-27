@@ -3,7 +3,7 @@
  * 自然な日常会話・相談・雑談を低コスト・高速に処理する。
  */
 import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
-import { getGeminiConfig } from "@/lib/config";
+import { getGeminiConfig, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import { buildSystemInstruction } from "./persona";
 
@@ -14,7 +14,7 @@ export const chatAgent: Agent = {
     const config = getGeminiConfig();
     return config.apiKey
       ? { model: config.model, ready: true }
-      : { model: config.model, ready: false, reason: "GEMINI_API_KEY が未設定です" };
+      : { model: config.model, ready: false, reason: `Gemini API キーが設定されていません。${settingsHint("GEMINI_API_KEY")}` };
   },
 
   async *run(ctx: AgentContext): AsyncIterable<AgentOutputChunk> {
