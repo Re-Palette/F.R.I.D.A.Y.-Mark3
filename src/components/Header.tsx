@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Icon } from "./icons";
 
 interface BatteryLike {
@@ -56,7 +56,7 @@ function useDeviceStatus() {
 const pad = (n: number) => String(n).padStart(2, "0");
 const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-export function Header() {
+export const Header = memo(function Header() {
   const now = useClock();
   const { online, battery } = useDeviceStatus();
 
@@ -119,4 +119,4 @@ export function Header() {
       </div>
     </header>
   );
-}
+});

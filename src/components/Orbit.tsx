@@ -4,7 +4,7 @@
  * HUB 表示: 中央の Core、周囲の Agent カード、Core とカードを結ぶ回路配線、四隅の HUD 読み取り表示。
  * Phase 1 で実際に動くのは CHAT AI のみ。他は状態表示だけ。
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AGENT_CARDS, type AgentCardDef } from "@/data/agents";
 import type { ChatPhase } from "@/hooks/useChat";
 import { Core } from "./Core";
@@ -203,7 +203,7 @@ function Readouts({ model, context, onlineCount }: { model?: string; context: st
   );
 }
 
-export function Orbit({
+export const Orbit = memo(function Orbit({
   phase,
   chatStatus,
   onOpenChat,
@@ -244,4 +244,4 @@ export function Orbit({
       ))}
     </div>
   );
-}
+});

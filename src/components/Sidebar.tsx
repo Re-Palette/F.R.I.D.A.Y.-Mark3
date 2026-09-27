@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { LastRunStats } from "@/hooks/useChat";
 import type { ChatAgentStatus } from "./Orbit";
 import { HudFrame } from "./HudFrame";
@@ -28,7 +29,7 @@ function Meter({ label, value, ratio }: { label: string; value: string; ratio: n
   );
 }
 
-export function Sidebar({
+export const Sidebar = memo(function Sidebar({
   view,
   onNavigate,
   chatStatus,
@@ -102,4 +103,4 @@ export function Sidebar({
       </div>
     </aside>
   );
-}
+});

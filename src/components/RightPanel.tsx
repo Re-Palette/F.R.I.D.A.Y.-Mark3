@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { QUICK_ACCESS, SAMPLE_PROJECTS, SAMPLE_SCHEDULE, SAMPLE_WEATHER } from "@/data/dashboard";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
@@ -18,7 +19,7 @@ function PanelHead({ title, accent, extra, idx }: { title: string; accent?: stri
 /** Phase 1 の右パネルはサンプル表示（未接続） */
 const SAMPLE_TITLE = "サンプルデータ（連携は今後のアップデートで対応）";
 
-export function RightPanel() {
+export const RightPanel = memo(function RightPanel() {
   return (
     <aside className="rightbar">
       <p className="quote">
@@ -111,4 +112,4 @@ export function RightPanel() {
       </div>
     </aside>
   );
-}
+});

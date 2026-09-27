@@ -83,13 +83,25 @@ export function Dashboard() {
       if (ok) setView("chat");
       return ok;
     },
-    [chat],
+    [chat.send],
   );
 
-  const openChat = useCallback(() => {
+  // 入力中に Gemini への接続を温める（サーバー側でも間引くが、ここでも 2 秒に 1 回まで）
+  const lastWarm = useRef(0);
+  const warm = useCallback(() => {
+    const now = Date.now();
+    if (now - lastWarm.current < 2000 || agent.status !== "online") return;
+    lastWarm.current = now;
+    void fetch("/api/warm", { method: "POST", keepalive: true }).catch(() => {});
+  }, [agent.status]);
+
+    const openChat = useCallback(() => {
     setView("chat");
     composerRef.current?.focus();
   }, []);
+
+  const navigate = useCallback((v: View) => (v === "chat" ? openChat() : setView(v)), [openChat]);
+  const backToHub = useCallback(() => setView("home"), []);
 
   const inChat = view === "chat";
 
@@ -111,7 +123,7 @@ export function Dashboard() {
 
       <Sidebar
         view={view}
-        onNavigate={(v) => (v === "chat" ? openChat() : setView(v))}
+        onNavigate={navigate}
         chatStatus={agent.status}
         model={agent.model}
         lastRun={chat.lastRun}
@@ -134,7 +146,7 @@ export function Dashboard() {
             phase={chat.phase}
             onRetry={chat.retry}
             onSuggest={send}
-            onBack={() => setView("home")}
+            onBack={backToHub}
             onClear={chat.clear}
             hidden={!inChat}
           />
@@ -154,7 +166,14 @@ export function Dashboard() {
           </div>
         )}
 
-        <Composer ref={composerRef} phase={chat.phase} disabled={false} onSend={send} onStop={chat.stop} />
+        <Composer
+          ref={composerRef}
+          phase={chat.phase}
+          disabled={false}
+          onSend={send}
+          onStop={chat.stop}
+          onTyping={warm}
+        />
       </main>
 
       <RightPanel />

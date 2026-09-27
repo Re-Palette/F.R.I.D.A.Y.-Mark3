@@ -2,9 +2,11 @@
 
 /**
  * 画面下部の入力エリア。
- * Enter で送信 / Shift+Enter で改行。日本語 IME の変換確定 Enter では送信しない。
+ * Enter で送信 / Shift+Enter で改行 / Esc で応答を停止。日本語 IME の変換確定 Enter では送信しない。
+ * 応答中でも次の発言を入力・送信できる（今の応答を止めて次へ進む）。
+ * 入力中は onTyping を呼び、サーバー側で Gemini への接続を温めておく。
  */
-import { forwardRef, useImperativeHandle, useRef, useState, type KeyboardEvent } from "react";
+import { forwardRef, memo, useImperativeHandle, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatPhase } from "@/hooks/useChat";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
@@ -18,9 +20,11 @@ interface Props {
   disabled: boolean;
   onSend: (text: string) => boolean;
   onStop: () => void;
+  onTyping?: () => void;
 }
 
-export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ phase, disabled, onSend, onStop }, ref) {
+export const Composer = memo(
+  forwardRef<ComposerHandle, Props>(function Composer({ phase, disabled, onSend, onStop, onTyping }, ref) {
   const [value, setValue] = useState("");
   const [pulse, setPulse] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -36,7 +40,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ ph
   };
 
   const submit = () => {
-    if (busy || disabled || !value.trim()) return;
+    if (disabled || !value.trim()) return;
     if (onSend(value)) {
       setValue("");
       setPulse((p) => p + 1);
@@ -52,6 +56,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ ph
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       submit();
+    } else if (e.key === "Escape" && busy) {
+      e.preventDefault();
+      onStop();
     }
   };
 
@@ -76,13 +83,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ ph
             onChange={(e) => {
               setValue(e.target.value);
               resize();
+              onTyping?.();
             }}
             onKeyDown={onKeyDown}
             aria-label="F.R.I.D.A.Y. へのメッセージ"
             autoFocus
           />
-          {busy ? (
-            <button type="button" className="composer__send composer__send--stop" onClick={onStop} title="応答を停止">
+          {busy && !value.trim() ? (
+            <button type="button" className="composer__send composer__send--stop" onClick={onStop} title="応答を停止 (Esc)">
               <Icon name="stop" size={18} />
             </button>
           ) : (
@@ -121,4 +129,5 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ ph
       </div>
     </div>
   );
-});
+  }),
+);

@@ -96,6 +96,14 @@ async function mapHttpError(res: Response, model: string): Promise<FridayError> 
   if (res.status === 400) {
     return new FridayError("BAD_REQUEST", `Gemini がリクエストを拒否しました: ${detail || "400 Bad Request"}`, 400);
   }
+  if (res.status === 503 || status === "UNAVAILABLE") {
+    return new FridayError(
+      "UPSTREAM_ERROR",
+      "Gemini が混雑しています。数秒おいてからもう一度話しかけてください。",
+      503,
+      true,
+    );
+  }
   return new FridayError(
     "UPSTREAM_ERROR",
     `Gemini 側でエラーが発生しました（${res.status}）。少し待ってから再試行してください。`,
@@ -134,6 +142,89 @@ async function request(opts: GeminiStreamOptions, withThinking: boolean): Promis
   }
 }
 
+/** thinkingConfig を受け付けないと分かったモデル（毎回 400 → 再送にならないよう記憶） */
+const noThinkingModels = new Set<string>();
+
+/** 一時的な障害（混雑・瞬断）とみなしてよいか */
+const isTransient = (status: number) => status === 500 || status === 502 || status === 503 || status === 504;
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      },
+      { once: true },
+    );
+  });
+
+const MAX_ATTEMPTS = 3;
+
+/**
+ * ストリームを開始する。本文を読み始める前なので、ここでの再試行はユーザーに見えない。
+ *  - 混雑 (5xx) や瞬断は短い間隔で自動再試行
+ *  - thinkingLevel 非対応モデルは設定を外して再送し、以後は外したまま送る
+ */
+async function connect(opts: GeminiStreamOptions): Promise<Response> {
+  const model = opts.config.model;
+  let withThinking = Boolean(opts.config.thinkingLevel) && !noThinkingModels.has(model);
+
+  for (let attempt = 1; ; attempt++) {
+    let res: Response;
+    try {
+      res = await request(opts, withThinking);
+    } catch (err) {
+      if (err instanceof FridayError && err.retryable && attempt < MAX_ATTEMPTS) {
+        await sleep(350 * attempt, opts.signal);
+        continue;
+      }
+      throw err;
+    }
+    if (res.ok) return res;
+
+    if (isTransient(res.status) && attempt < MAX_ATTEMPTS) {
+      await res.body?.cancel().catch(() => {});
+      await sleep(500 * attempt, opts.signal);
+      continue;
+    }
+
+    const err = await mapHttpError(res, model);
+    if (withThinking && isThinkingConfigError(err)) {
+      noThinkingModels.add(model);
+      withThinking = false;
+      continue;
+    }
+    throw err;
+  }
+}
+
+/**
+ * 軽量な接続確認（models.get）。生成は行わないのでトークンを消費しない。
+ * API キー・モデル名の検証と、TLS 接続の事前確立（ウォームアップ）を兼ねる。
+ */
+export async function pingGemini(config: GeminiConfig, signal?: AbortSignal): Promise<FridayError | null> {
+  if (!config.apiKey) {
+    return new FridayError("MISSING_API_KEY", "Gemini API キーが設定されていません。", 503);
+  }
+  try {
+    const res = await fetch(`${config.baseUrl}/models/${encodeURIComponent(config.model)}`, {
+      headers: { "x-goog-api-key": config.apiKey },
+      signal,
+      cache: "no-store",
+    });
+    if (res.ok) {
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
+    return await mapHttpError(res, config.model);
+  } catch {
+    return new FridayError("NETWORK_ERROR", "Gemini に接続できませんでした。", 503, true);
+  }
+}
+
 /**
  * Gemini からのテキストを生成順に yield する。
  * 最初のトークンまでの時間を最小にするため、SSE をそのまま逐次パースする。
@@ -147,17 +238,7 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
     );
   }
 
-  let res = await request(opts, true);
-  if (!res.ok) {
-    const err = await mapHttpError(res, opts.config.model);
-    // モデルが thinkingLevel 非対応なら、設定を外して一度だけ再試行
-    if (opts.config.thinkingLevel && isThinkingConfigError(err)) {
-      res = await request(opts, false);
-      if (!res.ok) throw await mapHttpError(res, opts.config.model);
-    } else {
-      throw err;
-    }
-  }
+  const res = await connect(opts);
   if (!res.body) {
     throw new FridayError("UPSTREAM_ERROR", "Gemini から空のレスポンスが返りました。", 502, true);
   }

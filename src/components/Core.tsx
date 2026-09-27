@@ -31,25 +31,35 @@ const RAYS = Array.from({ length: 120 }, (_, i) => i * 3);
 /* 四隅のクランプ（留め具）アーク */
 const CLAMPS = [45, 135, 225, 315];
 
+const LedGrad = () => (
+  <defs>
+    <linearGradient id="ledGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stopColor="#ffd9a0" />
+      <stop offset="50%" stopColor="#ff9326" />
+      <stop offset="100%" stopColor="#ff6a00" />
+    </linearGradient>
+  </defs>
+);
+
+/**
+ * 構造: 静止した土台 SVG + 回転する独立レイヤー（SVG 要素ごと回す）。
+ * 回転レイヤーは GPU 上の合成レイヤーとして回るだけなので、毎フレームの再描画が起きない。
+ */
 export function Core({ phase, compact = false }: { phase: ChatPhase; compact?: boolean }) {
   return (
     <div className={`core${compact ? " core--compact" : ""}`} data-phase={phase} aria-hidden="true">
       <div className="core__bloom" />
-      <svg className="core__svg" viewBox="0 0 400 400">
+
+      {/* 土台（静止） */}
+      <svg className="core__layer" viewBox="0 0 400 400">
         <defs>
           <radialGradient id="coreDisc" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#060709" />
             <stop offset="75%" stopColor="#0a0908" />
             <stop offset="100%" stopColor="#261003" />
           </radialGradient>
-          <linearGradient id="ledGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#ffd9a0" />
-            <stop offset="50%" stopColor="#ff9326" />
-            <stop offset="100%" stopColor="#ff6a00" />
-          </linearGradient>
         </defs>
 
-        {/* 最外周の細線とクランプ */}
         <circle cx={C} cy={C} r="196" className="core__line" strokeOpacity="0.35" />
         {!compact &&
           CLAMPS.map((d) => (
@@ -60,58 +70,14 @@ export function Core({ phase, compact = false }: { phase: ChatPhase; compact?: b
             </g>
           ))}
 
-        {/* 外周スケール（ゆっくり回転） */}
-        {!compact && (
-          <g className="core__spin core__spin--scale">
-            {SCALE.map((d) => {
-              const major = d % 10 === 0;
-              return (
-                <path
-                  key={d}
-                  d={radial(major ? 180 : 183, 187, d)}
-                  className="core__tick"
-                  strokeOpacity={major ? 0.9 : 0.35}
-                  strokeWidth={major ? 1.3 : 0.7}
-                />
-              );
-            })}
-          </g>
-        )}
-
-        {/* LED 帯（逆回転） */}
         <circle cx={C} cy={C} r="170" fill="none" stroke="#ff7a10" strokeOpacity="0.1" strokeWidth="11" />
-        <g className="core__spin core__spin--leds">
-          {LEDS.map((s, i) => (
-            <path key={i} d={arc(170, s.from, s.to)} fill="none" stroke="url(#ledGrad)" strokeWidth="9" strokeOpacity={s.level} />
-          ))}
-        </g>
-
-        {/* 切り欠き付きリング + 三角マーカー（回転） */}
-        <g className="core__spin core__spin--notch">
-          {[0, 120, 240].map((d) => (
-            <g key={d}>
-              <path d={arc(158, d + 8, d + 112)} className="core__line" strokeOpacity="0.8" strokeWidth="1.4" />
-              <path
-                d={`M${f(polar(153, d + 60)[0])} ${f(polar(153, d + 60)[1])} L${f(polar(146, d + 56)[0])} ${f(polar(146, d + 56)[1])} L${f(polar(146, d + 64)[0])} ${f(polar(146, d + 64)[1])} Z`}
-                className="core__marker"
-              />
-            </g>
-          ))}
-        </g>
 
         {/* メインの発光リング */}
         <circle className="core__torus" cx={C} cy={C} r="140" fill="none" stroke="#ff8a1f" strokeWidth="6" />
         <circle cx={C} cy={C} r="140" fill="none" stroke="#ffe6c2" strokeOpacity="0.9" strokeWidth="1.4" />
 
-        {/* 走る細いアーク */}
-        <g className="core__spin core__spin--arcs">
-          <path d={arc(148, 20, 95)} className="core__hi" strokeWidth="1.6" />
-          <path d={arc(148, 200, 250)} className="core__hi" strokeWidth="1.6" />
-        </g>
-
         {/* 内側ディスク */}
         <circle cx={C} cy={C} r="132" fill="url(#coreDisc)" />
-
         {!compact && (
           <g>
             {RAYS.map((d) => (
@@ -123,7 +89,6 @@ export function Core({ phase, compact = false }: { phase: ChatPhase; compact?: b
                 strokeWidth="0.7"
               />
             ))}
-            {/* 十字線 */}
             <g className="core__line" strokeOpacity="0.28" strokeWidth="0.7">
               <path d="M72 200 H132 M268 200 H328 M200 72 V96 M200 304 V328" />
               <path d="M132 196 V204 M268 196 V204 M196 96 H204 M196 304 H204" />
@@ -131,10 +96,55 @@ export function Core({ phase, compact = false }: { phase: ChatPhase; compact?: b
             <circle cx={C} cy={C} r="100" className="core__line" strokeOpacity="0.16" strokeDasharray="1 5" />
           </g>
         )}
-
         <circle className="core__rim" cx={C} cy={C} r="132" fill="none" stroke="#ffb458" strokeWidth="2.2" />
       </svg>
 
+      {/* 外周スケール（ゆっくり回転） */}
+      {!compact && (
+        <svg className="core__layer core__spin core__spin--scale" viewBox="0 0 400 400">
+          {SCALE.map((d) => {
+            const major = d % 10 === 0;
+            return (
+              <path
+                key={d}
+                d={radial(major ? 180 : 183, 187, d)}
+                className="core__tick"
+                strokeOpacity={major ? 0.9 : 0.35}
+                strokeWidth={major ? 1.3 : 0.7}
+              />
+            );
+          })}
+        </svg>
+      )}
+
+      {/* LED 帯（逆回転） */}
+      <svg className="core__layer core__spin core__spin--leds" viewBox="0 0 400 400">
+        <LedGrad />
+        {LEDS.map((s, i) => (
+          <path key={i} d={arc(170, s.from, s.to)} fill="none" stroke="url(#ledGrad)" strokeWidth="9" strokeOpacity={s.level} />
+        ))}
+      </svg>
+
+      {/* 切り欠き付きリング + 三角マーカー */}
+      <svg className="core__layer core__spin core__spin--notch" viewBox="0 0 400 400">
+        {[0, 120, 240].map((d) => (
+          <g key={d}>
+            <path d={arc(158, d + 8, d + 112)} className="core__line" strokeOpacity="0.8" strokeWidth="1.4" />
+            <path
+              d={`M${f(polar(153, d + 60)[0])} ${f(polar(153, d + 60)[1])} L${f(polar(146, d + 56)[0])} ${f(polar(146, d + 56)[1])} L${f(polar(146, d + 64)[0])} ${f(polar(146, d + 64)[1])} Z`}
+              className="core__marker"
+            />
+          </g>
+        ))}
+      </svg>
+
+      {/* 走る細いアーク */}
+      <svg className="core__layer core__spin core__spin--arcs" viewBox="0 0 400 400">
+        <path d={arc(148, 20, 95)} className="core__hi" strokeWidth="1.6" />
+        <path d={arc(148, 200, 250)} className="core__hi" strokeWidth="1.6" />
+      </svg>
+
+      <div className="core__rimglow" />
       {!compact && <div className="core__sweep" />}
 
       {!compact && (

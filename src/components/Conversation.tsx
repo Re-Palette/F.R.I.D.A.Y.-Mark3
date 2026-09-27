@@ -3,7 +3,7 @@
 /**
  * 会話ログ。F.R.I.D.A.Y. の返答はストリーミングで逐次表示される。
  */
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatPhase, UiMessage } from "@/hooks/useChat";
 import { Core } from "./Core";
 import { HudFrame } from "./HudFrame";
@@ -16,7 +16,15 @@ function time(ts: number) {
 
 const SUGGESTIONS = ["おはよう", "ちょっと相談がある", "大学受験どうしようかな", "この企画どう思う？"];
 
-function Message({ msg, onRetry, canRetry }: { msg: UiMessage; onRetry: () => void; canRetry: boolean }) {
+const Message = memo(function Message({
+  msg,
+  onRetry,
+  canRetry,
+}: {
+  msg: UiMessage;
+  onRetry: () => void;
+  canRetry: boolean;
+}) {
   if (msg.role === "user") {
     return (
       <div className="msg msg--user">
@@ -73,7 +81,7 @@ function Message({ msg, onRetry, canRetry }: { msg: UiMessage; onRetry: () => vo
       )}
     </div>
   );
-}
+});
 
 export function Conversation({
   messages,

@@ -78,7 +78,12 @@ Composer ──POST /api/chat──▶ Core (friday.ts)
 ◀── NDJSON: meta → delta… → done / error ──
 ```
 
-- **ストリーミング**: Gemini の `streamGenerateContent?alt=sse` を逐次パースし、そのまま NDJSON でブラウザへ流します。ブラウザ側は `requestAnimationFrame` 単位でまとめて描画します。
+- **ストリーミング**: Gemini の `streamGenerateContent?alt=sse` を逐次パースし、そのまま NDJSON でブラウザへ流します。
+- **滑らかな表示**: Gemini は数十文字の塊で届くため、ブラウザ側で「塊が届く間隔」を学習し、次の塊が届く頃にちょうど出し切る速度で文字を流します（経過時間ベースなので端末のフレームレートに依存しません）。
+- **接続のウォームアップ**: 入力中に `/api/warm` を呼び、サーバーから Gemini への TLS 接続を事前に確立しておきます（送信時の接続待ちを省く）。
+- **起動時チェック**: `/api/status` が Gemini に軽量な問い合わせ（models.get、トークン消費なし）を行い、API キーやモデル名の誤りを話しかける前に表示します。
+- **自動再試行**: Gemini の混雑 (5xx) や瞬断は、表示を始める前なら自動で最大 2 回再試行します。
+- **割り込み**: 応答中でも次の発言を送れます（今の応答を止めて次へ）。Esc で停止。
 - **会話履歴**: セッション中はブラウザ（`sessionStorage`）に保持し、送信ごとにサーバーへ渡します。Gemini に渡す量はサーバー側で件数・文字数の上限をかけます。
 - **短期記憶と長期記憶の分離**: `memory/context.ts`（今の会話）と `memory/long-term.ts`（将来の Obsidian）を別モジュールにしています。
 
