@@ -79,3 +79,21 @@ export function settingsHint(key: string): string {
     ? `Vercel の Settings → Environment Variables で ${key} を設定し、Redeploy してください。`
     : `.env.local の ${key} を設定し、サーバーを再起動してください。`;
 }
+
+export interface TtsConfig {
+  apiKey: string | undefined;
+  voiceId: string | undefined;
+  model: string;
+  baseUrl: string;
+}
+
+/** ElevenLabs（任意）。API キーと Voice ID の両方があるときだけ使う */
+export function getTtsConfig(): TtsConfig {
+  return {
+    apiKey: process.env.ELEVENLABS_API_KEY?.trim() || undefined,
+    voiceId: process.env.ELEVENLABS_VOICE_ID?.trim() || undefined,
+    // 低遅延・日本語対応のモデル。音質重視なら eleven_multilingual_v2 など
+    model: process.env.ELEVENLABS_MODEL?.trim() || "eleven_flash_v2_5",
+    baseUrl: (process.env.ELEVENLABS_API_BASE_URL?.trim() || "https://api.elevenlabs.io").replace(/\/+$/, ""),
+  };
+}

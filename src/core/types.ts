@@ -38,4 +38,6 @@ export type StreamEvent =
 export interface StatusResponse {
   agents: Partial<Record<AgentId, { status: "online" | "offline"; model?: string; reason?: string }>>;
   context: { maxMessages: number };
+  /** 読み上げの声: ElevenLabs が使えれば "elevenlabs"、なければブラウザ標準 */
+  tts: { provider: "elevenlabs" | "browser"; reason?: string };
 }

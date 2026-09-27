@@ -171,7 +171,17 @@ function pad(n: number) {
 }
 
 /** 四隅の HUD 読み取り表示（稼働時間などの実データ） */
-function Readouts({ model, context, onlineCount }: { model?: string; context: string; onlineCount: number }) {
+function Readouts({
+  model,
+  context,
+  onlineCount,
+  voice,
+}: {
+  model?: string;
+  context: string;
+  onlineCount: number;
+  voice: string;
+}) {
   const [uptime, setUptime] = useState(0);
   useEffect(() => {
     const start = Date.now();
@@ -188,6 +198,7 @@ function Readouts({ model, context, onlineCount }: { model?: string; context: st
           AGENTS <em>{onlineCount}</em>/{AGENT_CARDS.length} ONLINE
         </span>
         <span>LINK // {model ?? "—"}</span>
+        <span>VOICE // {voice}</span>
       </div>
       <div className="readout readout--tr">
         <b>SESSION UPTIME</b>
@@ -210,6 +221,7 @@ export const Orbit = memo(function Orbit({
   hidden,
   model,
   context,
+  voice = "BROWSER",
 }: {
   phase: ChatPhase;
   chatStatus: ChatAgentStatus;
@@ -217,6 +229,7 @@ export const Orbit = memo(function Orbit({
   hidden: boolean;
   model?: string;
   context: string;
+  voice?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { traces, box } = useTraces(ref);
@@ -235,7 +248,7 @@ export const Orbit = memo(function Orbit({
           ))}
         </svg>
       )}
-      <Readouts model={model} context={context} onlineCount={chatStatus === "online" ? 1 : 0} />
+      <Readouts model={model} context={context} onlineCount={chatStatus === "online" ? 1 : 0} voice={voice} />
       <div className="orbit__core">
         <Core phase={phase} />
       </div>

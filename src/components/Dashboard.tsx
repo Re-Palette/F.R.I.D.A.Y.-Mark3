@@ -20,6 +20,7 @@ function useAgentStatus() {
   const [model, setModel] = useState<string>();
   const [maxContext, setMaxContext] = useState(24);
   const [reason, setReason] = useState<string>();
+  const [tts, setTts] = useState<StatusResponse["tts"]>({ provider: "browser" });
 
   const refresh = useCallback(async () => {
     try {
@@ -34,6 +35,7 @@ function useAgentStatus() {
       setModel(chat?.model);
       setReason(chat?.reason);
       setMaxContext(json.context.maxMessages);
+      if (json.tts) setTts(json.tts);
     } catch {
       setStatus("offline");
       setReason("サーバーに接続できません");
@@ -47,7 +49,7 @@ function useAgentStatus() {
     return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
 
-  return { status, model, maxContext, reason, refresh, setStatus };
+  return { status, model, maxContext, reason, tts, refresh, setStatus };
 }
 
 export function Dashboard() {
@@ -108,7 +110,7 @@ export function Dashboard() {
     },
     [chatSend],
   );
-  const voice = useVoice({ onCommand: onVoiceCommand });
+  const voice = useVoice({ onCommand: onVoiceCommand, cloudVoice: agent.tts.provider === "elevenlabs" });
   const { speak, cancelSpeech, replyFinished } = voice;
 
   // 音声で話しかけた発言への応答を、届いた文から順に読み上げる
@@ -124,6 +126,11 @@ export function Dashboard() {
       else speak({ ...base, text: lastMsg.error?.message ?? "エラーが発生しました。", done: true });
     }
   }, [lastMsg, speak, replyFinished]);
+
+  // ElevenLabs の設定に問題があるときは、音声会話をオンにした時点で一度だけ知らせる
+  const [ttsNoticeClosed, setTtsNoticeClosed] = useState(false);
+  const ttsNotice =
+    voice.state !== "off" && agent.tts.reason && !ttsNoticeClosed ? `${agent.tts.reason}（今はブラウザの声で読み上げます）` : null;
 
   const stopAll = useCallback(() => {
     chatStop();
@@ -175,6 +182,7 @@ export function Dashboard() {
             hidden={inChat}
             model={agent.model}
             context={`${chat.lastRun.contextMessages ?? 0} / ${agent.maxContext} MSG`}
+            voice={agent.tts.provider === "elevenlabs" ? "ELEVENLABS" : "BROWSER"}
           />
           <Conversation
             messages={chat.messages}
@@ -196,6 +204,16 @@ export function Dashboard() {
             </span>
             <button type="button" className="ghost-btn" onClick={() => void agent.refresh()}>
               再確認
+            </button>
+          </div>
+        )}
+
+        {ttsNotice && !voice.error && (
+          <div className="banner" role="status">
+            <b>VOICE</b>
+            <span>{ttsNotice}</span>
+            <button type="button" className="ghost-btn" onClick={() => setTtsNoticeClosed(true)}>
+              閉じる
             </button>
           </div>
         )}

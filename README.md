@@ -29,6 +29,9 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `GEMINI_MAX_OUTPUT_TOKENS` | | `2048` | |
 | `CHAT_CONTEXT_MAX_MESSAGES` | | `24` | Gemini に渡す直近の会話の最大件数 |
 | `CHAT_CONTEXT_MAX_CHARS` | | `24000` | Gemini に渡す会話の最大文字数 |
+| `ELEVENLABS_API_KEY` | | — | ElevenLabs の API キー（読み上げを ElevenLabs の声にする場合） |
+| `ELEVENLABS_VOICE_ID` | | — | 使う声の Voice ID |
+| `ELEVENLABS_MODEL` | | `eleven_flash_v2_5` | 音声モデル（音質重視なら `eleven_multilingual_v2`） |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
@@ -95,7 +98,9 @@ Composer ──POST /api/chat──▶ Core (friday.ts)
 - 読み上げ後 8 秒間は呼びかけなしで続けて話せます。黙っていれば待機に戻ります。
 - マイクボタン：呼びかけなしで、その場で 1 回聞き取ります（読み上げ中なら割り込み）。
 - 音声で話しかけたときは、記号や箇条書きを使わない短い話し言葉で返答するよう指示しています。
-- ブラウザ標準の Web Speech API を使用（追加料金なし）。PC の Chrome / Edge 推奨。
+- **ElevenLabs の声（任意）**: `ELEVENLABS_API_KEY` と `ELEVENLABS_VOICE_ID` を設定すると、返答を ElevenLabs の声で読み上げます。
+  一文ずつ音声を作り、再生中に次の文を先読みします。キー誤り・利用枠切れなどのときは自動でブラウザの声に切り替えます。
+- 音声認識はブラウザ標準の Web Speech API を使用（追加料金なし）。PC の Chrome / Edge 推奨。
   Chrome の音声認識は音声を Google のサーバーで文字にします。
 
 ### エラー処理

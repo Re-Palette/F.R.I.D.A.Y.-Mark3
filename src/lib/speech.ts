@@ -112,6 +112,11 @@ export function pickJapaneseVoice(voices: SpeechSynthesisVoice[]): SpeechSynthes
 
 let audioCtx: AudioContext | null = null;
 
+/** 効果音・ElevenLabs 音声の再生に使う AudioContext（unlockAudio 後に使える） */
+export function getAudioContext(): AudioContext | null {
+  return audioCtx;
+}
+
 /** ユーザー操作の中で呼び、以後の効果音・読み上げを許可させる */
 export function unlockAudio(): void {
   try {

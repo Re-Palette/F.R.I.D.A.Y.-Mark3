@@ -7,6 +7,7 @@ import { listAgents } from "@/core/router";
 import type { StatusResponse } from "@/core/types";
 import { getContextConfig } from "@/lib/config";
 import { checkGemini } from "@/llm/health";
+import { checkTts, isTtsConfigured } from "@/voice/elevenlabs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,13 @@ export async function GET(): Promise<Response> {
     }
   }
 
-  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages } };
+  // ElevenLabs は設定されている場合だけ確認する（未設定ならブラウザの声）
+  let tts: StatusResponse["tts"] = { provider: "browser" };
+  if (isTtsConfigured()) {
+    const error = await checkTts();
+    tts = error && error.fatal ? { provider: "browser", reason: error.message } : { provider: "elevenlabs" };
+  }
+
+  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts };
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }
