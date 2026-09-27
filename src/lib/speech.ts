@@ -45,8 +45,12 @@ export function getRecognitionCtor(): (new () => RecognitionLike) | null {
 
 /* ---------- 呼びかけ（ウェイクワード）検出 ---------- */
 
-/** 音声認識での表記ゆれ（カタカナ / ひらがな / 英語）をまとめて拾う */
-const WAKE_RE = /(フライデー|フライデイ|フライディー?|フライデ|ふらいでー|ふらいでい|friday)[\s、。,.!！?？ー〜]*/i;
+/**
+ * 音声認識での表記ゆれをまとめて拾う。
+ * フライデー / フライデイ / フライディ / プライデー / ブライデー / ふらいでー / フライ デー / Friday / ＦＲＩＤＡＹ など。
+ */
+const WAKE_RE =
+  /(?:[フふプぷブぶ]\s*[ラら]\s*[イいィぃ]\s*[デでテて]\s*[ーィぃイいエえ〜]?|f\s*r\s*i\s*d\s*a\s*y|ｆ\s*ｒ\s*ｉ\s*ｄ\s*ａ\s*ｙ)[\s、。,.!！?？ー〜]*/i;
 
 export function splitWake(text: string): { woke: boolean; command: string } {
   const m = WAKE_RE.exec(text);

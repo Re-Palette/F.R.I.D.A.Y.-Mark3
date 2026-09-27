@@ -46,6 +46,8 @@ export function useVoice({ onCommand }: { onCommand: (text: string) => void }) {
   const recRef = useRef<RecognitionLike | null>(null);
   const runningRef = useRef(false);
   const followTimer = useRef(0);
+  /** 確定前の聞き取り途中テキスト（確定の合図が来ないブラウザでは、区切りでこれを使う） */
+  const pendingRef = useRef("");
   const restartTimer = useRef(0);
   const onCommandRef = useRef(onCommand);
   onCommandRef.current = onCommand;
@@ -83,6 +85,7 @@ export function useVoice({ onCommand }: { onCommand: (text: string) => void }) {
 
   const stopRec = useCallback(() => {
     clearTimeout(restartTimer.current);
+    pendingRef.current = "";
     const rec = recRef.current;
     if (!rec || !runningRef.current) return;
     try {
@@ -136,9 +139,33 @@ export function useVoice({ onCommand }: { onCommand: (text: string) => void }) {
     }
     const rec = new Ctor();
     rec.lang = "ja-JP";
-    rec.continuous = true;
+    // 1 発言ずつ区切って聞く（区切りごとに自動で再開）。連続モードは Safari 等で
+    // 「確定」の合図が来ず、呼びかけを判定できないことがあるため使わない。
+    rec.continuous = false;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
+
+    /** 聞き取れた 1 発言を処理する */
+    const handleUtterance = (raw: string) => {
+      const text = raw.trim();
+      if (!text) return;
+      const mode = stateRef.current;
+      if (mode === "standby") {
+        const { woke, command } = splitWake(text);
+        if (!woke) {
+          setInterim(`聞こえた：${text}`);
+          return;
+        }
+        if (command.length >= 2) dispatch(command);
+        else {
+          chime("wake");
+          setInterim("");
+          listenFor(FOLLOW_UP_MS);
+        }
+      } else if (mode === "listening") {
+        dispatch(text);
+      }
+    };
 
     rec.onresult = (e) => {
       let finalText = "";
@@ -149,25 +176,14 @@ export function useVoice({ onCommand }: { onCommand: (text: string) => void }) {
         else interimText += r[0].transcript;
       }
       const mode = stateRef.current;
-      if (mode === "listening") setInterim((finalText || interimText).trim());
-      else if (mode === "standby" && splitWake(interimText).woke) setInterim("…");
-      if (!finalText.trim()) return;
-
-      if (mode === "standby") {
-        const { woke, command } = splitWake(finalText);
-        if (!woke) {
-          setInterim("");
-          return;
-        }
-        if (command.length >= 2) dispatch(command);
-        else {
-          chime("wake");
-          setInterim("");
-          listenFor(FOLLOW_UP_MS);
-        }
-      } else if (mode === "listening") {
-        dispatch(finalText);
+      if (finalText.trim()) {
+        pendingRef.current = "";
+        handleUtterance(finalText);
+        return;
       }
+      pendingRef.current = interimText;
+      if (mode === "listening") setInterim(interimText.trim());
+      else if (mode === "standby") setInterim(splitWake(interimText).woke ? "…" : `聞こえた：${interimText.trim()}`);
     };
 
     rec.onerror = (e) => {
@@ -185,6 +201,10 @@ export function useVoice({ onCommand }: { onCommand: (text: string) => void }) {
 
     rec.onend = () => {
       runningRef.current = false;
+      // 確定の合図が来ないまま区切られたら、最後に聞こえた内容で判定する
+      const leftover = pendingRef.current;
+      pendingRef.current = "";
+      if (leftover.trim()) handleUtterance(leftover);
       const s = stateRef.current;
       // 待機・聞き取り中に途切れたら自動で再開（ブラウザは一定時間で認識を止めるため）
       if (s === "standby" || s === "listening") {
@@ -202,6 +222,7 @@ export function useVoice({ onCommand }: { onCommand: (text: string) => void }) {
         /* noop */
       }
       recRef.current = null;
+      runningRef.current = false;
     };
   }, [dispatch, listenFor, set, startRec]);
 
