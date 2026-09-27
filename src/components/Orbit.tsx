@@ -40,7 +40,7 @@ function AgentCard({
       className="agent-card"
       data-state={state}
       data-live={live || undefined}
-      style={{ left: `${def.pos.x}%`, top: `${def.pos.y}%`, ["--w" as string]: `${def.pos.w}cqw` }}
+      data-slot={def.slot}
       onClick={live ? onOpenChat : undefined}
       aria-disabled={!live}
       title={live ? "F.R.I.D.A.Y. と会話する" : "このエージェントは今後のアップデートで追加されます"}

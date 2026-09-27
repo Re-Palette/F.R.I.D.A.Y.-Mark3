@@ -643,6 +643,23 @@ button:disabled,
 /* ---------- Orbit (HUB) ---------- */
 
 .orbit {
+  /*
+   * 重なりが起きないよう、カードサイズとステージサイズから位置・Core 直径を計算する。
+   *   --cw / --ch : カードの幅・高さ
+   *   --s         : 左右上段カードの上端（下段は下端）
+   *   --in        : 上段・下段カードを内側へずらす量（参考デザインの千鳥配置）
+   *   --core      : Core 直径 = 上下カードの間 / 左右カードの内側 / 斜めカードとの距離 の最小値
+   */
+  --cw: clamp(220px, 24cqw, 300px);
+  --ch: 128px;
+  --g: 14px;
+  --s: calc(var(--ch) * 0.85);
+  --in: calc(var(--cw) * 0.3);
+  --core: min(
+    calc(100cqh - 2 * var(--ch) - 2 * var(--g)),
+    calc(2 * hypot(50cqw - var(--in) - var(--cw), 50cqh - var(--s) - var(--ch)) - 2 * var(--g)),
+    calc(100cqw - 2 * var(--cw) - 2 * var(--g))
+  );
   position: absolute;
   inset: 0;
   transition: opacity 0.45s var(--ease), transform 0.55s var(--ease), visibility 0s linear 0s;
@@ -664,7 +681,7 @@ button:disabled,
   position: absolute;
   left: 50%;
   top: 50%;
-  width: min(66cqh, 46cqw);
+  width: var(--core);
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
 }
@@ -672,17 +689,17 @@ button:disabled,
 /* ---------- Agent card ---------- */
 
 .agent-card {
-  --w: 26cqw;
   position: absolute;
   z-index: 1;
-  width: clamp(230px, var(--w), 360px);
-  transform: translate(-50%, -50%);
+  width: var(--cw);
+  height: var(--ch);
   display: grid;
   grid-template-columns: auto 1fr auto;
+  grid-template-rows: 1fr auto;
   column-gap: 16px;
-  row-gap: 10px;
+  row-gap: 8px;
   align-items: center;
-  padding: 16px 16px 13px 18px;
+  padding: 14px 16px 12px 18px;
   text-align: left;
   border-radius: var(--radius);
   background:
@@ -720,8 +737,47 @@ button:disabled,
   pointer-events: none;
 }
 
+/* スロット配置 */
+.agent-card[data-slot="top"],
+.agent-card[data-slot="bottom"] {
+  left: calc(50% - var(--cw) * 0.6);
+  width: calc(var(--cw) * 1.2);
+}
+.agent-card[data-slot="top"] {
+  top: 0;
+}
+.agent-card[data-slot="bottom"] {
+  bottom: 0;
+}
+.agent-card[data-slot="tl"],
+.agent-card[data-slot="bl"] {
+  left: var(--in);
+}
+.agent-card[data-slot="tr"],
+.agent-card[data-slot="br"] {
+  right: var(--in);
+}
+.agent-card[data-slot="tl"],
+.agent-card[data-slot="tr"] {
+  top: var(--s);
+}
+.agent-card[data-slot="bl"],
+.agent-card[data-slot="br"] {
+  bottom: var(--s);
+}
+.agent-card[data-slot="ml"],
+.agent-card[data-slot="mr"] {
+  top: calc(50% - var(--ch) / 2);
+}
+.agent-card[data-slot="ml"] {
+  left: 0;
+}
+.agent-card[data-slot="mr"] {
+  right: 0;
+}
+
 .agent-card:hover {
-  transform: translate(-50%, -50%) translateY(-3px);
+  transform: translateY(-3px);
   border-color: rgba(255, 170, 90, 0.9);
   box-shadow: 0 0 22px rgba(255, 120, 20, 0.55), 0 0 3px rgba(255, 170, 90, 0.8), inset 0 0 26px rgba(255, 110, 10, 0.18),
     0 18px 44px rgba(0, 0, 0, 0.6);
@@ -761,12 +817,16 @@ button:disabled,
 }
 
 .agent-card__engine {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 15px;
   font-weight: 500;
   color: var(--text-2);
 }
 
 .agent-card__status {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1872,8 +1932,53 @@ a.quick__item:hover {
 
 /* ---------- Responsive ---------- */
 
-/* ステージが狭いとき: オービットをグリッドに切り替え */
-@container (max-width: 860px) or (max-height: 500px) {
+/* ステージの高さが足りないとき: カードを低くする（タグ行を省略） */
+@container (max-height: 640px) {
+  .orbit {
+    --ch: 92px;
+  }
+
+  .agent-card {
+    grid-template-rows: 1fr;
+    padding: 10px 14px;
+  }
+
+  .agent-card__tags {
+    display: none;
+  }
+
+  .agent-card__icon {
+    width: 46px;
+    height: 46px;
+  }
+}
+
+/* カード幅が小さいとき（最小幅付近）は文字を詰める */
+@container (max-width: 1000px) {
+  .agent-card {
+    column-gap: 12px;
+    padding-left: 14px;
+    padding-right: 12px;
+  }
+
+  .agent-card__title {
+    font-size: 17px;
+    letter-spacing: 0.02em;
+  }
+
+  .agent-card__engine {
+    font-size: 14px;
+  }
+
+  .agent-card__status {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    gap: 6px;
+  }
+}
+
+/* さらに狭いとき: オービットをグリッドに切り替え */
+@container (max-width: 900px) or (max-height: 480px) {
   .orbit {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -1893,12 +1998,17 @@ a.quick__item:hover {
     width: min(260px, 38cqh, 60cqw);
   }
 
-  .agent-card {
+  .agent-card,
+  .agent-card[data-slot] {
     position: relative;
-    left: auto !important;
-    top: auto !important;
+    inset: auto;
     width: auto;
-    transform: none;
+    height: auto;
+    grid-template-rows: auto auto;
+  }
+
+  .agent-card__tags {
+    display: block;
   }
 
   .agent-card:hover {
