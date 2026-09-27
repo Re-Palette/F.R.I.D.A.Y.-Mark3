@@ -2435,8 +2435,16 @@ button:disabled,
     padding: 10px 14px;
   }
 
-  .composer__mic,
-  .composer__voice {
+  .composer {
+    gap: 10px;
+  }
+
+  .composer__mic {
+    width: 46px;
+    height: 46px;
+  }
+
+  .composer__tools .tool-btn:not([data-voice-control]) {
     display: none;
   }
 
@@ -2538,4 +2546,108 @@ button:disabled,
 
 .login__btn:disabled {
   filter: saturate(0.6) brightness(0.6);
+}
+
+/* ---------- Voice ---------- */
+
+.composer__mic {
+  cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.25s;
+}
+
+.composer__mic:hover {
+  transform: scale(1.05);
+}
+
+.composer[data-voice="listening"] .composer__mic {
+  color: #1a0b00;
+  background: radial-gradient(circle, #ffc27a, #ff8a1f 70%);
+  box-shadow: 0 0 22px rgba(255, 138, 31, 0.8);
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+.composer[data-voice="listening"] .composer__mic-ring {
+  animation-duration: 2.5s;
+}
+
+.composer[data-voice="standby"] .composer__mic {
+  box-shadow: 0 0 12px rgba(46, 230, 255, 0.35);
+}
+
+.composer__voice {
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.composer__voice:hover {
+  border-color: var(--line);
+  background: rgba(255, 138, 31, 0.1);
+}
+
+.composer__voice[data-on] {
+  color: var(--cyan);
+  border-color: rgba(46, 230, 255, 0.45);
+  background: rgba(46, 230, 255, 0.08);
+}
+
+.composer[data-voice="listening"] .composer__voice,
+.composer[data-voice="speaking"] .composer__voice {
+  color: var(--orange-hi);
+  border-color: var(--line);
+  background: rgba(255, 138, 31, 0.12);
+}
+
+.composer__voice-led {
+  width: 6px;
+  height: 6px;
+  background: var(--muted);
+}
+
+.composer__voice[data-on] .composer__voice-led {
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: blink 2s ease-in-out infinite;
+}
+
+.composer[data-voice="listening"] .eq i,
+.composer[data-voice="speaking"] .eq i {
+  animation: bars 0.7s ease-in-out infinite;
+}
+.composer[data-voice="listening"] .eq i:nth-child(2),
+.composer[data-voice="speaking"] .eq i:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.composer[data-voice="listening"] .eq i:nth-child(3),
+.composer[data-voice="speaking"] .eq i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.composer[data-voice="listening"] .eq i:nth-child(4),
+.composer[data-voice="speaking"] .eq i:nth-child(4) {
+  animation-delay: 0.36s;
+}
+
+.stage[data-voice="listening"] .core__bloom,
+.stage[data-voice="speaking"] .core__bloom {
+  animation: surge 1s ease-in-out infinite;
+}
+
+.tool-btn[data-voice-control] {
+  cursor: pointer;
+}
+
+.tool-btn[data-voice-control]:hover {
+  border-color: var(--line);
+  color: var(--orange-hi);
+}
+
+@keyframes mic-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
 }

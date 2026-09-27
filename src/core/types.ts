@@ -23,6 +23,8 @@ export interface ChatMessage {
 /** POST /api/chat のリクエストボディ */
 export interface ChatRequestBody {
   messages: ChatMessage[];
+  /** "voice": 音声会話（読み上げ向けの話し言葉で返答） */
+  mode?: "text" | "voice";
 }
 
 /** POST /api/chat のレスポンス（NDJSON: 1行1イベント） */

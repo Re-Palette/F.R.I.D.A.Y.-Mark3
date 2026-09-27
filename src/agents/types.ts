@@ -13,6 +13,8 @@ export interface AgentContext {
   /** 現在時刻とタイムゾーン */
   now: Date;
   timezone: string;
+  /** 音声会話モード（返答は読み上げられる） */
+  voice: boolean;
   signal?: AbortSignal;
 }
 

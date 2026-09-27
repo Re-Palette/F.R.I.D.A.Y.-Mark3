@@ -36,6 +36,7 @@ export const chatAgent: Agent = {
         timezone: ctx.timezone,
         memories,
         memoryConnected: ctx.memory.connected,
+        voice: ctx.voice,
       }),
       contents,
       signal: ctx.signal,

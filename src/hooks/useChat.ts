@@ -27,6 +27,13 @@ export interface UiMessage {
   status: "streaming" | "done" | "stopped" | "error";
   error?: UiError;
   meta?: { model?: string; ttftMs?: number; totalMs?: number };
+  /** 音声で話しかけた発言への応答（読み上げ対象） */
+  voice?: boolean;
+}
+
+export interface SendOptions {
+  /** 音声会話モード（読み上げ向けの短い話し言葉で返答させる） */
+  voice?: boolean;
 }
 
 export type ChatPhase = "idle" | "waiting" | "streaming";
@@ -119,7 +126,7 @@ export function useChat() {
   }, [messages, phase, hydrated]);
 
   const run = useCallback(
-    async (history: UiMessage[]) => {
+    async (history: UiMessage[], opts: SendOptions = {}) => {
       const assistantId = uid();
       const startedAt = performance.now();
       const controller = new AbortController();
@@ -127,7 +134,14 @@ export function useChat() {
 
       update(() => [
         ...history,
-        { id: assistantId, role: "assistant", content: "", createdAt: Date.now(), status: "streaming" },
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+          status: "streaming",
+          voice: opts.voice || undefined,
+        },
       ]);
       setPhase("waiting");
       setLastErrorCode(null);
@@ -223,7 +237,7 @@ export function useChat() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: toApiHistory(history) }),
+          body: JSON.stringify({ messages: toApiHistory(history), mode: opts.voice ? "voice" : "text" }),
           signal: controller.signal,
         });
 
@@ -335,7 +349,7 @@ export function useChat() {
 
   /** 直列実行：前の応答が残っていれば止めてから次を走らせる */
   const enqueue = useCallback(
-    (build: (current: UiMessage[]) => UiMessage[] | null) => {
+    (build: (current: UiMessage[]) => UiMessage[] | null, opts: SendOptions = {}) => {
       const job = (async () => {
         const previous = runningRef.current;
         if (previous) {
@@ -344,7 +358,7 @@ export function useChat() {
         }
         const history = build(store.current);
         if (!history) return;
-        await run(history);
+        await run(history, opts);
       })();
       runningRef.current = job;
       setPhase((p) => (p === "idle" ? "waiting" : p));
@@ -359,13 +373,13 @@ export function useChat() {
   );
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, opts: SendOptions = {}) => {
       const content = text.trim();
       if (!content) return false;
-      enqueue((current) => [
-        ...current,
-        { id: uid(), role: "user", content, createdAt: Date.now(), status: "done" },
-      ]);
+      enqueue(
+        (current) => [...current, { id: uid(), role: "user", content, createdAt: Date.now(), status: "done" }],
+        opts,
+      );
       return true;
     },
     [enqueue],

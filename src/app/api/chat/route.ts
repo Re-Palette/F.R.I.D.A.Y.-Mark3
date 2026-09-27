@@ -17,9 +17,11 @@ function errorResponse(err: unknown): Response {
 
 export async function POST(req: Request): Promise<Response> {
   let history;
+  let voice = false;
   try {
-    const body = (await req.json()) as { messages?: unknown };
+    const body = (await req.json()) as { messages?: unknown; mode?: unknown };
     history = sanitizeHistory(body?.messages);
+    voice = body?.mode === "voice";
     preflight();
   } catch (err) {
     if (err instanceof SyntaxError) {
@@ -32,7 +34,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const encoder = new TextEncoder();
-  const events = handleConversation(history, req.signal);
+  const events = handleConversation(history, req.signal, { voice });
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {

@@ -8,6 +8,7 @@
  */
 import { forwardRef, memo, useImperativeHandle, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatPhase } from "@/hooks/useChat";
+import type { VoiceState } from "@/hooks/useVoice";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -21,10 +22,31 @@ interface Props {
   onSend: (text: string) => boolean;
   onStop: () => void;
   onTyping?: () => void;
+  voiceState?: VoiceState;
+  voiceInterim?: string;
+  onVoiceToggle?: () => void;
+  onTalk?: () => void;
 }
 
+const VOICE_LABEL: Record<VoiceState, string> = {
+  off: "VOICE MODE",
+  standby: "「フライデー」で起動",
+  listening: "LISTENING",
+  thinking: "THINKING",
+  speaking: "SPEAKING",
+};
+
+const VOICE_PLACEHOLDER: Partial<Record<VoiceState, string>> = {
+  standby: "「フライデー」と呼びかけるか、ここに入力…",
+  listening: "どうぞ、話してください…",
+  speaking: "F.R.I.D.A.Y. が話しています…（マイクボタンで割り込み）",
+};
+
 export const Composer = memo(
-  forwardRef<ComposerHandle, Props>(function Composer({ phase, disabled, onSend, onStop, onTyping }, ref) {
+  forwardRef<ComposerHandle, Props>(function Composer(
+    { phase, disabled, onSend, onStop, onTyping, voiceState = "off", voiceInterim, onVoiceToggle, onTalk },
+    ref,
+  ) {
   const [value, setValue] = useState("");
   const [pulse, setPulse] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -63,15 +85,22 @@ export const Composer = memo(
   };
 
   return (
-    <div className="composer hud" data-busy={busy || undefined}>
+    <div className="composer hud" data-busy={busy || undefined} data-voice={voiceState}>
       <HudFrame cut={22} small={10} leds notch />
-      <div className="composer__mic" title="音声入力（今後対応）" aria-hidden="true">
+      <button
+        type="button"
+        className="composer__mic"
+        data-voice-control
+        onClick={onTalk}
+        title="押して話す（呼びかけなしで 1 回聞き取り）"
+        aria-label="音声で話す"
+      >
         <svg className="composer__mic-ring" viewBox="0 0 64 64">
           <circle cx="32" cy="32" r="30" strokeDasharray="3 4.2" />
           <path d="M32 2 A30 30 0 0 1 60 22" className="composer__mic-arc" />
         </svg>
         <Icon name="mic" size={24} strokeWidth={1.8} />
-      </div>
+      </button>
       <div className="composer__main">
         <div className="composer__row">
           <textarea
@@ -79,7 +108,7 @@ export const Composer = memo(
             className="composer__input"
             rows={1}
             value={value}
-            placeholder="F.R.I.D.A.Y.に話しかけてみてください…"
+            placeholder={voiceInterim || VOICE_PLACEHOLDER[voiceState] || "F.R.I.D.A.Y.に話しかけてみてください…"}
             onChange={(e) => {
               setValue(e.target.value);
               resize();
@@ -107,7 +136,7 @@ export const Composer = memo(
           )}
         </div>
         <div className="composer__tools">
-          <button type="button" className="tool-btn" disabled title="今後対応">
+          <button type="button" className="tool-btn" data-voice-control onClick={onTalk} title="押して話す">
             <Icon name="mic" size={14} /> 音声入力
           </button>
           <button type="button" className="tool-btn" disabled title="今後対応">
@@ -116,15 +145,24 @@ export const Composer = memo(
           <button type="button" className="tool-btn" disabled title="今後対応">
             <Icon name="image" size={14} /> 画像生成
           </button>
-          <span className="composer__voice" title="今後対応">
-            VOICE MODE
+          <button
+            type="button"
+            className="composer__voice"
+            data-voice-control
+            data-on={voiceState !== "off" || undefined}
+            onClick={onVoiceToggle}
+            aria-pressed={voiceState !== "off"}
+            title={voiceState === "off" ? "音声会話をオン（「フライデー」で起動）" : "音声会話をオフ"}
+          >
+            <i className="composer__voice-led" />
+            {VOICE_LABEL[voiceState]}
             <span className="eq">
               <i />
               <i />
               <i />
               <i />
             </span>
-          </span>
+          </button>
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useChat } from "@/hooks/useChat";
+import { useVoice } from "@/hooks/useVoice";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
 import { Header } from "./Header";
@@ -99,7 +100,37 @@ export function Dashboard() {
     void fetch("/api/warm", { method: "POST", keepalive: true }).catch(() => {});
   }, [agent.status]);
 
-    const openChat = useCallback(() => {
+  /* ---- 音声会話 ---- */
+  const { send: chatSend, stop: chatStop } = chat;
+  const onVoiceCommand = useCallback(
+    (text: string) => {
+      if (chatSend(text, { voice: true })) setView("chat");
+    },
+    [chatSend],
+  );
+  const voice = useVoice({ onCommand: onVoiceCommand });
+  const { speak, cancelSpeech, replyFinished } = voice;
+
+  // 音声で話しかけた発言への応答を、届いた文から順に読み上げる
+  const lastMsg = chat.messages[chat.messages.length - 1];
+  useEffect(() => {
+    if (!lastMsg || lastMsg.role !== "assistant" || !lastMsg.voice) return;
+    const base = { id: lastMsg.id, createdAt: lastMsg.createdAt };
+    if (lastMsg.status === "streaming") speak({ ...base, text: lastMsg.content, done: false });
+    else if (lastMsg.status === "done" || lastMsg.status === "stopped")
+      speak({ ...base, text: lastMsg.content, done: true });
+    else if (lastMsg.status === "error") {
+      if (lastMsg.error?.code === "ABORTED") replyFinished();
+      else speak({ ...base, text: lastMsg.error?.message ?? "エラーが発生しました。", done: true });
+    }
+  }, [lastMsg, speak, replyFinished]);
+
+  const stopAll = useCallback(() => {
+    chatStop();
+    cancelSpeech();
+  }, [chatStop, cancelSpeech]);
+
+  const openChat = useCallback(() => {
     setView("chat");
     composerRef.current?.focus();
   }, []);
@@ -136,7 +167,7 @@ export function Dashboard() {
       />
 
       <main className="center">
-        <div className="stage" data-view={view} data-phase={chat.phase}>
+        <div className="stage" data-view={view} data-phase={chat.phase} data-voice={voice.state}>
           <Orbit
             phase={chat.phase}
             chatStatus={agent.status}
@@ -153,6 +184,7 @@ export function Dashboard() {
             onBack={backToHub}
             onClear={chat.clear}
             hidden={!inChat}
+            voiceState={voice.state}
           />
         </div>
 
@@ -168,12 +200,26 @@ export function Dashboard() {
           </div>
         )}
 
+        {voice.error && (
+          <div className="banner" role="alert">
+            <b>VOICE</b>
+            <span>{voice.error}</span>
+            <button type="button" className="ghost-btn" onClick={voice.dismissError}>
+              閉じる
+            </button>
+          </div>
+        )}
+
         <Composer
           ref={composerRef}
           phase={chat.phase}
           disabled={false}
           onSend={send}
-          onStop={chat.stop}
+          onStop={stopAll}
+          voiceState={voice.state}
+          voiceInterim={voice.interim}
+          onVoiceToggle={voice.toggle}
+          onTalk={voice.talkNow}
           onTyping={warm}
         />
       </main>

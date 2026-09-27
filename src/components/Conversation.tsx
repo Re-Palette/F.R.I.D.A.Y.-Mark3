@@ -5,6 +5,7 @@
  */
 import { memo, useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatPhase, UiMessage } from "@/hooks/useChat";
+import type { VoiceState } from "@/hooks/useVoice";
 import { Core } from "./Core";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
@@ -91,6 +92,7 @@ export function Conversation({
   onBack,
   onClear,
   hidden,
+  voiceState = "off",
 }: {
   messages: UiMessage[];
   phase: ChatPhase;
@@ -99,6 +101,7 @@ export function Conversation({
   onBack: () => void;
   onClear: () => void;
   hidden: boolean;
+  voiceState?: VoiceState;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -137,7 +140,17 @@ export function Conversation({
           <div>
             <div className="conversation__name">CHAT AI</div>
             <div className="conversation__sub">
-              {phase === "waiting" ? "LINKING…" : phase === "streaming" ? "RESPONDING" : "STANDBY"}
+              {voiceState === "listening"
+                ? "LISTENING…"
+                : voiceState === "speaking"
+                  ? "SPEAKING"
+                  : phase === "waiting"
+                    ? "LINKING…"
+                    : phase === "streaming"
+                      ? "RESPONDING"
+                      : voiceState === "standby"
+                        ? "「フライデー」で起動"
+                        : "STANDBY"}
             </div>
           </div>
         </div>

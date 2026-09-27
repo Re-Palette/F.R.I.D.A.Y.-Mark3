@@ -50,6 +50,7 @@ export function preflight(): void {
 export async function* handleConversation(
   history: ChatMessage[],
   signal?: AbortSignal,
+  options: { voice?: boolean } = {},
 ): AsyncGenerator<StreamEvent> {
   try {
     const window = buildConversationWindow(history, getContextConfig());
@@ -69,6 +70,7 @@ export async function* handleConversation(
       memory: getLongTermMemory(),
       now: new Date(),
       timezone: getTimezone(),
+      voice: options.voice ?? false,
       signal,
     })) {
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す

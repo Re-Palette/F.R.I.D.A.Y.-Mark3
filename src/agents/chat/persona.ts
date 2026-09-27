@@ -9,6 +9,8 @@ export interface PersonaInput {
   timezone: string;
   memories: MemoryRecord[];
   memoryConnected: boolean;
+  /** 音声会話モード */
+  voice?: boolean;
 }
 
 function formatNow(now: Date, timezone: string): string {
@@ -23,7 +25,16 @@ function formatNow(now: Date, timezone: string): string {
   }).format(now);
 }
 
-export function buildSystemInstruction({ now, timezone, memories, memoryConnected }: PersonaInput): string {
+const VOICE_RULES = `
+
+# 音声会話モード（今回の返答は読み上げられる）
+- ユーザーは声で話しかけており、返答は音声合成で読み上げられる。
+- 見出し・箇条書き・太字・記号・絵文字・URL・コードは使わない。話し言葉の文章だけで返す。
+- 基本は 1〜3 文。長い説明が必要なときは要点だけ話し、「詳しく話しましょうか？」と相手に委ねる。
+- 数字や英語は読み上げやすい形で書く（例: 「15:30」より「15時半」）。
+- 音声認識の誤変換がありうるので、多少おかしな文でも意図を汲んで答える。`;
+
+export function buildSystemInstruction({ now, timezone, memories, memoryConnected, voice }: PersonaInput): string {
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。ユーザー一人のために動く専属AIアシスタントであり、ユーザー専用の「個人用AI OS」の中核です。汎用チャットボットではありません。
 
 # 話し方
@@ -51,12 +62,13 @@ export function buildSystemInstruction({ now, timezone, memories, memoryConnecte
 # 現在の状況
 - 現在日時: ${formatNow(now, timezone)}（${timezone}）`;
 
-  if (!memoryConnected || memories.length === 0) return base;
+  const withMode = voice ? base + VOICE_RULES : base;
+  if (!memoryConnected || memories.length === 0) return withMode;
 
   const notes = memories
     .map((m) => `## ${m.title ?? m.source}\n${m.content}`)
     .join("\n\n");
-  return `${base}
+  return `${withMode}
 
 # 長期記憶から取得した関連情報
 以下はユーザーの知識ベースから取得した情報。関係がある場合のみ自然に活用する。
