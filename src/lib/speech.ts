@@ -157,3 +157,29 @@ export function chime(kind: "wake" | "end" = "wake"): void {
     /* noop */
   }
 }
+
+/* ---------- 割り込み（自分の声の聞き取りとの区別） ---------- */
+
+const ECHO_STRIP = /[\s、。，．,.!！?？「」『』（）()・…ー〜\-]/g;
+
+/** 比較用に記号・空白を除く */
+export function normalizeForEcho(text: string): string {
+  return text.replace(ECHO_STRIP, "").toLowerCase();
+}
+
+/**
+ * 聞こえた言葉が「いま読み上げている文章」の聞き返し（スピーカーの音をマイクが拾ったもの）である度合い。
+ * 2 文字ずつの並びがどれだけ読み上げ中の文章に含まれるかで判定（0〜1、高いほど自分の声）。
+ */
+export function echoScore(heard: string, spoken: string): number {
+  const h = normalizeForEcho(heard);
+  const s = normalizeForEcho(spoken);
+  if (!h) return 1;
+  if (!s) return 0;
+  if (h.length < 2) return s.includes(h) ? 1 : 0;
+  const grams = new Set<string>();
+  for (let i = 0; i < s.length - 1; i++) grams.add(s.slice(i, i + 2));
+  let hit = 0;
+  for (let i = 0; i < h.length - 1; i++) if (grams.has(h.slice(i, i + 2))) hit++;
+  return hit / (h.length - 1);
+}

@@ -39,7 +39,8 @@ const VOICE_LABEL: Record<VoiceState, string> = {
 const VOICE_PLACEHOLDER: Partial<Record<VoiceState, string>> = {
   standby: "「フライデー」と呼びかけるか、ここに入力…",
   listening: "どうぞ、話してください…",
-  speaking: "F.R.I.D.A.Y. が話しています…（マイクボタンで割り込み）",
+  speaking: "F.R.I.D.A.Y. が話しています…（話しかければ割り込めます）",
+  thinking: "考えています…（話しかければ割り込めます）",
 };
 
 export const Composer = memo(

@@ -173,9 +173,12 @@ export function Conversation({
           </div>
         ) : (
           <div className="conversation__list" aria-live="polite">
-            {messages.map((m, i) => (
-              <Message key={m.id} msg={m} onRetry={onRetry} canRetry={i === lastIndex && phase === "idle"} />
-            ))}
+            {messages.map((m, i) =>
+              // 1 文字も出る前に止めた返答（割り込み・停止）は表示しない
+              m.status === "error" && m.error?.code === "ABORTED" && !m.content ? null : (
+                <Message key={m.id} msg={m} onRetry={onRetry} canRetry={i === lastIndex && phase === "idle"} />
+              ),
+            )}
           </div>
         )}
       </div>

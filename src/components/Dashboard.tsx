@@ -110,7 +110,11 @@ export function Dashboard() {
     },
     [chatSend],
   );
-  const voice = useVoice({ onCommand: onVoiceCommand, cloudVoice: agent.tts.provider === "elevenlabs" });
+  const voice = useVoice({
+    onCommand: onVoiceCommand,
+    onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
+    cloudVoice: agent.tts.provider === "elevenlabs",
+  });
   const { speak, cancelSpeech, replyFinished } = voice;
 
   // 音声で話しかけた発言への応答を、届いた文から順に読み上げる
