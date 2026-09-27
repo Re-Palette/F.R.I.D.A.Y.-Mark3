@@ -4,7 +4,7 @@
  * どの Agent からも使える汎用レイヤー。Agent 固有の知識はここに置かない。
  */
 import { FridayError } from "@/lib/errors";
-import { settingsHint, type GeminiConfig } from "@/lib/config";
+import { settingsHint, type GeminiConfig, type ThinkingLevel } from "@/lib/config";
 
 export interface GeminiContent {
   role: "user" | "model";
@@ -39,14 +39,14 @@ interface GeminiStreamResponse {
   error?: { code?: number; message?: string; status?: string };
 }
 
-function buildBody(opts: GeminiStreamOptions, withThinking: boolean) {
+function buildBody(opts: GeminiStreamOptions, level: ThinkingLevel | undefined) {
   const { config } = opts;
   const generationConfig: Record<string, unknown> = {
     temperature: config.temperature,
     maxOutputTokens: config.maxOutputTokens,
   };
-  if (withThinking && config.thinkingLevel) {
-    generationConfig.thinkingConfig = { thinkingLevel: config.thinkingLevel };
+  if (level) {
+    generationConfig.thinkingConfig = { thinkingLevel: level };
   }
   return JSON.stringify({
     ...(opts.systemInstruction
@@ -119,7 +119,7 @@ function isThinkingConfigError(err: FridayError): boolean {
   return err.code === "BAD_REQUEST" && /thinking/i.test(err.message);
 }
 
-async function request(opts: GeminiStreamOptions, model: string, withThinking: boolean): Promise<Response> {
+async function request(opts: GeminiStreamOptions, model: string, level: ThinkingLevel | undefined): Promise<Response> {
   const { config } = opts;
   const url = `${config.baseUrl}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
   try {
@@ -129,7 +129,7 @@ async function request(opts: GeminiStreamOptions, model: string, withThinking: b
         "Content-Type": "application/json",
         "x-goog-api-key": config.apiKey ?? "",
       },
-      body: buildBody(opts, withThinking),
+      body: buildBody(opts, level),
       signal: opts.signal,
       cache: "no-store",
     });
@@ -144,8 +144,14 @@ async function request(opts: GeminiStreamOptions, model: string, withThinking: b
   }
 }
 
-/** thinkingConfig を受け付けないと分かったモデル（毎回 400 → 再送にならないよう記憶） */
-const noThinkingModels = new Set<string>();
+/** モデルが受け付けないと分かった thinkingLevel（"モデル:レベル"。毎回 400 → 再送にならないよう記憶） */
+const rejectedThinking = new Set<string>();
+
+/** 指定レベルが使えないときの代替（minimal 非対応なら low、それも駄目なら指定なし） */
+function thinkingCandidates(level: ThinkingLevel | undefined): (ThinkingLevel | undefined)[] {
+  if (!level) return [undefined];
+  return level === "minimal" ? ["minimal", "low", undefined] : [level, undefined];
+}
 
 /** 一時的な障害（混雑・瞬断）とみなしてよいか */
 const isTransient = (status: number) => status === 500 || status === 502 || status === 503 || status === 504;
@@ -185,15 +191,16 @@ function isAvailable(model: string): boolean {
 /**
  * 1 つのモデルでストリームを開始する。本文を読み始める前なので、ここでの再試行はユーザーに見えない。
  *  - 混雑 (5xx) や瞬断は短い間隔で自動再試行
- *  - thinkingLevel 非対応モデルは設定を外して再送し、以後は外したまま送る
+ *  - 非対応の thinkingLevel は代替レベルで再送し、以後はそのレベルを使わない
  */
 async function connectModel(opts: GeminiStreamOptions, model: string): Promise<Response> {
-  let withThinking = Boolean(opts.config.thinkingLevel) && !noThinkingModels.has(model);
+  const levels = thinkingCandidates(opts.config.thinkingLevel).filter((l) => !l || !rejectedThinking.has(`${model}:${l}`));
+  let level = levels.shift();
 
   for (let attempt = 1; ; attempt++) {
     let res: Response;
     try {
-      res = await request(opts, model, withThinking);
+      res = await request(opts, model, level);
     } catch (err) {
       if (err instanceof FridayError && err.retryable && attempt < MAX_ATTEMPTS) {
         await sleep(350 * attempt, opts.signal);
@@ -210,9 +217,9 @@ async function connectModel(opts: GeminiStreamOptions, model: string): Promise<R
     }
 
     const err = await mapHttpError(res, model);
-    if (withThinking && isThinkingConfigError(err)) {
-      noThinkingModels.add(model);
-      withThinking = false;
+    if (level && isThinkingConfigError(err)) {
+      rejectedThinking.add(`${model}:${level}`);
+      level = levels.shift();
       continue;
     }
     throw err;

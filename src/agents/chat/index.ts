@@ -29,8 +29,13 @@ export const chatAgent: Agent = {
       parts: [{ text: m.content }],
     }));
 
+    // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
+    const runConfig = ctx.voice
+      ? { ...config, thinkingLevel: "minimal" as const, maxOutputTokens: Math.min(config.maxOutputTokens, 400) }
+      : config;
+
     yield* streamGemini({
-      config,
+      config: runConfig,
       systemInstruction: buildSystemInstruction({
         now: ctx.now,
         timezone: ctx.timezone,

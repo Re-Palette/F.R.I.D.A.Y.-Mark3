@@ -132,6 +132,11 @@ export function Dashboard() {
   const ttsNotice =
     voice.state !== "off" && agent.tts.reason && !ttsNoticeClosed ? `${agent.tts.reason}（今はブラウザの声で読み上げます）` : null;
 
+  // 聞き取りを始めたら Gemini / ElevenLabs への接続を温めておく（話し終わった瞬間に速く返すため）
+  useEffect(() => {
+    if (voice.state === "listening" || voice.interim === "…") warm();
+  }, [voice.state, voice.interim, warm]);
+
   const stopAll = useCallback(() => {
     chatStop();
     cancelSpeech();

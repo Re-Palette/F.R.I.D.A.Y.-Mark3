@@ -31,6 +31,7 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `CHAT_CONTEXT_MAX_CHARS` | | `24000` | Gemini に渡す会話の最大文字数 |
 | `ELEVENLABS_API_KEY` | | — | ElevenLabs の API キー（読み上げを ElevenLabs の声にする場合） |
 | `ELEVENLABS_VOICE_ID` | | — | 使う声の Voice ID |
+| `ELEVENLABS_SPEED` | | `1.15` | 話す速さ（0.7〜1.2） |
 | `ELEVENLABS_MODEL` | | `eleven_flash_v2_5` | 音声モデル（音質重視なら `eleven_multilingual_v2`） |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 

@@ -28,6 +28,8 @@ import {
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
 const FOLLOW_UP_MS = 8000;
+/** 聞き取り途中の文字がこの時間変わらなければ「話し終わった」とみなす（ブラウザの確定待ちより速い） */
+const END_OF_SPEECH_MS = 700;
 const STORAGE_KEY = "friday.voice.v1";
 
 export interface SpeakInput {
@@ -39,8 +41,8 @@ export interface SpeakInput {
 
 interface SpeechItem {
   text: string;
-  /** ElevenLabs の音声（取得を始めたら入る。失敗なら null） */
-  audio?: Promise<ArrayBuffer | null>;
+  /** ElevenLabs の音声（先読みを始めたら入る。届いた端から再生できる） */
+  audio?: HTMLAudioElement;
 }
 
 /** これより短い文は次の文とまとめて声にする（リクエスト数削減・抑揚も自然に） */
@@ -65,6 +67,7 @@ export function useVoice({
   const followTimer = useRef(0);
   /** 確定前の聞き取り途中テキスト（確定の合図が来ないブラウザでは、区切りでこれを使う） */
   const pendingRef = useRef("");
+  const silenceTimer = useRef(0);
   const restartTimer = useRef(0);
   const onCommandRef = useRef(onCommand);
   onCommandRef.current = onCommand;
@@ -72,6 +75,7 @@ export function useVoice({
   cloudRef.current = cloudVoice;
   /** ElevenLabs が致命的に失敗したら（キー誤り・枠切れ）このセッションでは使わない */
   const cloudDisabled = useRef(false);
+  const cloudFailures = useRef(0);
 
   /* 読み上げの状態 */
   const speech = useRef({
@@ -80,6 +84,7 @@ export function useVoice({
     spokenUpTo: 0,
     queue: [] as SpeechItem[],
     carry: "", // まとめ待ちの短い文
+    chunks: 0, // この返答で読み上げに回した数（最初の一言だけ特別扱い）
     speaking: false,
     finished: false,
     gen: 0, // 停止のたびに増やし、古い再生処理を無効にする
@@ -110,6 +115,7 @@ export function useVoice({
 
   const stopRec = useCallback(() => {
     clearTimeout(restartTimer.current);
+    clearTimeout(silenceTimer.current);
     pendingRef.current = "";
     const rec = recRef.current;
     if (!rec || !runningRef.current) return;
@@ -201,12 +207,27 @@ export function useVoice({
         else interimText += r[0].transcript;
       }
       const mode = stateRef.current;
+      clearTimeout(silenceTimer.current);
       if (finalText.trim()) {
         pendingRef.current = "";
         handleUtterance(finalText);
         return;
       }
       pendingRef.current = interimText;
+      // 少し黙ったら、ブラウザの確定を待たずに話し終わりとして扱う
+      if (interimText.trim()) {
+        silenceTimer.current = window.setTimeout(() => {
+          const text = pendingRef.current;
+          pendingRef.current = "";
+          if (!text.trim()) return;
+          try {
+            rec.abort(); // 同じ発言を二重に処理しないよう、この回の認識は打ち切る
+          } catch {
+            /* noop */
+          }
+          handleUtterance(text);
+        }, END_OF_SPEECH_MS);
+      }
       if (mode === "listening") setInterim(interimText.trim());
       else if (mode === "standby") setInterim(splitWake(interimText).woke ? "…" : `聞こえた：${interimText.trim()}`);
     };
@@ -274,78 +295,69 @@ export function useVoice({
 
   const canUseCloud = () => cloudRef.current && !cloudDisabled.current && Boolean(getAudioContext());
 
-  /** ElevenLabs で音声を取得（混雑時は 1 回だけ再試行）。失敗したら null → ブラウザの声で代わりに読む */
-  const fetchCloud = useCallback((text: string): Promise<ArrayBuffer | null> => {
-    const sp = speech.current;
-    const ctrl = new AbortController();
-    sp.controllers.add(ctrl);
-    const attempt = async (n: number): Promise<ArrayBuffer | null> => {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: ctrl.signal,
-      });
-      if (res.ok) return await res.arrayBuffer();
-      const json = (await res.json().catch(() => null)) as { message?: string; fatal?: boolean } | null;
-      if (json?.fatal) {
-        cloudDisabled.current = true;
-        if (json.message) setError(json.message);
-        return null;
-      }
-      if (res.status === 429 && n === 0) {
-        await new Promise((r) => setTimeout(r, 400));
-        return attempt(1);
-      }
-      return null;
-    };
-    return attempt(0)
-      .catch(() => null)
-      .finally(() => sp.controllers.delete(ctrl));
-  }, []);
-
-  const ensureFetch = useCallback(
-    (item: SpeechItem | undefined) => {
-      if (item && !item.audio && canUseCloud()) item.audio = fetchCloud(item.text);
-    },
-    [fetchCloud],
-  );
-
-  /** ElevenLabs の音声を再生。再生できなければ false */
-  const playCloud = useCallback(async (data: ArrayBuffer, gen: number): Promise<boolean> => {
-    const ctx = getAudioContext();
-    if (!ctx) return false;
-    let buffer: AudioBuffer;
+  /** ElevenLabs が失敗したとき、原因を確認して致命的ならこのセッションでは使わない */
+  const checkCloudFailure = useCallback(async () => {
     try {
-      if (ctx.state === "suspended") await ctx.resume();
-      buffer = await ctx.decodeAudioData(data);
+      const res = await fetch("/api/status", { cache: "no-store" });
+      const json = (await res.json()) as { tts?: { provider: string; reason?: string } };
+      if (json.tts?.provider !== "elevenlabs") {
+        cloudDisabled.current = true;
+        setError(`${json.tts?.reason ?? "ElevenLabs が使えません。"}（ブラウザの声で読み上げます）`);
+      }
     } catch {
-      return false;
+      /* noop */
     }
-    if (gen !== speech.current.gen) return true;
-    return new Promise<boolean>((resolve) => {
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
-      let done = false;
-      const finish = (ok: boolean) => {
-        if (done) return;
-        done = true;
-        speech.current.stopAudio = null;
-        resolve(ok);
-      };
-      src.onended = () => finish(true);
-      speech.current.stopAudio = () => {
-        try {
-          src.stop();
-        } catch {
-          /* noop */
-        }
-        finish(true);
-      };
-      src.start();
-    });
   }, []);
+
+  /** 音声の取得を始める（<audio> がダウンロードしながら再生するので、全部届くのを待たない） */
+  const ensureFetch = useCallback((item: SpeechItem | undefined) => {
+    if (!item || item.audio || !canUseCloud()) return;
+    const el = new Audio();
+    el.preload = "auto";
+    el.src = `/api/tts?text=${encodeURIComponent(item.text)}`;
+    item.audio = el;
+  }, []);
+
+  /** ElevenLabs の音声を再生。再生できなければ false（→ ブラウザの声で代わりに読む） */
+  const playCloud = useCallback(
+    (el: HTMLAudioElement, gen: number): Promise<boolean> =>
+      new Promise<boolean>((resolve) => {
+        if (gen !== speech.current.gen) return resolve(true);
+        let done = false;
+        let started = false;
+        const finish = (ok: boolean) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          speech.current.stopAudio = null;
+          el.onended = el.onerror = el.onplaying = null;
+          if (!ok && !started) {
+            // 遅れて鳴り出して声が二重にならないよう止めておく
+            el.pause();
+            el.removeAttribute("src");
+            cloudFailures.current++;
+            if (cloudFailures.current >= 2) void checkCloudFailure();
+          }
+          resolve(ok || started);
+        };
+        // 一定時間たっても再生が始まらなければ諦める
+        const timer = window.setTimeout(() => finish(false), 8000);
+        el.onplaying = () => {
+          started = true;
+          cloudFailures.current = 0;
+          clearTimeout(timer);
+        };
+        el.onended = () => finish(true);
+        el.onerror = () => finish(false);
+        speech.current.stopAudio = () => {
+          el.pause();
+          el.removeAttribute("src");
+          finish(true);
+        };
+        el.play().catch(() => finish(false));
+      }),
+    [checkCloudFailure],
+  );
 
   /** ブラウザ標準の声で読む */
   const playBrowser = useCallback((text: string): Promise<void> => {
@@ -356,7 +368,7 @@ export function useVoice({
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "ja-JP";
       if (sp.voice) u.voice = sp.voice;
-      u.rate = 1.08;
+      u.rate = 1.25;
       u.pitch = 1;
       let ended = false;
       const end = () => {
@@ -388,11 +400,7 @@ export function useVoice({
         set("speaking");
       }
       let played = false;
-      if (item.audio) {
-        const data = await item.audio;
-        if (gen !== sp.gen) return;
-        if (data) played = await playCloud(data, gen);
-      }
+      if (item.audio) played = await playCloud(item.audio, gen);
       if (gen !== sp.gen) return;
       if (!played) await playBrowser(item.text);
     }
@@ -404,7 +412,9 @@ export function useVoice({
   const enqueue = useCallback((raw: string) => {
     const sp = speech.current;
     const text = toSpeakable(raw);
-    if (text) sp.queue.push({ text });
+    if (!text) return;
+    sp.queue.push({ text });
+    sp.chunks++;
   }, []);
 
   /** 応答テキストを渡す（ストリーミング中は何度でも呼ぶ）。言い終わった文から順に読み上げる */
@@ -417,14 +427,26 @@ export function useVoice({
         sp.spokenUpTo = 0;
         sp.queue = [];
         sp.carry = "";
+        sp.chunks = 0;
         sp.finished = false;
       }
       if (sp.finished) return;
+      const first = sp.chunks === 0 && sp.spokenUpTo === 0 && !sp.carry;
+      // 最初の一言はとにかく早く: 文が終わっていなくても、読点までで十分な長さがあれば話し始める
+      if (first) {
+        const comma = text.search(/[、,]/);
+        const end = text.search(/[。！？!?\n]/);
+        if (comma >= 12 && (end < 0 || comma < end)) {
+          enqueue(text.slice(0, comma + 1));
+          sp.spokenUpTo = comma + 1;
+        }
+      }
       const { sentences, next } = takeSentences(text, sp.spokenUpTo);
       sp.spokenUpTo = next;
       for (const sentence of sentences) {
         const chunk = sp.carry + sentence;
-        if (chunk.length < MIN_CHUNK) sp.carry = chunk;
+        // 短い文は次の文とまとめる。ただし最初の一言は待たせない
+        if (chunk.length < MIN_CHUNK && sp.chunks > 0) sp.carry = chunk;
         else {
           sp.carry = "";
           enqueue(chunk);

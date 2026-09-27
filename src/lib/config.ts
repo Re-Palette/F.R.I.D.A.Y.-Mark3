@@ -13,7 +13,7 @@ function num(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) && value !== undefined && value !== "" ? n : fallback;
 }
 
-export type ThinkingLevel = "low" | "medium" | "high";
+export type ThinkingLevel = "minimal" | "low" | "medium" | "high";
 
 export interface GeminiConfig {
   apiKey: string | undefined;
@@ -47,7 +47,7 @@ export function getGeminiConfig(): GeminiConfig {
       process.env.GEMINI_API_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta"
     ).replace(/\/+$/, ""),
     thinkingLevel:
-      level === "low" || level === "medium" || level === "high"
+      level === "minimal" || level === "low" || level === "medium" || level === "high"
         ? level
         : level === "off" || level === "none"
           ? undefined
@@ -85,6 +85,8 @@ export interface TtsConfig {
   voiceId: string | undefined;
   model: string;
   baseUrl: string;
+  /** 話す速さ（0.7〜1.2。1 が標準） */
+  speed: number;
 }
 
 /** ElevenLabs（任意）。API キーと Voice ID の両方があるときだけ使う */
@@ -95,5 +97,6 @@ export function getTtsConfig(): TtsConfig {
     // 低遅延・日本語対応のモデル。音質重視なら eleven_multilingual_v2 など
     model: process.env.ELEVENLABS_MODEL?.trim() || "eleven_flash_v2_5",
     baseUrl: (process.env.ELEVENLABS_API_BASE_URL?.trim() || "https://api.elevenlabs.io").replace(/\/+$/, ""),
+    speed: Math.min(1.2, Math.max(0.7, num(process.env.ELEVENLABS_SPEED, 1.15))),
   };
 }

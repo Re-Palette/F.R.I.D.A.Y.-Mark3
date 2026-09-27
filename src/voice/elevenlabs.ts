@@ -61,30 +61,81 @@ async function mapError(res: Response): Promise<TtsError> {
   return new TtsError("TTS_UPSTREAM", `ElevenLabs でエラーが発生しました（${res.status}）。`, 502, false);
 }
 
+/** 声ごとの設定（安定度など）。速さだけ上書きするために保持する */
+let voiceSettings: { key: string; value: Record<string, unknown> } | undefined;
+/** 速さ指定を受け付けなかった（モデル / 声が非対応） */
+let speedRejected = false;
+
+async function loadVoiceSettings(config: TtsConfig): Promise<Record<string, unknown>> {
+  const key = `${config.apiKey}::${config.voiceId}`;
+  if (voiceSettings?.key === key) return voiceSettings.value;
+  let value: Record<string, unknown> = {};
+  try {
+    const res = await fetch(`${config.baseUrl}/v1/voices/${encodeURIComponent(config.voiceId!)}/settings`, {
+      headers: { "xi-api-key": config.apiKey! },
+      signal: AbortSignal.timeout(4000),
+      cache: "no-store",
+    });
+    if (res.ok) value = ((await res.json()) as Record<string, unknown>) ?? {};
+  } catch {
+    /* 取れなければ速さだけ指定する */
+  }
+  voiceSettings = { key, value };
+  return value;
+}
+
 /** 文章を音声（MP3）のストリームにする */
 export async function synthesize(text: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
   const config = getTtsConfig();
   if (!isTtsConfigured(config)) {
     throw new TtsError("TTS_NOT_CONFIGURED", "ElevenLabs が設定されていません。", 503, true);
   }
-  let res: Response;
-  try {
-    res = await fetch(
-      `${config.baseUrl}/v1/text-to-speech/${encodeURIComponent(config.voiceId!)}/stream?output_format=mp3_44100_128`,
-      {
+  const url = `${config.baseUrl}/v1/text-to-speech/${encodeURIComponent(config.voiceId!)}/stream?output_format=mp3_44100_128`;
+  const send = async (withSpeed: boolean) => {
+    const body: Record<string, unknown> = { text, model_id: config.model };
+    if (withSpeed && config.speed !== 1) {
+      body.voice_settings = { ...(await loadVoiceSettings(config)), speed: config.speed };
+    }
+    try {
+      return await fetch(url, {
         method: "POST",
         headers: { "xi-api-key": config.apiKey!, "Content-Type": "application/json", Accept: "audio/mpeg" },
-        body: JSON.stringify({ text, model_id: config.model }),
+        body: JSON.stringify(body),
         signal,
         cache: "no-store",
-      },
-    );
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") throw err;
-    throw new TtsError("TTS_NETWORK", "ElevenLabs に接続できませんでした。", 503, false);
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") throw err;
+      throw new TtsError("TTS_NETWORK", "ElevenLabs に接続できませんでした。", 503, false);
+    }
+  };
+
+  let res = await send(!speedRejected);
+  // 速さ指定が原因で拒否されたら、指定なしで送り直し、以後は指定しない
+  if ((res.status === 400 || res.status === 422) && !speedRejected && config.speed !== 1) {
+    await res.body?.cancel().catch(() => {});
+    speedRejected = true;
+    res = await send(false);
   }
   if (!res.ok || !res.body) throw await mapError(res);
   return res.body;
+}
+
+let lastWarm = 0;
+
+/** 聞き取り中に呼び、ElevenLabs への接続を事前に確立しておく（音声は生成しない） */
+export function warmTts(): void {
+  const config = getTtsConfig();
+  if (!isTtsConfigured(config) || Date.now() - lastWarm < 2500) return;
+  lastWarm = Date.now();
+  void loadVoiceSettings(config);
+  void fetch(`${config.baseUrl}/v1/voices/${encodeURIComponent(config.voiceId!)}`, {
+    headers: { "xi-api-key": config.apiKey! },
+    signal: AbortSignal.timeout(4000),
+    cache: "no-store",
+  })
+    .then((r) => r.body?.cancel())
+    .catch(() => {});
 }
 
 /* ---------- 設定の確認（キャッシュ付き） ---------- */

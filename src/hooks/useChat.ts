@@ -181,7 +181,10 @@ export function useChat() {
             const now = performance.now();
             const dt = Math.min(100, Math.max(8, lastTickAt ? now - lastTickAt : 16));
             lastTickAt = now;
-            const step = revealStep(received.length - shown, dt, avgGap, now - lastDeltaAt, streamDone);
+            // 音声会話は読み上げを最優先: 表示の演出を省き、届いた分をすぐ出す（読み上げに即渡る）
+            const step = opts.voice
+              ? received.length - shown
+              : revealStep(received.length - shown, dt, avgGap, now - lastDeltaAt, streamDone);
             shown = Math.min(received.length, shown + step);
             if (shown < received.length && isHighSurrogate(received.charCodeAt(shown - 1))) shown++;
           }
