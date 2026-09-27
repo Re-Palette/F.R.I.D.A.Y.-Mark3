@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 // フォントはローカル同梱（外部CDNに依存しない）
 import "@fontsource/michroma/latin-400.css";
+import "@fontsource/share-tech-mono/latin-400.css";
 import "@fontsource/orbitron/latin-400.css";
 import "@fontsource/orbitron/latin-500.css";
 import "@fontsource/orbitron/latin-700.css";

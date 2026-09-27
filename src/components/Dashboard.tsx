@@ -97,6 +97,7 @@ export function Dashboard() {
     <div className="app">
       <div className="bg" aria-hidden="true">
         <div className="bg__circuit" />
+        <div className="bg__scan" />
         <div className="bg__glow" />
         <div className="bg__streaks">
           <i />
@@ -120,7 +121,14 @@ export function Dashboard() {
 
       <main className="center">
         <div className="stage" data-view={view} data-phase={chat.phase}>
-          <Orbit phase={chat.phase} chatStatus={agent.status} onOpenChat={openChat} hidden={inChat} />
+          <Orbit
+            phase={chat.phase}
+            chatStatus={agent.status}
+            onOpenChat={openChat}
+            hidden={inChat}
+            model={agent.model}
+            context={`${chat.lastRun.contextMessages ?? 0} / ${agent.maxContext} MSG`}
+          />
           <Conversation
             messages={chat.messages}
             phase={chat.phase}

@@ -6,6 +6,7 @@
  */
 import { forwardRef, useImperativeHandle, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatPhase } from "@/hooks/useChat";
+import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
 export interface ComposerHandle {
@@ -55,9 +56,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ ph
   };
 
   return (
-    <div className="composer" data-busy={busy || undefined}>
+    <div className="composer hud" data-busy={busy || undefined}>
+      <HudFrame cut={22} small={10} leds notch />
       <div className="composer__mic" title="音声入力（今後対応）" aria-hidden="true">
-        <Icon name="mic" size={26} strokeWidth={1.8} />
+        <svg className="composer__mic-ring" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="30" strokeDasharray="3 4.2" />
+          <path d="M32 2 A30 30 0 0 1 60 22" className="composer__mic-arc" />
+        </svg>
+        <Icon name="mic" size={24} strokeWidth={1.8} />
       </div>
       <div className="composer__main">
         <div className="composer__row">

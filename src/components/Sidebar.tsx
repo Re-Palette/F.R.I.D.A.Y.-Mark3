@@ -1,5 +1,6 @@
 import type { LastRunStats } from "@/hooks/useChat";
 import type { ChatAgentStatus } from "./Orbit";
+import { HudFrame } from "./HudFrame";
 import { Icon, type IconName } from "./icons";
 
 export type View = "home" | "chat";
@@ -51,7 +52,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <nav className="nav" aria-label="メインメニュー">
-        {NAV.map((n) => {
+        {NAV.map((n, i) => {
           const active = n.view === view;
           return (
             <button
@@ -66,13 +67,15 @@ export function Sidebar({
             >
               <Icon name={n.icon} size={23} strokeWidth={1.5} />
               <span className="nav__label">{n.label}</span>
+              <span className="nav__idx">{String(i + 1).padStart(2, "0")}</span>
               {!n.view && <span className="nav__soon">SOON</span>}
             </button>
           );
         })}
       </nav>
 
-      <section className="panel sys-status">
+      <section className="panel sys-status hud">
+        <HudFrame cut={16} leds />
         <div className="sys-status__head">
           <span className="sys-status__icon" data-ok={ok || undefined}>
             <Icon name="pulse" size={22} />

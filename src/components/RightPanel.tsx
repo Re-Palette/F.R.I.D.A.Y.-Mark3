@@ -1,12 +1,15 @@
 import { QUICK_ACCESS, SAMPLE_PROJECTS, SAMPLE_SCHEDULE, SAMPLE_WEATHER } from "@/data/dashboard";
+import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
-function PanelHead({ title, accent, extra }: { title: string; accent?: string; extra?: string }) {
+function PanelHead({ title, accent, extra, idx }: { title: string; accent?: string; extra?: string; idx: string }) {
   return (
     <div className="panel__head">
+      <span className="panel__idx">{idx}</span>
       <span>
         {title} {accent && <em>{accent}</em>}
       </span>
+      <i className="panel__rule" />
       {extra && <span className="panel__extra">{extra}</span>}
     </div>
   );
@@ -23,8 +26,9 @@ export function RightPanel() {
         <span>— F.R.I.D.A.Y.</span>
       </p>
 
-      <section className="panel" title={SAMPLE_TITLE}>
-        <PanelHead title="WEATHER /" accent={SAMPLE_WEATHER.city} />
+      <section className="panel hud" title={SAMPLE_TITLE}>
+        <HudFrame cut={14} />
+        <PanelHead title="WEATHER /" accent={SAMPLE_WEATHER.city} idx="01" />
         <div className="weather">
           <Icon name="weather" size={44} className="weather__icon" />
           <div className="weather__now">
@@ -44,8 +48,9 @@ export function RightPanel() {
         </div>
       </section>
 
-      <section className="panel" title={SAMPLE_TITLE}>
-        <PanelHead title="TODAY'S" accent="SCHEDULE" extra="VIEW ALL" />
+      <section className="panel hud" title={SAMPLE_TITLE}>
+        <HudFrame cut={14} />
+        <PanelHead title="TODAY'S" accent="SCHEDULE" extra="VIEW ALL" idx="02" />
         <ul className="schedule">
           {SAMPLE_SCHEDULE.map((s) => (
             <li key={s.time} data-accent={s.accent || undefined}>
@@ -58,8 +63,9 @@ export function RightPanel() {
         </ul>
       </section>
 
-      <section className="panel" title={SAMPLE_TITLE}>
-        <PanelHead title="CURRENT" accent="PROJECTS" extra="VIEW ALL" />
+      <section className="panel hud" title={SAMPLE_TITLE}>
+        <HudFrame cut={14} />
+        <PanelHead title="CURRENT" accent="PROJECTS" extra="VIEW ALL" idx="03" />
         <ul className="projects">
           {SAMPLE_PROJECTS.map((p) => (
             <li key={p.name}>
@@ -80,8 +86,9 @@ export function RightPanel() {
         </ul>
       </section>
 
-      <section className="panel">
-        <PanelHead title="QUICK" accent="ACCESS" />
+      <section className="panel hud">
+        <HudFrame cut={14} />
+        <PanelHead title="QUICK" accent="ACCESS" idx="04" />
         <div className="quick">
           {QUICK_ACCESS.map((q) =>
             "href" in q ? (

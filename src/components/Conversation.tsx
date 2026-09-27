@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatPhase, UiMessage } from "@/hooks/useChat";
 import { Core } from "./Core";
+import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 import { Markdown } from "./Markdown";
 
@@ -19,7 +20,10 @@ function Message({ msg, onRetry, canRetry }: { msg: UiMessage; onRetry: () => vo
   if (msg.role === "user") {
     return (
       <div className="msg msg--user">
-        <div className="msg__bubble">{msg.content}</div>
+        <div className="msg__bubble hud">
+          <HudFrame cut={10} small={4} ticks={false} />
+          {msg.content}
+        </div>
         <div className="msg__meta">{time(msg.createdAt)}</div>
       </div>
     );
@@ -32,7 +36,8 @@ function Message({ msg, onRetry, canRetry }: { msg: UiMessage; onRetry: () => vo
         <span className="msg__name">F.R.I.D.A.Y.</span>
         <span className="msg__time">{time(msg.createdAt)}</span>
       </div>
-      <div className="msg__panel">
+      <div className="msg__panel hud">
+        <HudFrame cut={14} />
         {waiting ? (
           <span className="signal" aria-label="応答を生成中">
             <i />
