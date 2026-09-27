@@ -19,6 +19,8 @@ export interface AgentContext {
 export interface AgentOutputChunk {
   text: string;
   finishReason?: string;
+  /** 実際に応答したモデル（最初のチャンクにだけ付く） */
+  model?: string;
 }
 
 export interface Agent {

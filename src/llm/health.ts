@@ -19,7 +19,7 @@ let lastWarm = 0;
 
 export async function checkGemini(): Promise<FridayError | null> {
   const config = getGeminiConfig();
-  const key = `${config.apiKey ?? ""}::${config.model}::${config.baseUrl}`;
+  const key = `${config.apiKey ?? ""}::${config.models.join(",")}::${config.baseUrl}`;
   const now = Date.now();
   if (cache && cache.key === key && now - cache.at < (cache.error ? FAIL_TTL : OK_TTL)) return cache.error;
 

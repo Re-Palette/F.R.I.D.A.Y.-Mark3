@@ -23,6 +23,10 @@ function useAgentStatus() {
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/status", { cache: "no-store" });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
       const json = (await res.json()) as StatusResponse;
       const chat = json.agents.chat;
       setStatus(chat?.status === "online" ? "online" : "offline");

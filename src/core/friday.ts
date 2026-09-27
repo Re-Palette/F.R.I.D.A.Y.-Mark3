@@ -55,12 +55,13 @@ export async function* handleConversation(
     const window = buildConversationWindow(history, getContextConfig());
     const agent = await routeRequest(window.messages);
 
-    yield {
-      type: "meta",
+    const meta = {
+      type: "meta" as const,
       agent: agent.id,
       model: agent.describe().model,
       contextMessages: window.messages.length,
     };
+    yield meta;
 
     let finishReason: string | undefined;
     for await (const chunk of agent.run({
@@ -70,6 +71,8 @@ export async function* handleConversation(
       timezone: getTimezone(),
       signal,
     })) {
+      // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
+      if (chunk.model && chunk.model !== meta.model) yield { ...meta, model: chunk.model };
       if (chunk.text) yield { type: "delta", text: chunk.text };
       if (chunk.finishReason) finishReason = chunk.finishReason;
     }

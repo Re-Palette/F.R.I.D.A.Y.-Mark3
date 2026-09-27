@@ -21,6 +21,8 @@ export interface GeminiStreamOptions {
 export interface GeminiChunk {
   text: string;
   finishReason?: string;
+  /** 実際に応答したモデル（最初のチャンクにだけ付く） */
+  model?: string;
 }
 
 interface GeminiResponsePart {
@@ -117,9 +119,9 @@ function isThinkingConfigError(err: FridayError): boolean {
   return err.code === "BAD_REQUEST" && /thinking/i.test(err.message);
 }
 
-async function request(opts: GeminiStreamOptions, withThinking: boolean): Promise<Response> {
+async function request(opts: GeminiStreamOptions, model: string, withThinking: boolean): Promise<Response> {
   const { config } = opts;
-  const url = `${config.baseUrl}/models/${encodeURIComponent(config.model)}:streamGenerateContent?alt=sse`;
+  const url = `${config.baseUrl}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
   try {
     return await fetch(url, {
       method: "POST",
@@ -164,18 +166,34 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 const MAX_ATTEMPTS = 3;
 
 /**
- * ストリームを開始する。本文を読み始める前なので、ここでの再試行はユーザーに見えない。
+ * 一時的に使えないモデル（無料枠の使い切りなど）。期限まではスキップして次の候補を使う。
+ * 未提供（404）のモデルはプロセスが続く限りスキップする。
+ */
+const unavailableUntil = new Map<string, number>();
+const RATE_LIMIT_COOLDOWN = 10 * 60_000;
+
+function isAvailable(model: string): boolean {
+  const until = unavailableUntil.get(model);
+  if (until === undefined) return true;
+  if (Date.now() >= until) {
+    unavailableUntil.delete(model);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 1 つのモデルでストリームを開始する。本文を読み始める前なので、ここでの再試行はユーザーに見えない。
  *  - 混雑 (5xx) や瞬断は短い間隔で自動再試行
  *  - thinkingLevel 非対応モデルは設定を外して再送し、以後は外したまま送る
  */
-async function connect(opts: GeminiStreamOptions): Promise<Response> {
-  const model = opts.config.model;
+async function connectModel(opts: GeminiStreamOptions, model: string): Promise<Response> {
   let withThinking = Boolean(opts.config.thinkingLevel) && !noThinkingModels.has(model);
 
   for (let attempt = 1; ; attempt++) {
     let res: Response;
     try {
-      res = await request(opts, withThinking);
+      res = await request(opts, model, withThinking);
     } catch (err) {
       if (err instanceof FridayError && err.retryable && attempt < MAX_ATTEMPTS) {
         await sleep(350 * attempt, opts.signal);
@@ -202,6 +220,46 @@ async function connect(opts: GeminiStreamOptions): Promise<Response> {
 }
 
 /**
+ * 候補モデルを優先順に試す。使い切り（429）や未提供（404）なら次の候補へ自動で切り替える。
+ */
+async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; model: string }> {
+  const candidates = opts.config.models.filter(isAvailable);
+  // すべて使えない状態なら、念のため全候補をもう一度試す
+  const order = candidates.length ? candidates : opts.config.models;
+  let lastError: FridayError | undefined;
+
+  for (const model of order) {
+    try {
+      return { res: await connectModel(opts, model), model };
+    } catch (err) {
+      if (!(err instanceof FridayError)) throw err;
+      if (err.code === "RATE_LIMITED") {
+        unavailableUntil.set(model, Date.now() + RATE_LIMIT_COOLDOWN);
+      } else if (err.code === "MODEL_NOT_FOUND") {
+        unavailableUntil.set(model, Number.POSITIVE_INFINITY);
+      } else {
+        throw err;
+      }
+      lastError = err;
+    }
+  }
+
+  if (lastError?.code === "RATE_LIMITED") {
+    throw new FridayError(
+      "RATE_LIMITED",
+      "今日の無料枠を使い切りました。日本時間の夕方（16〜17時ごろ）にリセットされます。",
+      429,
+      true,
+    );
+  }
+  throw new FridayError(
+    "MODEL_NOT_FOUND",
+    `利用できるモデルが見つかりません（${opts.config.models.join(", ")}）。GEMINI_MODEL を確認してください。`,
+    404,
+  );
+}
+
+/**
  * 軽量な接続確認（models.get）。生成は行わないのでトークンを消費しない。
  * API キー・モデル名の検証と、TLS 接続の事前確立（ウォームアップ）を兼ねる。
  */
@@ -209,20 +267,32 @@ export async function pingGemini(config: GeminiConfig, signal?: AbortSignal): Pr
   if (!config.apiKey) {
     return new FridayError("MISSING_API_KEY", "Gemini API キーが設定されていません。", 503);
   }
-  try {
-    const res = await fetch(`${config.baseUrl}/models/${encodeURIComponent(config.model)}`, {
-      headers: { "x-goog-api-key": config.apiKey },
-      signal,
-      cache: "no-store",
-    });
-    if (res.ok) {
-      await res.body?.cancel().catch(() => {});
-      return null;
+  let lastError: FridayError | null = null;
+  for (const model of config.models) {
+    try {
+      const res = await fetch(`${config.baseUrl}/models/${encodeURIComponent(model)}`, {
+        headers: { "x-goog-api-key": config.apiKey },
+        signal,
+        cache: "no-store",
+      });
+      if (res.ok) {
+        await res.body?.cancel().catch(() => {});
+        return null;
+      }
+      lastError = await mapHttpError(res, model);
+      // キーの問題はどのモデルでも同じなので打ち切る
+      if (lastError.code !== "MODEL_NOT_FOUND") return lastError;
+    } catch {
+      return new FridayError("NETWORK_ERROR", "Gemini に接続できませんでした。", 503, true);
     }
-    return await mapHttpError(res, config.model);
-  } catch {
-    return new FridayError("NETWORK_ERROR", "Gemini に接続できませんでした。", 503, true);
   }
+  return config.models.length > 1
+    ? new FridayError(
+        "MODEL_NOT_FOUND",
+        `利用できるモデルが見つかりません（${config.models.join(", ")}）。GEMINI_MODEL を確認してください。`,
+        404,
+      )
+    : lastError;
 }
 
 /**
@@ -238,7 +308,8 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
     );
   }
 
-  const res = await connect(opts);
+  const { res, model } = await connect(opts);
+  let modelReported = false;
   if (!res.body) {
     throw new FridayError("UPSTREAM_ERROR", "Gemini から空のレスポンスが返りました。", 502, true);
   }
@@ -304,6 +375,10 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
         const chunk = handleEvent(rawEvent);
         if (!chunk) continue;
         if (chunk.text) producedText = true;
+        if (!modelReported) {
+          chunk.model = model;
+          modelReported = true;
+        }
         if (chunk.finishReason === "SAFETY" && !producedText) {
           throw new FridayError(
             "SAFETY_BLOCKED",
