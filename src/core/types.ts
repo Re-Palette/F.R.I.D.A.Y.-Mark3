@@ -37,6 +37,8 @@ export type StreamEvent =
   | { type: "calendar"; action: "add" | "update" | "delete"; ok: boolean; title: string; when: string; error?: string }
   /** Web 検索で参照したページ */
   | { type: "sources"; sources: { title: string; uri: string }[] }
+  /** ニュースの設定（時間・興味のある分野）を変えた結果 */
+  | { type: "news-settings"; ok: boolean; time?: string; topics?: string[]; error?: string }
   | { type: "done"; finishReason?: string }
   | { type: "error"; code: string; message: string; retryable: boolean };
 
@@ -52,6 +54,8 @@ export interface StatusResponse {
   calendar: { configured: boolean; connected: boolean };
   /** Web 検索（auto: 必要なときだけ / always / off） */
   search: "auto" | "always" | "off";
+  /** 毎日のニュース（time: "07:00" / "off"） */
+  news: { time: string; topics: string[] };
 }
 
 /** 右パネルなどに表示する予定（サーバーで表示用に整えたもの） */

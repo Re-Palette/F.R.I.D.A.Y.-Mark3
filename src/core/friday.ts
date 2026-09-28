@@ -10,6 +10,8 @@ import { FridayError, toFridayError } from "@/lib/errors";
 import { buildConversationWindow } from "@/memory/context";
 import { getLongTermMemory, type SaveTurnInput } from "@/memory/long-term";
 import type { CalendarAccess } from "@/integrations/google-calendar";
+import { saveNewsSettings } from "@/integrations/news";
+import type { AgentContext } from "@/agents/types";
 import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
 
@@ -59,6 +61,8 @@ export async function* handleConversation(
     onTurn?: (turn: SaveTurnInput | null) => void;
     /** この端末で接続済みの Google カレンダー */
     calendar?: CalendarAccess;
+    /** ニュースの設定と、今回まとめて伝えるか */
+    news?: AgentContext["news"];
   } = {},
 ): AsyncGenerator<StreamEvent> {
   let turn: SaveTurnInput | null = null;
@@ -77,7 +81,7 @@ export async function* handleConversation(
     const memory = getLongTermMemory();
     let finishReason: string | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", ...CALENDAR_TAGS] as const);
+    const tags = new TagFilter(["memory", "news-settings", ...CALENDAR_TAGS] as const);
     const sources: { title: string; uri: string }[] = [];
     for await (const chunk of agent.run({
       messages: window.messages,
@@ -86,6 +90,7 @@ export async function* handleConversation(
       timezone: getTimezone(),
       voice: options.voice ?? false,
       calendar: options.calendar,
+      news: options.news,
       signal,
     })) {
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
@@ -116,7 +121,37 @@ export async function* handleConversation(
         yield { type: "delta", text };
       }
     }
-    if (sources.length) yield { type: "sources", sources: sources.slice(0, 6) };
+    if (sources.length) yield { type: "sources", sources: sources.slice(0, 8) };
+
+    // ニュースの設定変更（時間・興味のある分野）
+    for (const raw of tags.captures["news-settings"].slice(0, 1)) {
+      let change: { time?: string; topics?: string[] } | null = null;
+      try {
+        const v = JSON.parse(raw) as { time?: unknown; topics?: unknown };
+        change = {
+          ...(typeof v.time === "string" ? { time: v.time } : {}),
+          ...(Array.isArray(v.topics) ? { topics: v.topics.map(String) } : {}),
+        };
+      } catch {
+        /* 読めなければ失敗扱い */
+      }
+      let error: string | undefined;
+      if (!change || (!change.time && !change.topics)) error = "設定の内容を読み取れませんでした。";
+      else if (!options.news?.canSave) error = "脳（Obsidian）が接続されていないため保存できません。";
+      else {
+        try {
+          const saved = await saveNewsSettings(change);
+          yield { type: "news-settings", ok: true, time: saved.time, topics: saved.topics };
+          continue;
+        } catch {
+          error = "脳に保存できませんでした。";
+        }
+      }
+      yield { type: "news-settings", ok: false, error };
+      const text = `${reply.endsWith("\n") ? "" : "\n\n"}（ニュースの設定を変更できませんでした。${error}）`;
+      reply += text;
+      yield { type: "delta", text };
+    }
 
     const facts = tags.captures.memory.map(toFact).filter(Boolean);
     // 脳が無い・つながらないときは保存されないので、覚えたとは表示しない（保存自体は試みる）

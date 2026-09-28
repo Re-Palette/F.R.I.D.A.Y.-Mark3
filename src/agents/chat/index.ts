@@ -55,7 +55,9 @@ export const chatAgent: Agent = {
 
     // Web 検索: 最新情報が必要そうな発言だけ（無料枠の回数を節約）
     const mode = getSearchMode();
-    const search = mode === "always" || (mode === "auto" && needsSearch(latest));
+    const briefing = Boolean(ctx.news?.deliver);
+    // ニュースをまとめるときは検索する（FRIDAY_SEARCH=off のときだけは検索しない）
+    const search = mode !== "off" && (mode === "always" || briefing || needsSearch(latest));
 
     const contents: GeminiContent[] = ctx.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
@@ -63,9 +65,12 @@ export const chatAgent: Agent = {
     }));
 
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
+    // ニュースのまとめは長くなるので上限を広げる
     const runConfig = ctx.voice
-      ? { ...config, thinkingLevel: "minimal" as const, maxOutputTokens: Math.min(config.maxOutputTokens, 400) }
-      : config;
+      ? { ...config, thinkingLevel: "minimal" as const, maxOutputTokens: briefing ? 1200 : Math.min(config.maxOutputTokens, 400) }
+      : briefing
+        ? { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, 3000) }
+        : config;
 
     yield* streamGemini({
       config: runConfig,
@@ -77,6 +82,7 @@ export const chatAgent: Agent = {
         calendar: ctx.calendar ? { connected: true, events } : { connected: false },
         weather,
         search,
+        news: ctx.news,
         voice: ctx.voice,
       }),
       contents,

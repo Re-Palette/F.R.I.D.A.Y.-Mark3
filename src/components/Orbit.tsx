@@ -196,6 +196,7 @@ function Readouts({
   voice,
   brain,
   calendar,
+  news,
 }: {
   model?: string;
   context: string;
@@ -203,6 +204,7 @@ function Readouts({
   voice: string;
   brain: string;
   calendar: string;
+  news: string;
 }) {
   const [uptime, setUptime] = useState(0);
   useEffect(() => {
@@ -215,20 +217,20 @@ function Readouts({
     <div className="readouts" aria-hidden="true">
       <div className="readout readout--tl">
         <b>SYS://FRIDAY.CORE</b>
-        <span>BUILD MK-III · PHASE 01</span>
         <span>
           AGENTS <em>{onlineCount}</em>/{AGENT_CARDS.length} ONLINE
         </span>
         <span>LINK // {model ?? "—"}</span>
         <span>VOICE // {voice}</span>
         <span>BRAIN // {brain}</span>
-        <span>CALENDAR // {calendar}</span>
       </div>
       <div className="readout readout--tr">
         <b>SESSION UPTIME</b>
         <span className="readout__big">
           {pad(Math.floor(uptime / 3600))}:{pad(Math.floor((uptime % 3600) / 60))}:{pad(uptime % 60)}
         </span>
+        <span>CALENDAR // {calendar}</span>
+        <span>NEWS // {news}</span>
       </div>
       <div className="readout readout--br">
         <b>CONTEXT WINDOW</b>
@@ -248,6 +250,7 @@ export const Orbit = memo(function Orbit({
   voice = "BROWSER",
   brain,
   calendar = "NOT SET",
+  news = "—",
 }: {
   phase: ChatPhase;
   chatStatus: ChatAgentStatus;
@@ -258,6 +261,7 @@ export const Orbit = memo(function Orbit({
   voice?: string;
   brain?: StatusResponse["brain"];
   calendar?: string;
+  news?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { traces, box } = useTraces(ref);
@@ -283,6 +287,7 @@ export const Orbit = memo(function Orbit({
         voice={voice}
         brain={!brain?.configured ? "NOT LINKED" : brain.connected ? `${brain.notes ?? 0} NOTES` : "OFFLINE"}
         calendar={calendar}
+        news={news}
       />
       <div className="orbit__core">
         <Core phase={phase} />

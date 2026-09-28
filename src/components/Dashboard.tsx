@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
-import { useChat } from "@/hooks/useChat";
+import { STATUS_CHANGED, useChat } from "@/hooks/useChat";
 import { useVoice } from "@/hooks/useVoice";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
@@ -45,6 +45,7 @@ function useAgentStatus() {
   const [tts, setTts] = useState<StatusResponse["tts"]>({ provider: "browser" });
   const [brain, setBrain] = useState<StatusResponse["brain"]>({ configured: false, connected: false });
   const [calendar, setCalendar] = useState<StatusResponse["calendar"]>({ configured: false, connected: false });
+  const [news, setNews] = useState<StatusResponse["news"]>();
 
   const refresh = useCallback(async () => {
     try {
@@ -62,6 +63,7 @@ function useAgentStatus() {
       if (json.tts) setTts(json.tts);
       if (json.brain) setBrain(json.brain);
       if (json.calendar) setCalendar(json.calendar);
+      if (json.news) setNews(json.news);
     } catch {
       setStatus("offline");
       setReason("サーバーに接続できません");
@@ -72,10 +74,14 @@ function useAgentStatus() {
     void refresh();
     const onFocus = () => void refresh();
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener(STATUS_CHANGED, onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(STATUS_CHANGED, onFocus);
+    };
   }, [refresh]);
 
-  return { status, model, maxContext, reason, tts, brain, calendar, refresh, setStatus };
+  return { status, model, maxContext, reason, tts, brain, calendar, news, refresh, setStatus };
 }
 
 export function Dashboard() {
@@ -222,6 +228,7 @@ export function Dashboard() {
             voice={agent.tts.provider === "elevenlabs" ? "ELEVENLABS" : "BROWSER"}
             brain={agent.brain}
             calendar={!agent.calendar.configured ? "NOT SET" : agent.calendar.connected ? "LINKED" : "NOT LINKED"}
+            news={!agent.news ? "—" : agent.news.time === "off" ? "OFF" : `DAILY ${agent.news.time}`}
           />
           <Conversation
             messages={chat.messages}

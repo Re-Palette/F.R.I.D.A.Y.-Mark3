@@ -40,6 +40,7 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `GOOGLE_CALENDAR_ID` | | `primary` | 読み書きするカレンダー |
 | `WEATHER_CITY` / `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` | | 東京 | 天気の場所（Open-Meteo・登録不要） |
 | `FRIDAY_SEARCH` | | `auto` | Web 検索。`auto`（必要なときだけ）/ `always` / `off` |
+| `NEWS_TIME` / `NEWS_TOPICS` | | `07:00` / なし | 毎日のニュースの時間と興味のある分野（脳の「ニュース」ノートが優先） |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
@@ -140,6 +141,13 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   無料枠の検索回数を節約するためです。常に使う場合は `FRIDAY_SEARCH=always`。
 - 参照したページは返答の下にリンクで表示します（読み上げはしません）。
 - 検索が使えない・検索の無料枠を使い切ったときは、自動で検索なしで答えます。
+
+### 毎日のニュース
+
+- 設定した時間（既定 7:00）を過ぎてから **その日最初に話しかけたとき**、まず発言に答えてから、今日の主なニュース 3 本と「興味のある分野」ごとのニュースを検索してまとめて伝えます。
+  その日に伝えたかは Cookie（端末ごと）で覚えます。「今日のニュースは？」と聞けばいつでもまとめます。
+- 時間と分野は脳の `FRIDAY/ニュース.md`（`## 時間` / `## 興味のある分野`）に保存。Obsidian で書き換えても、
+  「ニュースの時間を 7 時半にして」「興味にサッカーを追加して」と話しかけても変えられます（`<news-settings>` タグ）。
 
 ### 音声会話
 

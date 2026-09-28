@@ -35,10 +35,14 @@ export interface UiMessage {
   calendar?: { action: "add" | "update" | "delete"; ok: boolean; title: string; when: string; error?: string }[];
   /** Web 検索で参照したページ */
   sources?: { title: string; uri: string }[];
+  /** ニュースの設定を変えた結果 */
+  newsSettings?: { ok: boolean; time?: string; topics?: string[]; error?: string };
 }
 
 /** 予定を追加したら右パネルなどに知らせるイベント名 */
 export const CALENDAR_CHANGED = "friday:calendar-changed";
+/** 設定が変わったので状態を読み直してほしいときのイベント名 */
+export const STATUS_CHANGED = "friday:status-changed";
 
 export interface SendOptions {
   /** 音声会話モード（読み上げ向けの短い話し言葉で返答させる） */
@@ -294,6 +298,12 @@ export function useChat() {
                 const { action, ok, title, when, error } = event;
                 patch(assistantId, (m) => ({ ...m, calendar: [...(m.calendar ?? []), { action, ok, title, when, error }] }));
                 if (ok) window.dispatchEvent(new Event(CALENDAR_CHANGED));
+                break;
+              }
+              case "news-settings": {
+                const { ok, time, topics, error } = event;
+                patch(assistantId, (m) => ({ ...m, newsSettings: { ok, time, topics, error } }));
+                window.dispatchEvent(new Event(STATUS_CHANGED));
                 break;
               }
               case "sources": {

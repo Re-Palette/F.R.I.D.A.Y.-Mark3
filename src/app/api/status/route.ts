@@ -10,6 +10,7 @@ import { isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-ca
 import { checkGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { checkBrain } from "@/memory/obsidian";
+import { readNewsSettings } from "@/integrations/news";
 import { checkTts, isTtsConfigured } from "@/voice/elevenlabs";
 
 export const runtime = "nodejs";
@@ -44,7 +45,10 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const brain = await brainCheck;
+  const newsSettings = await readNewsSettings().catch(() => ({ time: "07:00", topics: [] as string[] }));
   const calendar = { configured: isCalendarConfigured(), connected: Boolean(refreshTokenFrom(req)) };
-  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar, search: getSearchMode() };
+  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar, search: getSearchMode(),
+    news: { time: newsSettings.time, topics: newsSettings.topics },
+  };
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

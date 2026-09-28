@@ -5,6 +5,7 @@
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { WeatherReport } from "@/integrations/weather";
 import { weatherSummary } from "@/integrations/weather";
+import type { AgentContext } from "@/agents/types";
 import type { MemoryRecord } from "@/memory/long-term";
 
 export interface PersonaInput {
@@ -20,6 +21,8 @@ export interface PersonaInput {
   weather?: WeatherReport | null;
   /** 今回の返答で Google 検索を使えるか */
   search?: boolean;
+  /** ニュースの設定と、今回まとめて伝えるか */
+  news?: AgentContext["news"];
 }
 
 function formatNow(now: Date, timezone: string): string {
@@ -52,6 +55,7 @@ export function buildSystemInstruction({
   calendar,
   weather,
   search,
+  news,
 }: PersonaInput): string {
   const calendarOn = calendar?.connected === true;
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。ユーザー一人のために動く専属AIアシスタントであり、ユーザー専用の「個人用AI OS」の中核です。汎用チャットボットではありません。
@@ -97,6 +101,7 @@ export function buildSystemInstruction({
   let out = voice ? base + VOICE_RULES : base;
   if (weather) out += `\n\n# 天気（Open-Meteo）\n${weatherSummary(weather)}`;
   out += MORNING_RULES;
+  if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
   if (calendar?.connected) out += calendarSection(calendar.events, now, timezone);
   if (!memoryConnected) return out;
 
@@ -164,3 +169,45 @@ const MORNING_RULES = `
   3. 脳の記憶やプロジェクトから、今日意識するとよいことを一つ
   4. 最後に一言（励ましや提案）
 - 分かっていない情報は作らず、その項目は飛ばす。文字の会話でも全体で 5〜7 行程度、音声なら 3〜4 文に収める。`;
+
+/** ニュースのまとめと、ニュース設定の変え方 */
+function newsSection(news: NonNullable<AgentContext["news"]>, search: boolean, voice: boolean, now: Date, timezone: string): string {
+  const { settings, deliver, canSave } = news;
+  const topics = settings.topics.length ? settings.topics.join("、") : "（未設定。プロフィールや脳の記憶から興味を推測してよい）";
+  const today = new Intl.DateTimeFormat("ja-JP", { timeZone: timezone, month: "long", day: "numeric", weekday: "short" }).format(now);
+  let out = `
+
+# ニュースの設定
+- 毎日のニュースの時間: ${settings.time === "off" ? "オフ（自動では伝えない）" : `${settings.time} 以降の最初の会話`}
+- 興味のある分野: ${topics}`;
+
+  if (deliver) {
+    const intro =
+      deliver === "scheduled"
+        ? "今回はその日最初の会話なので、まずユーザーの発言に普通に答え、そのあと「それと、今日のニュースです」のように自然につないで、ニュースをまとめて伝える（発言が朝のあいさつなら、あいさつの段取りのあとに続ける）。"
+        : "ユーザーがニュースを求めているので、ニュースをまとめて伝える。";
+    out += `
+
+# 今日のニュースのまとめ方（今回実行する・${today}）
+- ${intro}
+- ${search ? "必ず Google 検索で今日・昨日の最新ニュースを調べてから答える。" : "今回は検索が使えない。最新ニュースは分からないと正直に伝え、作り話はしない。"}
+- 構成：
+  1. 主なニュース 3 本（国内・国際・経済などから重要なもの）
+  2. 興味のある分野（${topics}）ごとに 1〜2 本。その分野で目立つニュースが無ければ「特に大きな動きはなし」と一言
+- 1 本につき「何が起きたか」を 1〜2 文で。ユーザーの取り組み（脳のプロジェクト・目標）に関係しそうなら一言添える。
+- 日付がはっきりしない古い話題は今日のニュースとして扱わない。推測で数字や固有名詞を作らない。
+- ${voice ? "音声なので、見出しや記号は使わず、全体で 6〜10 文の話し言葉にまとめる。" : "見出しと短い箇条書きで読みやすくまとめる。URL は書かない（出典は画面に表示される）。"}`;
+  }
+
+  out += canSave
+    ? `
+
+# ニュース設定の変え方
+- 「ニュースの時間を 7 時半にして」「興味にファッションを追加して」「AI の分野は外して」などと頼まれたら、返答の最後に次の形式で 1 行付ける（変える項目だけ）：
+<news-settings>{"time":"HH:MM","topics":["分野1","分野2"]}</news-settings>
+- topics は変更後の一覧すべてを書く（上の今の一覧に足したり除いたりしたもの）。自動のまとめをやめたいときは "time":"off"。
+- タグは見えず、脳の「ニュース」ノートに保存される。本文では変更内容を一言で伝える。`
+    : `
+- ニュースの時間や分野を変えたいと言われたら、脳（Obsidian）を接続すると声で変えられると伝える。`;
+  return out;
+}

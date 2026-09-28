@@ -89,6 +89,19 @@ const Message = memo(function Message({
           ))}
         </ul>
       )}
+      {msg.newsSettings && (
+        <ul className="msg__memories" aria-label="ニュースの設定">
+          <li
+            className="memory-chip memory-chip--calendar"
+            data-failed={!msg.newsSettings.ok || undefined}
+            title={msg.newsSettings.ok ? "脳の「ニュース」ノートに保存しました" : msg.newsSettings.error}
+          >
+            <Icon name="doc" size={12} /> <span>{msg.newsSettings.ok ? "NEWS SETTINGS" : "NEWS SETTINGS FAILED"}</span>
+            {msg.newsSettings.ok &&
+              ` ${msg.newsSettings.time === "off" ? "自動オフ" : msg.newsSettings.time} · ${msg.newsSettings.topics?.join("、") || "分野なし"}`}
+          </li>
+        </ul>
+      )}
       {msg.status !== "streaming" && msg.sources && msg.sources.length > 0 && (
         <ul className="msg__sources" aria-label="検索で参照したページ">
           {msg.sources.map((src) => (
