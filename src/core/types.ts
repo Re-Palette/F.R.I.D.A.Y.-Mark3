@@ -33,8 +33,10 @@ export type StreamEvent =
   | { type: "delta"; text: string }
   /** F.R.I.D.A.Y. が脳に覚えたこと（返答の本文には含まれない） */
   | { type: "memory"; text: string }
-  /** Google カレンダーに予定を追加した結果（返答の本文には含まれない） */
-  | { type: "calendar"; ok: boolean; title: string; when: string; error?: string }
+  /** Google カレンダーの予定を追加・変更・削除した結果（返答の本文には含まれない） */
+  | { type: "calendar"; action: "add" | "update" | "delete"; ok: boolean; title: string; when: string; error?: string }
+  /** Web 検索で参照したページ */
+  | { type: "sources"; sources: { title: string; uri: string }[] }
   | { type: "done"; finishReason?: string }
   | { type: "error"; code: string; message: string; retryable: boolean };
 
@@ -48,6 +50,8 @@ export interface StatusResponse {
   brain: { configured: boolean; connected: boolean; notes?: number; reason?: string };
   /** Google カレンダー（configured: サーバー側の設定あり / connected: この端末が接続済み） */
   calendar: { configured: boolean; connected: boolean };
+  /** Web 検索（auto: 必要なときだけ / always / off） */
+  search: "auto" | "always" | "off";
 }
 
 /** 右パネルなどに表示する予定（サーバーで表示用に整えたもの） */

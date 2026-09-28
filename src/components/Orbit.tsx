@@ -12,6 +12,9 @@ import { Core } from "./Core";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
+/** Gemini が動いていれば動く Agent（Chat / Search）の数 */
+const LIVE_CARDS = AGENT_CARDS.filter((c) => c.phase === "live").length;
+
 export type ChatAgentStatus = "checking" | "online" | "offline";
 
 const PHASE_LABEL: Record<AgentCardDef["phase"], string> = {
@@ -276,7 +279,7 @@ export const Orbit = memo(function Orbit({
       <Readouts
         model={model}
         context={context}
-        onlineCount={(chatStatus === "online" ? 1 : 0) + (brain?.connected ? 1 : 0)}
+        onlineCount={(chatStatus === "online" ? LIVE_CARDS : 0) + (brain?.connected ? 1 : 0)}
         voice={voice}
         brain={!brain?.configured ? "NOT LINKED" : brain.connected ? `${brain.notes ?? 0} NOTES` : "OFFLINE"}
         calendar={calendar}

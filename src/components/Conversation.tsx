@@ -15,6 +15,8 @@ function time(ts: number) {
   return new Date(ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 }
 
+const CALENDAR_LABEL = { add: "CALENDAR ADDED", update: "CALENDAR UPDATED", delete: "CALENDAR DELETED" } as const;
+
 const SUGGESTIONS = ["おはよう", "ちょっと相談がある", "大学受験どうしようかな", "この企画どう思う？"];
 
 const Message = memo(function Message({
@@ -79,9 +81,21 @@ const Message = memo(function Message({
               key={`${c.title}-${i}`}
               className="memory-chip memory-chip--calendar"
               data-failed={!c.ok || undefined}
-              title={c.ok ? "Google カレンダーに追加しました" : c.error}
+              title={c.ok ? "Google カレンダーを更新しました" : c.error}
             >
-              <Icon name="calendar" size={12} /> <span>{c.ok ? "CALENDAR ADDED" : "CALENDAR FAILED"}</span> {c.when} {c.title}
+              <Icon name="calendar" size={12} /> <span>{c.ok ? CALENDAR_LABEL[c.action] : "CALENDAR FAILED"}</span> {c.when}{" "}
+              {c.title}
+            </li>
+          ))}
+        </ul>
+      )}
+      {msg.status !== "streaming" && msg.sources && msg.sources.length > 0 && (
+        <ul className="msg__sources" aria-label="検索で参照したページ">
+          {msg.sources.map((src) => (
+            <li key={src.uri}>
+              <a href={src.uri} target="_blank" rel="noreferrer noopener" title={src.title}>
+                <Icon name="search" size={11} /> {src.title}
+              </a>
             </li>
           ))}
         </ul>

@@ -182,6 +182,28 @@ export interface CalendarEvent {
   rangeLabel: string;
 }
 
+/** 日時を読む。時差の書かれていない日時は、その地域の時刻として読む */
+function parseDateTime(iso: string, tz: string): Date {
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(iso)) return new Date(iso);
+  const noon = new Date(`${iso.slice(0, 10)}T12:00:00Z`);
+  return new Date(`${iso}${tzOffset(noon, tz)}`);
+}
+
+/** Date → その地域の "2026-09-29T15:00" */
+function localDateTime(date: Date, tz: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .format(date)
+    .replace(" ", "T");
+}
+
 interface GoogleEvent {
   id: string;
   summary?: string;
@@ -195,12 +217,7 @@ function toEvent(e: GoogleEvent, tz: string): CalendarEvent {
   const allDay = !e.start?.dateTime;
   const start = e.start?.dateTime ?? e.start?.date ?? "";
   const end = e.end?.dateTime ?? e.end?.date ?? start;
-  // 時差の書かれていない日時は、その地域の時刻として読む
-  const parse = (iso: string) => {
-    if (/(Z|[+-]\d{2}:?\d{2})$/.test(iso)) return new Date(iso);
-    const noon = new Date(`${iso.slice(0, 10)}T12:00:00Z`);
-    return new Date(`${iso}${tzOffset(noon, tz)}`);
-  };
+  const parse = (iso: string) => parseDateTime(iso, tz);
   const startDate = allDay ? new Date(`${start}T12:00:00Z`) : parse(start);
   const time = (iso: string) =>
     new Intl.DateTimeFormat("ja-JP", { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(parse(iso));
@@ -316,7 +333,8 @@ export class CalendarAccess {
     const json = (await res.json()) as { items?: GoogleEvent[] };
     const from = Date.parse(timeMin);
     const to = Date.parse(timeMax);
-    const edge = (iso: string, allDay: boolean) => (allDay ? Date.parse(`${iso}T00:00:00${timeMin.slice(19)}`) : Date.parse(iso));
+    const edge = (iso: string, allDay: boolean) =>
+      allDay ? Date.parse(`${iso}T00:00:00${timeMin.slice(19)}`) : parseDateTime(iso, this.tz).getTime();
     return (json.items ?? [])
       .filter((e) => e.status !== "cancelled")
       .map((e) => toEvent(e, this.tz))
@@ -329,4 +347,65 @@ export class CalendarAccess {
     if (!res.ok) throw apiError(res.status);
     return toEvent((await res.json()) as GoogleEvent, this.tz);
   }
+
+  private async get(id: string): Promise<CalendarEvent> {
+    if (!id) throw new CalendarError("CALENDAR_BAD_EVENT", "どの予定か分かりませんでした。");
+    const res = await api(this.refresh, `/events/${encodeURIComponent(id)}`);
+    if (res.status === 404 || res.status === 410) throw new CalendarError("CALENDAR_EVENT_GONE", "その予定が見つかりませんでした。");
+    if (!res.ok) throw apiError(res.status);
+    const event = (await res.json()) as GoogleEvent;
+    if (event.status === "cancelled") throw new CalendarError("CALENDAR_EVENT_GONE", "その予定は既に削除されています。");
+    return toEvent(event, this.tz);
+  }
+
+  /** 予定を変更する。時刻だけ変えたときは元の長さを保つ */
+  async update(input: EventChangeInput): Promise<{ before: CalendarEvent; after: CalendarEvent }> {
+    const before = await this.get(String(input.id ?? "").trim());
+    const patch: Record<string, unknown> = {};
+    if (input.title?.trim()) patch.summary = input.title.trim().slice(0, 200);
+    if (typeof input.location === "string") patch.location = input.location.trim().slice(0, 200);
+
+    const start = input.start?.trim();
+    const end = input.end?.trim();
+    if (start || end) {
+      let range: Record<string, unknown>;
+      if (input.allDay || (start && DATE.test(start)) || (!start && before.allDay)) {
+        // 終日の予定: 日数を保つ
+        const days = before.allDay ? Math.max(1, Math.round((Date.parse(before.end) - Date.parse(before.start)) / 86_400_000)) : 1;
+        const first = (start ?? before.start).slice(0, 10);
+        range = normalizeNewEvent({ title: before.title, start: first, end: end ?? addDays(first, days - 1), allDay: true }, this.tz);
+      } else {
+        const oldStart = before.allDay ? undefined : parseDateTime(before.start, this.tz);
+        const oldEnd = before.allDay ? undefined : parseDateTime(before.end, this.tz);
+        const minutes = oldStart && oldEnd ? Math.max(5, Math.round((oldEnd.getTime() - oldStart.getTime()) / 60_000)) : 60;
+        const s = start ?? (oldStart ? localDateTime(oldStart, this.tz) : "");
+        if (!DATETIME.test(s)) throw new CalendarError("CALENDAR_BAD_EVENT", "変更後の日時が分かりませんでした。");
+        range = normalizeNewEvent({ title: before.title, start: s, end: end ?? addMinutes(s.slice(0, 16), minutes) }, this.tz);
+      }
+      patch.start = range.start;
+      patch.end = range.end;
+    }
+    if (!Object.keys(patch).length) throw new CalendarError("CALENDAR_BAD_EVENT", "何を変えるのか分かりませんでした。");
+
+    const res = await api(this.refresh, `/events/${encodeURIComponent(before.id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+    if (!res.ok) throw apiError(res.status);
+    return { before, after: toEvent((await res.json()) as GoogleEvent, this.tz) };
+  }
+
+  /** 予定を削除する */
+  async remove(id: string): Promise<CalendarEvent> {
+    const before = await this.get(String(id ?? "").trim());
+    const res = await api(this.refresh, `/events/${encodeURIComponent(before.id)}`, { method: "DELETE" });
+    if (!res.ok && res.status !== 410) throw apiError(res.status);
+    return before;
+  }
+}
+
+export interface EventChangeInput {
+  id: string;
+  title?: string;
+  start?: string;
+  end?: string;
+  location?: string;
+  allDay?: boolean;
 }

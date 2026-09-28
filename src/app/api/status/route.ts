@@ -5,7 +5,7 @@
  */
 import { listAgents } from "@/core/router";
 import type { StatusResponse } from "@/core/types";
-import { getContextConfig } from "@/lib/config";
+import { getContextConfig, getSearchMode } from "@/lib/config";
 import { isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-calendar";
 import { checkGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
@@ -45,6 +45,6 @@ export async function GET(req: Request): Promise<Response> {
 
   const brain = await brainCheck;
   const calendar = { configured: isCalendarConfigured(), connected: Boolean(refreshTokenFrom(req)) };
-  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar };
+  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar, search: getSearchMode() };
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

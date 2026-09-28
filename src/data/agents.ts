@@ -22,7 +22,7 @@ export interface AgentCardDef {
 
 export const AGENT_CARDS: AgentCardDef[] = [
   { key: "chat", id: "chat", title: "CHAT AI", engine: "Gemini Flash", tags: ["Fast", "Natural", "Always here"], icon: "chat", phase: "live", slot: "top" },
-  { key: "search", id: "search", title: "SEARCH AI", engine: "Web Search", tags: ["News", "Research", "Information"], icon: "search", phase: "ready", slot: "tl" },
+  { key: "search", id: "search", title: "SEARCH AI", engine: "Google Search", tags: ["News", "Research", "Information"], icon: "search", phase: "live", slot: "tl" },
   { key: "writing", id: "writing", title: "WRITING AI", engine: "Document Agent", tags: ["Document", "Report", "Creative"], icon: "doc", phase: "soon", slot: "tr" },
   { key: "vault", id: "memory", title: "MEMORY", engine: "Obsidian Vault", tags: ["Knowledge", "Notes", "Long-term"], icon: "vault", phase: "soon", slot: "ml" },
   { key: "automation", id: "automation", title: "AUTOMATION", engine: "Custom Agent", tags: ["Schedule", "Task", "Workflow"], icon: "automation", phase: "soon", slot: "mr" },

@@ -3,7 +3,9 @@
  * 自然な日常会話・相談・雑談を低コスト・高速に処理する。
  */
 import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
-import { getGeminiConfig, settingsHint } from "@/lib/config";
+import { needsSearch } from "@/agents/search/needs-search";
+import { getWeather, type WeatherReport } from "@/integrations/weather";
+import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MemoryRecord } from "@/memory/long-term";
@@ -45,10 +47,15 @@ export const chatAgent: Agent = {
 
     // 長期記憶（Obsidian の脳）と今後の予定（Google カレンダー）を同時に集める。時間切れなら無しで返答
     const budget = ctx.voice ? CONTEXT_BUDGET_MS.voice : CONTEXT_BUDGET_MS.text;
-    const [memories, events] = await Promise.all([
+    const [memories, events, weather] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
+      within<WeatherReport | null>(getWeather(), budget, null, "weather"),
     ]);
+
+    // Web 検索: 最新情報が必要そうな発言だけ（無料枠の回数を節約）
+    const mode = getSearchMode();
+    const search = mode === "always" || (mode === "auto" && needsSearch(latest));
 
     const contents: GeminiContent[] = ctx.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
@@ -68,10 +75,13 @@ export const chatAgent: Agent = {
         memories,
         memoryConnected: ctx.memory.connected,
         calendar: ctx.calendar ? { connected: true, events } : { connected: false },
+        weather,
+        search,
         voice: ctx.voice,
       }),
       contents,
       signal: ctx.signal,
+      googleSearch: search,
     });
   },
 };

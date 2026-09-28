@@ -9,26 +9,9 @@ import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/
 import { FridayError, toFridayError } from "@/lib/errors";
 import { buildConversationWindow } from "@/memory/context";
 import { getLongTermMemory, type SaveTurnInput } from "@/memory/long-term";
-import { CalendarError, type CalendarAccess, type NewEventInput } from "@/integrations/google-calendar";
+import type { CalendarAccess } from "@/integrations/google-calendar";
+import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
-
-/** <calendar>{"title":…,"start":…}</calendar> の中身を読む */
-function parseCalendarTag(raw: string): NewEventInput | null {
-  const json = raw.replace(/^```(?:json)?|```$/g, "").trim();
-  try {
-    const v = JSON.parse(json) as Partial<NewEventInput>;
-    return v && typeof v === "object" && typeof v.title === "string" && typeof v.start === "string" ? (v as NewEventInput) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** 予定の日時を読み上げ・表示用に（"2026-09-29T15:00" → "9/29 15:00"） */
-function describeWhen(input: NewEventInput): string {
-  const m = /^\d{4}-(\d{2})-(\d{2})(?:T(\d{2}:\d{2}))?/.exec(input.start ?? "");
-  if (!m) return input.start ?? "";
-  return `${Number(m[1])}/${Number(m[2])}${m[3] && !input.allDay ? ` ${m[3]}` : "（終日）"}`;
-}
 
 export const MAX_MESSAGE_CHARS = 16000;
 const MAX_HISTORY_ITEMS = 400;
@@ -94,7 +77,8 @@ export async function* handleConversation(
     const memory = getLongTermMemory();
     let finishReason: string | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "calendar"] as const);
+    const tags = new TagFilter(["memory", ...CALENDAR_TAGS] as const);
+    const sources: { title: string; uri: string }[] = [];
     for await (const chunk of agent.run({
       messages: window.messages,
       memory,
@@ -107,7 +91,7 @@ export async function* handleConversation(
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
       if (chunk.model && chunk.model !== meta.model) yield { ...meta, model: chunk.model };
       if (chunk.text) {
-        // <memory>…</memory> / <calendar>…</calendar> は画面にも読み上げにも出さない
+        // <memory> / <calendar…> の隠しタグは画面にも読み上げにも出さない
         const text = tags.push(chunk.text);
         if (text) {
           reply += text;
@@ -115,6 +99,7 @@ export async function* handleConversation(
         }
       }
       if (chunk.finishReason) finishReason = chunk.finishReason;
+      for (const src of chunk.sources ?? []) if (!sources.some((x) => x.uri === src.uri)) sources.push(src);
     }
     const rest = tags.flush();
     if (rest) {
@@ -122,29 +107,16 @@ export async function* handleConversation(
       yield { type: "delta", text: rest };
     }
 
-    // 頼まれた予定を Google カレンダーに追加する（失敗したら本文でも知らせる＝読み上げにも乗る）
-    for (const raw of tags.captures.calendar) {
-      if (signal?.aborted) break;
-      const input = parseCalendarTag(raw);
-      const title = input?.title ?? "予定";
-      const when = input ? describeWhen(input) : "";
-      let error: string | undefined;
-      if (!options.calendar) error = "Google カレンダーに接続されていません。";
-      else if (!input) error = "予定の内容を読み取れませんでした。";
-      else {
-        try {
-          const added = await options.calendar.add(input);
-          yield { type: "calendar", ok: true, title: added.title, when: `${added.dayLabel} ${added.rangeLabel}` };
-          continue;
-        } catch (err) {
-          error = err instanceof CalendarError ? err.message : "Google カレンダーに登録できませんでした。";
-        }
+    // 頼まれた予定の追加・変更・削除（失敗したら本文でも知らせる＝読み上げにも乗る）
+    for await (const { event, note } of runCalendarActions(tags.captures, options.calendar, signal)) {
+      yield event;
+      if (note) {
+        const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;
+        reply += text;
+        yield { type: "delta", text };
       }
-      yield { type: "calendar", ok: false, title, when, error };
-      const note = `${reply.endsWith("\n") ? "" : "\n\n"}（「${title}」はカレンダーに登録できませんでした。${error}）`;
-      reply += note;
-      yield { type: "delta", text: note };
     }
+    if (sources.length) yield { type: "sources", sources: sources.slice(0, 6) };
 
     const facts = tags.captures.memory.map(toFact).filter(Boolean);
     // 脳が無い・つながらないときは保存されないので、覚えたとは表示しない（保存自体は試みる）

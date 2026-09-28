@@ -100,3 +100,11 @@ export function getTtsConfig(): TtsConfig {
     speed: Math.min(1.2, Math.max(0.7, num(process.env.ELEVENLABS_SPEED, 1.15))),
   };
 }
+
+export type SearchMode = "auto" | "always" | "off";
+
+/** Web 検索: auto（最新情報が必要な質問だけ・既定）/ always / off */
+export function getSearchMode(): SearchMode {
+  const v = process.env.FRIDAY_SEARCH?.trim().toLowerCase();
+  return v === "always" || v === "off" ? v : "auto";
+}

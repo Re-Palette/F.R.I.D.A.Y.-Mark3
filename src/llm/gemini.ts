@@ -16,6 +16,13 @@ export interface GeminiStreamOptions {
   systemInstruction?: string;
   contents: GeminiContent[];
   signal?: AbortSignal;
+  /** Google 検索で調べてから答えさせる（最新情報が必要な質問だけ） */
+  googleSearch?: boolean;
+}
+
+export interface GeminiSource {
+  title: string;
+  uri: string;
 }
 
 export interface GeminiChunk {
@@ -23,6 +30,8 @@ export interface GeminiChunk {
   finishReason?: string;
   /** 実際に応答したモデル（最初のチャンクにだけ付く） */
   model?: string;
+  /** Google 検索で参照したページ */
+  sources?: GeminiSource[];
 }
 
 interface GeminiResponsePart {
@@ -34,12 +43,13 @@ interface GeminiStreamResponse {
   candidates?: {
     content?: { parts?: GeminiResponsePart[] };
     finishReason?: string;
+    groundingMetadata?: { groundingChunks?: { web?: { uri?: string; title?: string } }[] };
   }[];
   promptFeedback?: { blockReason?: string };
   error?: { code?: number; message?: string; status?: string };
 }
 
-function buildBody(opts: GeminiStreamOptions, level: ThinkingLevel | undefined) {
+function buildBody(opts: GeminiStreamOptions, level: ThinkingLevel | undefined, search: boolean) {
   const { config } = opts;
   const generationConfig: Record<string, unknown> = {
     temperature: config.temperature,
@@ -53,6 +63,7 @@ function buildBody(opts: GeminiStreamOptions, level: ThinkingLevel | undefined) 
       ? { systemInstruction: { parts: [{ text: opts.systemInstruction }] } }
       : {}),
     contents: opts.contents,
+    ...(search ? { tools: [{ google_search: {} }] } : {}),
     generationConfig,
   });
 }
@@ -119,7 +130,12 @@ function isThinkingConfigError(err: FridayError): boolean {
   return err.code === "BAD_REQUEST" && /thinking/i.test(err.message);
 }
 
-async function request(opts: GeminiStreamOptions, model: string, level: ThinkingLevel | undefined): Promise<Response> {
+async function request(
+  opts: GeminiStreamOptions,
+  model: string,
+  level: ThinkingLevel | undefined,
+  search: boolean,
+): Promise<Response> {
   const { config } = opts;
   const url = `${config.baseUrl}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
   try {
@@ -129,7 +145,7 @@ async function request(opts: GeminiStreamOptions, model: string, level: Thinking
         "Content-Type": "application/json",
         "x-goog-api-key": config.apiKey ?? "",
       },
-      body: buildBody(opts, level),
+      body: buildBody(opts, level, search),
       signal: opts.signal,
       cache: "no-store",
     });
@@ -151,6 +167,18 @@ const rejectedThinking = new Set<string>();
 function thinkingCandidates(level: ThinkingLevel | undefined): (ThinkingLevel | undefined)[] {
   if (!level) return [undefined];
   return level === "minimal" ? ["minimal", "low", undefined] : [level, undefined];
+}
+
+/**
+ * Google 検索が使えないモデル（400）・検索の無料枠を使い切った状態（429）。
+ * そのときは検索なしで答える（会話は止めない）。
+ */
+const searchUnavailableUntil = new Map<string, number>();
+const SEARCH_COOLDOWN = 30 * 60_000;
+
+function searchAvailable(model: string): boolean {
+  const until = searchUnavailableUntil.get(model);
+  return until === undefined || Date.now() >= until;
 }
 
 /** 一時的な障害（混雑・瞬断）とみなしてよいか */
@@ -196,11 +224,12 @@ function isAvailable(model: string): boolean {
 async function connectModel(opts: GeminiStreamOptions, model: string): Promise<Response> {
   const levels = thinkingCandidates(opts.config.thinkingLevel).filter((l) => !l || !rejectedThinking.has(`${model}:${l}`));
   let level = levels.shift();
+  let search = Boolean(opts.googleSearch) && searchAvailable(model);
 
   for (let attempt = 1; ; attempt++) {
     let res: Response;
     try {
-      res = await request(opts, model, level);
+      res = await request(opts, model, level, search);
     } catch (err) {
       if (err instanceof FridayError && err.retryable && attempt < MAX_ATTEMPTS) {
         await sleep(350 * attempt, opts.signal);
@@ -217,6 +246,12 @@ async function connectModel(opts: GeminiStreamOptions, model: string): Promise<R
     }
 
     const err = await mapHttpError(res, model);
+    // 検索付きで断られたら、検索なしで答え直す（検索非対応 400 / 検索の無料枠切れ 429）
+    if (search && (err.code === "RATE_LIMITED" || (err.code === "BAD_REQUEST" && /search|ground|tool/i.test(err.message)))) {
+      searchUnavailableUntil.set(model, err.code === "RATE_LIMITED" ? Date.now() + SEARCH_COOLDOWN : Number.POSITIVE_INFINITY);
+      search = false;
+      continue;
+    }
     if (level && isThinkingConfigError(err)) {
       rejectedThinking.add(`${model}:${level}`);
       level = levels.shift();
@@ -364,8 +399,12 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
         .map((p) => p.text)
         .join("") ?? "";
     const finishReason = candidate?.finishReason;
-    if (!text && !finishReason) return null;
-    return { text, finishReason };
+    const sources = (candidate?.groundingMetadata?.groundingChunks ?? [])
+      .map((c) => c.web)
+      .filter((w): w is { uri: string; title?: string } => Boolean(w?.uri))
+      .map((w) => ({ uri: w.uri, title: w.title || new URL(w.uri).hostname }));
+    if (!text && !finishReason && !sources.length) return null;
+    return { text, finishReason, ...(sources.length ? { sources } : {}) };
   };
 
   try {

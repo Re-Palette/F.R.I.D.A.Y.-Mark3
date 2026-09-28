@@ -26,6 +26,8 @@ export interface AgentOutputChunk {
   finishReason?: string;
   /** 実際に応答したモデル（最初のチャンクにだけ付く） */
   model?: string;
+  /** Web 検索で参照したページ */
+  sources?: { title: string; uri: string }[];
 }
 
 export interface Agent {

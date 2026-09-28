@@ -2,8 +2,9 @@ import { memo, useEffect, useState, type ReactNode } from "react";
 import type { CalendarEventView } from "@/core/types";
 import { QUICK_ACCESS, SAMPLE_PROJECTS, SAMPLE_SCHEDULE, SAMPLE_WEATHER } from "@/data/dashboard";
 import { useCalendar } from "@/hooks/useCalendar";
+import type { WeatherKind, WeatherReport } from "@/integrations/weather";
 import { HudFrame } from "./HudFrame";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 
 function PanelHead({ title, accent, extra, idx }: { title: string; accent?: string; extra?: ReactNode; idx: string }) {
   return (
@@ -20,6 +21,94 @@ function PanelHead({ title, accent, extra, idx }: { title: string; accent?: stri
 
 /** Phase 1 の右パネルはサンプル表示（未接続） */
 const SAMPLE_TITLE = "サンプルデータ（連携は今後のアップデートで対応）";
+
+const WEATHER_ICON: Record<WeatherKind, IconName> = {
+  clear: "sun",
+  partly: "weather",
+  cloudy: "cloud",
+  fog: "fog",
+  rain: "rain",
+  snow: "snow",
+  storm: "storm",
+};
+
+const DAY_EN = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const dayEn = (date: string) => DAY_EN[new Date(`${date}T12:00:00Z`).getUTCDay()];
+
+/** 天気（Open-Meteo）。取れなければサンプル表示 */
+function WeatherPanel() {
+  const [weather, setWeather] = useState<WeatherReport | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/weather", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ ok: boolean; weather?: WeatherReport }>)
+        .then((j) => alive && j.ok && j.weather && setWeather(j.weather))
+        .catch(() => {});
+    void load();
+    const t = setInterval(load, 15 * 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  if (!weather) {
+    return (
+      <section className="panel hud" title={SAMPLE_TITLE}>
+        <HudFrame cut={14} />
+        <PanelHead title="WEATHER /" accent={SAMPLE_WEATHER.city} extra="SAMPLE" idx="01" />
+        <div className="weather" data-sample>
+          <Icon name="weather" size={44} className="weather__icon" />
+          <div className="weather__now">
+            <b>{SAMPLE_WEATHER.now}°</b>
+            <span>/ {SAMPLE_WEATHER.low}°</span>
+          </div>
+          <ul className="weather__list">
+            {SAMPLE_WEATHER.forecast.map((f) => (
+              <li key={f.day}>
+                <span>{f.day}</span>
+                <span>
+                  {f.hi}° / {f.lo}°
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    );
+  }
+
+  const today = weather.days[0];
+  return (
+    <section className="panel hud" title={`${weather.label} ${weather.now}℃（体感 ${weather.feelsLike}℃）`}>
+      <HudFrame cut={14} />
+      <PanelHead
+        title="WEATHER /"
+        accent={weather.city.toUpperCase()}
+        extra={today ? `${today.label} · ☂${today.rain}%` : weather.label}
+        idx="01"
+      />
+      <div className="weather">
+        <Icon name={WEATHER_ICON[weather.kind]} size={44} className="weather__icon" />
+        <div className="weather__now">
+          <b>{weather.now}°</b>
+          {today && <span>/ {today.lo}°</span>}
+        </div>
+        <ul className="weather__list">
+          {weather.days.slice(0, 4).map((d) => (
+            <li key={d.date} title={`${d.label} 降水確率 ${d.rain}%`}>
+              <span>{dayEn(d.date)}</span>
+              <span>
+                {d.hi}° / {d.lo}°
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
 
 /** 今（1 分ごとに更新）。終わった予定・次の予定の表示に使う */
 function useNow(): number {
@@ -116,27 +205,7 @@ export const RightPanel = memo(function RightPanel() {
         <span>— F.R.I.D.A.Y.</span>
       </p>
 
-      <section className="panel hud" title={SAMPLE_TITLE}>
-        <HudFrame cut={14} />
-        <PanelHead title="WEATHER /" accent={SAMPLE_WEATHER.city} idx="01" />
-        <div className="weather">
-          <Icon name="weather" size={44} className="weather__icon" />
-          <div className="weather__now">
-            <b>{SAMPLE_WEATHER.now}°</b>
-            <span>/ {SAMPLE_WEATHER.low}°</span>
-          </div>
-          <ul className="weather__list">
-            {SAMPLE_WEATHER.forecast.map((f) => (
-              <li key={f.day}>
-                <span>{f.day}</span>
-                <span>
-                  {f.hi}° / {f.lo}°
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
+      <WeatherPanel />
 
       <SchedulePanel />
 

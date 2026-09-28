@@ -38,6 +38,8 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `GOOGLE_CLIENT_ID` | | — | Google カレンダー連携用の OAuth クライアント ID |
 | `GOOGLE_CLIENT_SECRET` | | — | 同 クライアント シークレット（サーバー側でのみ使用） |
 | `GOOGLE_CALENDAR_ID` | | `primary` | 読み書きするカレンダー |
+| `WEATHER_CITY` / `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` | | 東京 | 天気の場所（Open-Meteo・登録不要） |
+| `FRIDAY_SEARCH` | | `auto` | Web 検索。`auto`（必要なときだけ）/ `always` / `off` |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
@@ -123,8 +125,21 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
 - 接続すると、Google から受け取った更新用トークンを **暗号化して HttpOnly Cookie に保存** します（その端末で有効。ブラウザの JavaScript からは読めません）。
 - **読む**: 返答の前に今日から 7 日分の予定を取得して渡します（脳の検索と同時に行い、時間内に取れなければ予定なしで返答）。SCHEDULE には今日の予定を表示します。
 - **書く**: 「明日 15 時に打ち合わせを入れて」と頼むと、F.R.I.D.A.Y. が返答の末尾に `<calendar>{…}</calendar>` を付け、サーバーが取り除いて Google カレンダーに登録します。
-  登録できなかったときは返答の中でも知らせます（音声でも読み上げ）。予定の変更・削除は未対応。
+  「打ち合わせを 16 時にずらして」「金曜の予定を消して」で変更・削除もできます（`<calendar-update>` / `<calendar-delete>`、今後 7 日の予定が対象）。
+  できなかったときは返答の中でも知らせます（音声でも読み上げ）。
 - 権限は `calendar.events`（予定の読み書き）だけを求めます。
+
+### 天気・朝のあいさつ
+
+- 天気は [Open-Meteo](https://open-meteo.com/)（API キー不要）から 15 分ごとに取得し、右パネルと会話に渡します。
+- 「おはよう」と話しかけると、天気・今日の予定・脳の記憶から、その日の段取りを短く伝えます。
+
+### Web 検索（Search AI）
+
+- ニュース・最新情報・価格・「調べて」など、最新の情報が必要そうな発言のときだけ Gemini の Google 検索を有効にします（`src/agents/search/needs-search.ts`）。
+  無料枠の検索回数を節約するためです。常に使う場合は `FRIDAY_SEARCH=always`。
+- 参照したページは返答の下にリンクで表示します（読み上げはしません）。
+- 検索が使えない・検索の無料枠を使い切ったときは、自動で検索なしで答えます。
 
 ### 音声会話
 
@@ -178,7 +193,7 @@ Chat Agent は取得した記憶を system instruction に含めて応答しま�
 
 ## 今回のスコープ外
 
-- 検索・文書作成・分析・SNS・Automation の各 Agent
+- 文書作成・分析・SNS・Automation の各 Agent
 - 音声入力・ファイル添付・画像生成
-- 右パネルの天気・プロジェクトは **SAMPLE** 表示のみ（予定は Google カレンダー接続時に実データ）
+- 右パネルのプロジェクトは **SAMPLE** 表示のみ
 - Claude API / OpenAI API は使用していません
