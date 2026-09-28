@@ -6,7 +6,8 @@ import { AUTH_COOKIE, getAuthMode, safeEqual, sessionToken } from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname === "/login" || pathname === "/api/login") return NextResponse.next();
+  // ログイン画面と、Google の審査用に公開が必要なプライバシーポリシーは合言葉なしで開ける
+  if (pathname === "/login" || pathname === "/api/login" || pathname === "/privacy") return NextResponse.next();
 
   const mode = getAuthMode();
   if (mode === "open") return NextResponse.next();
