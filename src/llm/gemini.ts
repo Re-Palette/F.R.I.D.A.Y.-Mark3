@@ -197,7 +197,8 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     );
   });
 
-const MAX_ATTEMPTS = 3;
+/** 同じモデルで試す回数（混雑が続けば次のモデルへ切り替える） */
+const MAX_ATTEMPTS = 2;
 
 /**
  * 一時的に使えないモデル（無料枠の使い切りなど）。期限まではスキップして次の候補を使う。
@@ -205,6 +206,7 @@ const MAX_ATTEMPTS = 3;
  */
 const unavailableUntil = new Map<string, number>();
 const RATE_LIMIT_COOLDOWN = 10 * 60_000;
+const CONGESTION_COOLDOWN = 2 * 60_000;
 
 function isAvailable(model: string): boolean {
   const until = unavailableUntil.get(model);
@@ -241,7 +243,15 @@ async function connectModel(opts: GeminiStreamOptions, model: string): Promise<R
 
     if (isTransient(res.status) && attempt < MAX_ATTEMPTS) {
       await res.body?.cancel().catch(() => {});
-      await sleep(500 * attempt, opts.signal);
+      await sleep(400 * attempt, opts.signal);
+      continue;
+    }
+    // 検索付きで混雑が続くなら、検索なしでもう一度だけ試す（検索側の混雑のことがある）
+    if (isTransient(res.status) && search) {
+      await res.body?.cancel().catch(() => {});
+      searchUnavailableUntil.set(model, Date.now() + 5 * 60_000);
+      search = false;
+      attempt = 0;
       continue;
     }
 
@@ -277,6 +287,9 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
       if (!(err instanceof FridayError)) throw err;
       if (err.code === "RATE_LIMITED") {
         unavailableUntil.set(model, Date.now() + RATE_LIMIT_COOLDOWN);
+      } else if (err.code === "UPSTREAM_ERROR" && err.retryable) {
+        // 混雑（5xx）が続くモデルはしばらく避け、次の候補で答える
+        unavailableUntil.set(model, Date.now() + CONGESTION_COOLDOWN);
       } else if (err.code === "MODEL_NOT_FOUND") {
         unavailableUntil.set(model, Number.POSITIVE_INFINITY);
       } else {
@@ -286,6 +299,7 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
     }
   }
 
+  if (lastError?.code === "UPSTREAM_ERROR") throw lastError;
   if (lastError?.code === "RATE_LIMITED") {
     throw new FridayError(
       "RATE_LIMITED",

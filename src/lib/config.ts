@@ -28,13 +28,21 @@ export interface GeminiConfig {
 }
 
 /** GEMINI_MODEL はカンマ区切りで複数指定できる（例: "gemini-3.5-flash-lite,gemini-3.1-flash-lite"） */
+/** 予備のモデル（GEMINI_MODEL の後ろに自動で足す）。GEMINI_BACKUP_MODELS=none で無効 */
+const BACKUP_MODELS =
+  process.env.GEMINI_BACKUP_MODELS?.trim().toLowerCase() === "none"
+    ? []
+    : (process.env.GEMINI_BACKUP_MODELS?.split(",").map((m) => m.trim()).filter(Boolean) ?? ["gemini-flash-lite-latest", "gemini-flash-latest"]);
+
 function parseModels(value: string | undefined): { model: string; models: string[] } {
   const list = (value ?? "")
     .split(",")
     .map((m) => m.trim())
     .filter(Boolean);
-  const models = list.length ? list : DEFAULT_MODELS;
-  return { model: models[0], models };
+  const chosen = list.length ? list : DEFAULT_MODELS;
+  // 指定したモデルが混雑・使い切りのときの予備（常に最新の Flash-Lite / Flash を指す別名）。無いモデルは自動で飛ばす
+  const models = [...chosen, ...BACKUP_MODELS.filter((m) => !chosen.includes(m))];
+  return { model: chosen[0], models };
 }
 
 export function getGeminiConfig(): GeminiConfig {
