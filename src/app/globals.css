@@ -1310,6 +1310,98 @@ button:disabled,
   transition: opacity 0.4s var(--ease) 0.1s, transform 0.5s var(--ease) 0.1s, visibility 0s;
 }
 
+/* HOME のまま会話するときの字幕パネル */
+.home-dialog {
+  --hud-fill: rgba(5, 6, 9, 0.985);
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 4px;
+  width: min(700px, 94%);
+  max-height: 44%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 16px 12px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 12px);
+  transition: opacity 0.3s var(--ease), transform 0.4s var(--ease), visibility 0s linear 0.4s;
+}
+
+.home-dialog[data-show] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+  transition: opacity 0.3s var(--ease), transform 0.4s var(--ease), visibility 0s;
+}
+
+.home-dialog__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.home-dialog__you {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-dialog__you b,
+.home-dialog__name {
+  margin-right: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--orange);
+}
+
+.home-dialog__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.home-dialog__btn:hover {
+  border-color: var(--line);
+  color: var(--orange-hi);
+}
+
+.home-dialog__body {
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 8px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.home-dialog__name {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.home-dialog__error {
+  margin: 0;
+  color: var(--red);
+}
+
 .stage[data-view="home"] .conversation * {
   animation-play-state: paused !important;
 }

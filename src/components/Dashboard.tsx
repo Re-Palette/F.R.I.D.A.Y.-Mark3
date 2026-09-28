@@ -11,6 +11,7 @@ import { useVoice } from "@/hooks/useVoice";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
 import { Header } from "./Header";
+import { HomeDialog } from "./HomeDialog";
 import { Orbit, type ChatAgentStatus } from "./Orbit";
 import { RightPanel } from "./RightPanel";
 import { Sidebar, type View } from "./Sidebar";
@@ -91,15 +92,6 @@ export function Dashboard() {
   const [view, setView] = useState<View>("home");
   const composerRef = useRef<ComposerHandle>(null);
 
-  // セッション復元時に会話があればチャット表示から始める
-  const restored = useRef(false);
-  useEffect(() => {
-    if (!restored.current && chat.messages.length > 0) {
-      restored.current = true;
-      setView("chat");
-    }
-  }, [chat.messages.length]);
-
   // API キー関連のエラーが出たらステータスを更新
   useEffect(() => {
     if (chat.lastErrorCode === "MISSING_API_KEY" || chat.lastErrorCode === "INVALID_API_KEY") {
@@ -117,14 +109,8 @@ export function Dashboard() {
     return () => window.removeEventListener("keydown", onKey);
   }, [view, chat.phase]);
 
-  const send = useCallback(
-    (text: string) => {
-      const ok = chat.send(text);
-      if (ok) setView("chat");
-      return ok;
-    },
-    [chat.send],
-  );
+  // 話しかけても画面は切り替えない（HOME では中央下のパネルにやり取りを表示する）
+  const send = chat.send;
 
   // 入力中に Gemini への接続を温める（サーバー側でも間引くが、ここでも 2 秒に 1 回まで）
   const lastWarm = useRef(0);
@@ -137,12 +123,7 @@ export function Dashboard() {
 
   /* ---- 音声会話 ---- */
   const { send: chatSend, stop: chatStop } = chat;
-  const onVoiceCommand = useCallback(
-    (text: string) => {
-      if (chatSend(text, { voice: true })) setView("chat");
-    },
-    [chatSend],
-  );
+  const onVoiceCommand = useCallback((text: string) => void chatSend(text, { voice: true }), [chatSend]);
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
@@ -229,6 +210,13 @@ export function Dashboard() {
             brain={agent.brain}
             calendar={!agent.calendar.configured ? "NOT SET" : agent.calendar.connected ? "LINKED" : "NOT LINKED"}
             news={!agent.news ? "—" : agent.news.time === "off" ? "OFF" : `DAILY ${agent.news.time}`}
+          />
+          <HomeDialog
+            messages={chat.messages}
+            phase={chat.phase}
+            voiceState={voice.state}
+            hidden={inChat}
+            onOpenChat={openChat}
           />
           <Conversation
             messages={chat.messages}
