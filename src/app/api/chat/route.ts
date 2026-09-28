@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { handleConversation, preflight, sanitizeHistory } from "@/core/friday";
 import type { StreamEvent } from "@/core/types";
 import { CalendarAccess, refreshTokenFrom } from "@/integrations/google-calendar";
-import { asksForNews, localNow, NEWS_COOKIE, readNewsSettings, type NewsSettings } from "@/integrations/news";
+import { asksForNews, localNow, NEWS_COOKIE, peekNewsSettings } from "@/integrations/news";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { cookieHeader, readCookie } from "@/lib/secure-cookie";
 import { getTimezone } from "@/lib/config";
@@ -60,7 +60,7 @@ export async function POST(req: Request): Promise<Response> {
   const refresh = refreshTokenFrom(req);
   const calendar = refresh ? new CalendarAccess(refresh, getTimezone()) : undefined;
   // ニュース: 決まった時間を過ぎてからその日最初の会話、または頼まれたときにまとめて伝える
-  const news = await newsPlan(req, history[history.length - 1]?.content ?? "");
+  const news = newsPlan(req, history[history.length - 1]?.content ?? "");
   const events = handleConversation(history, req.signal, { voice, onTurn: resolveTurn, calendar, news: news.context });
 
   const stream = new ReadableStream<Uint8Array>({
@@ -91,15 +91,9 @@ export async function POST(req: Request): Promise<Response> {
   return new Response(stream, { headers });
 }
 
-/** 設定の読み込みに待てる時間（脳が遅ければ既定の設定で進める） */
-const NEWS_SETTINGS_BUDGET_MS = 800;
-
-async function newsPlan(req: Request, latest: string) {
-  const fallback: NewsSettings = { time: "07:00", topics: [], fromBrain: false };
-  const settings = await Promise.race([
-    readNewsSettings().catch(() => fallback),
-    new Promise<NewsSettings>((r) => setTimeout(() => r(fallback), NEWS_SETTINGS_BUDGET_MS)),
-  ]);
+/** ニュースを今回伝えるか。返答を待たせないよう、設定は前回読んだものを使う（最新は裏で読み直す） */
+function newsPlan(req: Request, latest: string) {
+  const settings = peekNewsSettings();
   const { date, time } = localNow(getTimezone());
   const deliveredToday = readCookie(req, NEWS_COOKIE) === date;
   const deliver: false | "scheduled" | "asked" = asksForNews(latest)

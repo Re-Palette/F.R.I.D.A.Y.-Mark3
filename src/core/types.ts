@@ -39,7 +39,8 @@ export type StreamEvent =
   | { type: "sources"; sources: { title: string; uri: string }[] }
   /** ニュースの設定（時間・興味のある分野）を変えた結果 */
   | { type: "news-settings"; ok: boolean; time?: string; topics?: string[]; error?: string }
-  | { type: "done"; finishReason?: string }
+  /** prepMs: 返答前の準備（記憶・予定・天気の取得）にかかった時間 */
+  | { type: "done"; finishReason?: string; prepMs?: number }
   | { type: "error"; code: string; message: string; retryable: boolean };
 
 /** GET /api/status のレスポンス */

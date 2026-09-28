@@ -126,6 +126,7 @@ const Message = memo(function Message({
         <div className="msg__meta msg__meta--ai">
           {msg.status === "stopped" && <span>STOPPED · </span>}
           {msg.meta.model}
+          {msg.meta.prepMs !== undefined && <> · prep {(msg.meta.prepMs / 1000).toFixed(2)}s</>}
           {msg.meta.ttftMs !== undefined && <> · first token {(msg.meta.ttftMs / 1000).toFixed(2)}s</>}
           {msg.meta.totalMs !== undefined && <> · total {(msg.meta.totalMs / 1000).toFixed(1)}s</>}
         </div>

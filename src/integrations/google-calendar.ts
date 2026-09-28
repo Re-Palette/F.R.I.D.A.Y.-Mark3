@@ -9,7 +9,9 @@
  * クライアント ID / シークレット・トークンはブラウザに渡さない。
  */
 import { settingsHint } from "@/lib/config";
+import { createHash } from "node:crypto";
 import { readCookie, seal, unseal } from "@/lib/secure-cookie";
+import { invalidate, swr } from "@/lib/swr";
 
 export const CALENDAR_COOKIE = "friday_gcal";
 export const STATE_COOKIE = "friday_gcal_state";
@@ -312,13 +314,26 @@ export function normalizeNewEvent(input: NewEventInput, tz: string): Record<stri
 
 /** 1 つの端末（または全端末共通のトークン）から見たカレンダー */
 export class CalendarAccess {
+  /** キャッシュの鍵（トークンそのものは使わない） */
+  private readonly cacheKey: string;
+
   constructor(
     private readonly refresh: string,
     private readonly tz: string,
-  ) {}
+  ) {
+    this.cacheKey = `cal:${createHash("sha256").update(refresh).digest("hex").slice(0, 16)}:`;
+  }
 
-  /** 今日から days 日分の予定 */
-  async upcoming(days = 7, max = 40): Promise<CalendarEvent[]> {
+  /**
+   * 今日から days 日分の予定。返答を待たせないよう、1 分以内は前回の結果を使い、
+   * 30 分以内なら前回の結果を返しつつ裏で取り直す。予定を書き換えたら捨てる。
+   */
+  upcoming(days = 7, max = 40): Promise<CalendarEvent[]> {
+    const key = `${this.cacheKey}${ymd(new Date(), this.tz)}:${days}:${max}`;
+    return swr(key, 60_000, 30 * 60_000, () => this.fetchUpcoming(days, max));
+  }
+
+  private async fetchUpcoming(days: number, max: number): Promise<CalendarEvent[]> {
     const { timeMin, timeMax } = dayRange(this.tz, days);
     const params = new URLSearchParams({
       timeMin,
@@ -345,6 +360,7 @@ export class CalendarAccess {
     const body = normalizeNewEvent(input, this.tz);
     const res = await api(this.refresh, "/events", { method: "POST", body: JSON.stringify(body) });
     if (!res.ok) throw apiError(res.status);
+    invalidate(this.cacheKey);
     return toEvent((await res.json()) as GoogleEvent, this.tz);
   }
 
@@ -389,6 +405,7 @@ export class CalendarAccess {
 
     const res = await api(this.refresh, `/events/${encodeURIComponent(before.id)}`, { method: "PATCH", body: JSON.stringify(patch) });
     if (!res.ok) throw apiError(res.status);
+    invalidate(this.cacheKey);
     return { before, after: toEvent((await res.json()) as GoogleEvent, this.tz) };
   }
 
@@ -397,6 +414,7 @@ export class CalendarAccess {
     const before = await this.get(String(id ?? "").trim());
     const res = await api(this.refresh, `/events/${encodeURIComponent(before.id)}`, { method: "DELETE" });
     if (!res.ok && res.status !== 410) throw apiError(res.status);
+    invalidate(this.cacheKey);
     return before;
   }
 }

@@ -121,6 +121,15 @@ export function Dashboard() {
     void fetch("/api/warm", { method: "POST", keepalive: true }).catch(() => {});
   }, [agent.status]);
 
+  // 画面を開いた時点で、脳・予定・天気の読み込みを始めておく（最初の返答を速くする）
+  const warmedOnce = useRef(false);
+  useEffect(() => {
+    if (agent.status === "online" && !warmedOnce.current) {
+      warmedOnce.current = true;
+      warm();
+    }
+  }, [agent.status, warm]);
+
   /* ---- 音声会話 ---- */
   const { send: chatSend, stop: chatStop } = chat;
   const onVoiceCommand = useCallback((text: string) => void chatSend(text, { voice: true }), [chatSend]);

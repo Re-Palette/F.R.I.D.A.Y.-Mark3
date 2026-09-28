@@ -80,6 +80,7 @@ export async function* handleConversation(
 
     const memory = getLongTermMemory();
     let finishReason: string | undefined;
+    let prepMs: number | undefined;
     let reply = "";
     const tags = new TagFilter(["memory", "news-settings", ...CALENDAR_TAGS] as const);
     const sources: { title: string; uri: string }[] = [];
@@ -104,6 +105,7 @@ export async function* handleConversation(
         }
       }
       if (chunk.finishReason) finishReason = chunk.finishReason;
+      if (chunk.prepMs !== undefined) prepMs = chunk.prepMs;
       for (const src of chunk.sources ?? []) if (!sources.some((x) => x.uri === src.uri)) sources.push(src);
     }
     const rest = tags.flush();
@@ -162,7 +164,7 @@ export async function* handleConversation(
       memories: memory.save ? facts : [],
       voice: options.voice ?? false,
     };
-    yield { type: "done", finishReason };
+    yield { type: "done", finishReason, prepMs };
   } catch (err) {
     if (signal?.aborted) return;
     const e = toFridayError(err);

@@ -26,7 +26,8 @@ export interface UiMessage {
   createdAt: number;
   status: "streaming" | "done" | "stopped" | "error";
   error?: UiError;
-  meta?: { model?: string; ttftMs?: number; totalMs?: number };
+  /** prepMs: サーバーで返答前の準備（記憶・予定・天気）にかかった時間 */
+  meta?: { model?: string; ttftMs?: number; totalMs?: number; prepMs?: number };
   /** 音声で話しかけた発言への応答（読み上げ対象） */
   voice?: boolean;
   /** この返答で F.R.I.D.A.Y. が脳に覚えたこと */
@@ -326,7 +327,8 @@ export function useChat() {
                 }
                 finish(() => {
                   const text = received;
-                  patch(assistantId, (m) => ({ ...m, content: text, status: "done", meta: { model, ttftMs, totalMs } }));
+                  const prepMs = event.prepMs;
+                  patch(assistantId, (m) => ({ ...m, content: text, status: "done", meta: { model, ttftMs, totalMs, prepMs } }));
                   setLastRun((s) => ({ ...s, ttftMs, totalMs, model }));
                 });
                 break;

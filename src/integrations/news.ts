@@ -7,7 +7,10 @@
  * 脳が無いときは環境変数 NEWS_TIME / NEWS_TOPICS（カンマ区切り）を使う。
  * その日に伝えたかどうかは Cookie（端末ごと）で覚える。
  */
+import { peek, prime, swr } from "@/lib/swr";
 import { BRAIN_DIR, isBrainConfigured, listNotes, readNote, updateNote } from "@/memory/github-brain";
+
+const CACHE_KEY = "news-settings";
 
 export const NEWS_PATH = `${BRAIN_DIR}/ニュース.md`;
 export const NEWS_COOKIE = "friday_news";
@@ -79,8 +82,20 @@ ${s.topics.length ? s.topics.map((t) => `- ${t}`).join("\n") : "- "}
 `;
 }
 
-export async function readNewsSettings(): Promise<NewsSettings> {
+/** 設定（1 分以内は前回の結果、1 日以内なら前回の結果を返しつつ裏で取り直す） */
+export function readNewsSettings(): Promise<NewsSettings> {
+  if (!isBrainConfigured()) return Promise.resolve(envSettings());
+  return swr(CACHE_KEY, 60_000, 24 * 60 * 60_000, loadNewsSettings);
+}
+
+/** 待たずに使える設定（前回読んだもの。まだ無ければ既定値）。裏で最新を読みにいく */
+export function peekNewsSettings(): NewsSettings {
   if (!isBrainConfigured()) return envSettings();
+  readNewsSettings().catch(() => {});
+  return peek<NewsSettings>(CACHE_KEY) ?? envSettings();
+}
+
+async function loadNewsSettings(): Promise<NewsSettings> {
   const file = (await listNotes()).find((f) => f.path === NEWS_PATH);
   if (!file) return envSettings();
   return { ...parseNewsNote(await readNote(file)), fromBrain: true };
@@ -94,7 +109,9 @@ export async function saveNewsSettings(change: { time?: string; topics?: string[
     topics: change.topics !== undefined ? cleanTopics(change.topics) : current.topics,
   };
   await updateNote(NEWS_PATH, () => renderNote(next), "F.R.I.D.A.Y.: ニュースの設定を更新");
-  return { ...next, fromBrain: true };
+  const saved = { ...next, fromBrain: true };
+  prime(CACHE_KEY, saved);
+  return saved;
 }
 
 /** その地域の今日の日付と時刻 */

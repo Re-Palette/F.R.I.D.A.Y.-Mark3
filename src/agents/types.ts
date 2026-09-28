@@ -31,6 +31,8 @@ export interface AgentOutputChunk {
   model?: string;
   /** Web 検索で参照したページ */
   sources?: { title: string; uri: string }[];
+  /** 返答前の準備（記憶・予定・天気の取得）にかかった時間（最初の塊にだけ付く） */
+  prepMs?: number;
 }
 
 export interface Agent {

@@ -105,7 +105,8 @@ export class ObsidianMemory implements LongTermMemory {
   }
 
   private async search(query: string, history: ChatMessage[]): Promise<MemoryRecord[]> {
-    await ensureBrain(getTimezone());
+    // 初回の脳づくりの確認は待たない（返答を遅らせないため裏で進める）
+    ensureBrain(getTimezone()).catch(() => {});
     const files = await listNotes();
     const notes = await loadAll(files);
     const records: MemoryRecord[] = [];
@@ -172,10 +173,11 @@ export async function checkBrain(): Promise<{ connected: boolean; notes?: number
 
 /** 会話を始める前に、脳の一覧とノートを読み込んでおく（思い出すのを速くする） */
 let lastWarm = 0;
-export function warmBrain(): void {
-  if (Date.now() - lastWarm < 20_000) return;
+export function warmBrain(): Promise<void> {
+  if (Date.now() - lastWarm < 20_000) return Promise.resolve();
   lastWarm = Date.now();
-  void listNotes()
+  return listNotes()
     .then(loadAll)
-    .catch(() => {});
+    .then(() => undefined)
+    .catch(() => undefined);
 }

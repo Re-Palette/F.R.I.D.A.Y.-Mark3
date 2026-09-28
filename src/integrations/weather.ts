@@ -3,6 +3,7 @@
  * 場所は WEATHER_LATITUDE / WEATHER_LONGITUDE / WEATHER_CITY（既定は東京）。
  */
 import { getTimezone } from "@/lib/config";
+import { swr } from "@/lib/swr";
 
 export type WeatherKind = "clear" | "partly" | "cloudy" | "fog" | "rain" | "snow" | "storm";
 
@@ -54,15 +55,14 @@ export function describeCode(code: number): { label: string; kind: WeatherKind }
   return { label: "不明", kind: "cloudy" };
 }
 
-let cache: { key: string; at: number; report: WeatherReport } | undefined;
-const TTL = 15 * 60_000;
-
-export async function getWeather(): Promise<WeatherReport> {
+/** 天気（15 分以内は前回の結果、3 時間以内なら前回の結果を返しつつ裏で取り直す） */
+export function getWeather(): Promise<WeatherReport> {
   const c = config();
   const tz = getTimezone();
-  const key = `${c.lat},${c.lon},${tz}`;
-  if (cache?.key === key && Date.now() - cache.at < TTL) return cache.report;
+  return swr(`weather:${c.lat},${c.lon},${tz}`, 15 * 60_000, 3 * 60 * 60_000, () => fetchWeather(c, tz));
+}
 
+async function fetchWeather(c: ReturnType<typeof config>, tz: string): Promise<WeatherReport> {
   const params = new URLSearchParams({
     latitude: String(c.lat),
     longitude: String(c.lon),
@@ -100,7 +100,6 @@ export async function getWeather(): Promise<WeatherReport> {
     })),
   };
   if (!Number.isFinite(report.now) || !report.days.length) throw new Error("weather: incomplete data");
-  cache = { key, at: Date.now(), report };
   return report;
 }
 

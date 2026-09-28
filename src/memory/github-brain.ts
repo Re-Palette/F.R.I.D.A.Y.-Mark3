@@ -91,13 +91,34 @@ let treeCache: { key: string; at: number; files: BrainFile[] } | undefined;
 const TREE_TTL = 60_000;
 const blobCache = new Map<string, string>();
 
-/** 脳の中の Markdown 一覧（1 分キャッシュ）。空のリポジトリなら [] */
+/** 書き込んだ後: 一覧は捨てずに「古い」印を付ける（次に読むとき、待たせずに裏で取り直す） */
+function markTreeStale(): void {
+  if (treeCache) treeCache.at = Date.now() - TREE_TTL;
+}
+
+/** 一覧が古くても、この時間以内なら古い一覧を返しつつ裏で取り直す（返答を待たせない） */
+const TREE_STALE_OK = 60 * 60_000;
+let treeRefresh: Promise<BrainFile[]> | undefined;
+
+/**
+ * 脳の中の Markdown 一覧。空のリポジトリなら []。
+ * 1 分以内は前回の一覧、1 時間以内なら前回の一覧を返しつつ裏で取り直す（force で必ず取り直す）。
+ */
 export async function listNotes(force = false): Promise<BrainFile[]> {
   const c = getBrainConfig();
   if (!isBrainConfigured(c)) throw new BrainError("BRAIN_NOT_CONFIGURED", "脳が設定されていません。");
   const key = `${c.owner}/${c.repo}`;
-  if (!force && treeCache?.key === key && Date.now() - treeCache.at < TREE_TTL) return treeCache.files;
+  const cached = !force && treeCache?.key === key ? treeCache : undefined;
+  if (cached && Date.now() - cached.at < TREE_TTL) return cached.files;
+  if (cached && Date.now() - cached.at < TREE_STALE_OK) {
+    treeRefresh ??= fetchTree(c, key).finally(() => (treeRefresh = undefined));
+    treeRefresh.catch(() => {});
+    return cached.files;
+  }
+  return fetchTree(c, key);
+}
 
+async function fetchTree(c: BrainConfig, key: string): Promise<BrainFile[]> {
   const res = await gh(c, `/git/trees/HEAD?recursive=1`);
   let files: BrainFile[] = [];
   if (res.ok) {
@@ -153,7 +174,7 @@ export async function updateNote(path: string, update: (current: string | null) 
     if (current && next === current.text) return; // 変更なし
     const res = await putFile(path, next, message, current?.sha);
     if (res.ok) {
-      treeCache = undefined; // 一覧を取り直させる
+      markTreeStale(); // 次に一覧を読むとき裏で取り直させる
       return;
     }
     if ((res.status === 409 || res.status === 422) && attempt === 0) continue;
@@ -187,7 +208,7 @@ async function migrateLegacy(files: BrainFile[]): Promise<number> {
       "F.R.I.D.A.Y.: README のフォルダ名を更新",
     );
   }
-  if (legacy.length) treeCache = undefined;
+  if (legacy.length) markTreeStale();
   return legacy.length;
 }
 
@@ -281,7 +302,7 @@ export async function ensureBrain(tz: string): Promise<{ created: boolean }> {
     await updateNote(path, () => text, `F.R.I.D.A.Y.: 脳を作成（${path}）`);
   }
   ensured = true;
-  treeCache = undefined;
+  markTreeStale();
   return { created: true };
 }
 
