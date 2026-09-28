@@ -31,6 +31,8 @@ export interface ChatRequestBody {
 export type StreamEvent =
   | { type: "meta"; agent: AgentId; model: string; contextMessages: number }
   | { type: "delta"; text: string }
+  /** F.R.I.D.A.Y. が脳に覚えたこと（返答の本文には含まれない） */
+  | { type: "memory"; text: string }
   | { type: "done"; finishReason?: string }
   | { type: "error"; code: string; message: string; retryable: boolean };
 
@@ -40,4 +42,6 @@ export interface StatusResponse {
   context: { maxMessages: number };
   /** 読み上げの声: ElevenLabs が使えれば "elevenlabs"、なければブラウザ標準 */
   tts: { provider: "elevenlabs" | "browser"; reason?: string };
+  /** Obsidian の脳（GitHub）。未設定なら configured: false */
+  brain: { configured: boolean; connected: boolean; notes?: number; reason?: string };
 }

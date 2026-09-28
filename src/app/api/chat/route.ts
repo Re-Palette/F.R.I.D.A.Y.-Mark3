@@ -2,9 +2,11 @@
  * POST /api/chat — F.R.I.D.A.Y. との会話（NDJSON ストリーミング）。
  * Gemini API キーはサーバー側でのみ使用し、ブラウザには一切渡さない。
  */
+import { after } from "next/server";
 import { handleConversation, preflight, sanitizeHistory } from "@/core/friday";
 import type { StreamEvent } from "@/core/types";
 import { toFridayError } from "@/lib/errors";
+import { getLongTermMemory, type SaveTurnInput } from "@/memory/long-term";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,8 +35,24 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(err);
   }
 
+  // 返答を返し終えてから、会話ログと覚えたことを脳に書き込む（返答は待たせない）
+  let resolveTurn!: (turn: SaveTurnInput | null) => void;
+  const turnReady = new Promise<SaveTurnInput | null>((resolve) => (resolveTurn = resolve));
+  const memory = getLongTermMemory();
+  if (memory.save) {
+    after(async () => {
+      const turn = await turnReady;
+      if (!turn) return;
+      try {
+        await memory.save?.(turn);
+      } catch (err) {
+        console.warn("[friday] brain save failed:", err instanceof Error ? err.message : err);
+      }
+    });
+  }
+
   const encoder = new TextEncoder();
-  const events = handleConversation(history, req.signal, { voice });
+  const events = handleConversation(history, req.signal, { voice, onTurn: resolveTurn });
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -50,6 +68,7 @@ export async function POST(req: Request): Promise<Response> {
       }
     },
     async cancel() {
+      resolveTurn(null);
       await events.return(undefined);
     },
   });

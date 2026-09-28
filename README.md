@@ -33,6 +33,8 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `ELEVENLABS_VOICE_ID` | | — | 使う声の Voice ID |
 | `ELEVENLABS_SPEED` | | `1.15` | 話す速さ（0.7〜1.2） |
 | `ELEVENLABS_MODEL` | | `eleven_flash_v2_5` | 音声モデル（音質重視なら `eleven_multilingual_v2`） |
+| `BRAIN_GITHUB_TOKEN` | | — | Obsidian の脳（GitHub リポジトリ）用のトークン。対象リポジトリのみ・Contents: Read and write |
+| `BRAIN_REPO` | | — | 脳のリポジトリ（`owner/repo`） |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
@@ -61,7 +63,9 @@ src/
 │  └─ gemini.ts             Gemini REST + SSE クライアント（SDK 不使用）
 ├─ memory/
 │  ├─ context.ts            短期記憶：会話ウィンドウの切り出し（件数・文字数上限）
-│  └─ long-term.ts          長期記憶インターフェース（現在は Noop／将来 Obsidian）
+│  ├─ long-term.ts          長期記憶インターフェース（脳が未設定なら Noop）
+│  ├─ obsidian.ts           Obsidian の脳：関連ノートの検索・保存
+│  └─ github-brain.ts       脳（GitHub リポジトリ）の読み書き・初期化
 ├─ lib/                     設定読み込み・エラー定義
 ├─ hooks/useChat.ts         会話ループの状態管理（ストリーム受信・停止・再試行）
 ├─ components/              Dashboard / Core / Orbit / Conversation / Composer ほか
@@ -76,10 +80,11 @@ Composer ──POST /api/chat──▶ Core (friday.ts)
                                ├─ buildConversationWindow   短期記憶（上限付き）
                                ├─ routeRequest      Agent Router
                                └─ chatAgent.run
-                                    ├─ LongTermMemory.recall  （Phase 1 は空）
+                                    ├─ LongTermMemory.recall  Obsidian の脳から関連ノート
                                     ├─ buildSystemInstruction 人格
                                     └─ streamGemini ──SSE──▶ Gemini
-◀── NDJSON: meta → delta… → done / error ──
+◀── NDJSON: meta → delta… → memory… → done / error ──
+                               └─ after(): 会話ログ・記憶を脳に保存（返答後）
 ```
 
 - **ストリーミング**: Gemini の `streamGenerateContent?alt=sse` を逐次パースし、そのまま NDJSON でブラウザへ流します。
@@ -89,7 +94,22 @@ Composer ──POST /api/chat──▶ Core (friday.ts)
 - **自動再試行**: Gemini の混雑 (5xx) や瞬断は、表示を始める前なら自動で最大 2 回再試行します。
 - **割り込み**: 応答中でも次の発言を送れます（今の応答を止めて次へ）。Esc で停止。
 - **会話履歴**: セッション中はブラウザ（`sessionStorage`）に保持し、送信ごとにサーバーへ渡します。Gemini に渡す量はサーバー側で件数・文字数の上限をかけます。
-- **短期記憶と長期記憶の分離**: `memory/context.ts`（今の会話）と `memory/long-term.ts`（将来の Obsidian）を別モジュールにしています。
+- **短期記憶と長期記憶の分離**: `memory/context.ts`（今の会話）と `memory/long-term.ts`（Obsidian の脳）を別モジュールにしています。
+
+### Obsidian の脳（長期記憶）
+
+```
+Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジトリ ⇄ F.R.I.D.A.Y.
+```
+
+- `BRAIN_GITHUB_TOKEN` と `BRAIN_REPO` を設定すると接続されます（HUB の MEMORY カードが ONLINE）。
+- 空のリポジトリなら、最初の接続時に `README.md`・`F.R.I.D.A.Y./プロフィール.md`・`F.R.I.D.A.Y./記憶.md` などを自動で作ります。
+- **思い出す**: 返答の前に、プロフィールと最近の記憶は毎回、それ以外のノートは会話に関係する段落だけを探して渡します。
+  探す時間は文字の会話で最大 1.5 秒、音声で最大 0.7 秒。間に合わなければ記憶なしで返答します（ノートは SHA ごとにキャッシュ）。
+- **覚える**: 覚えるべきことがあると、F.R.I.D.A.Y. は返答の末尾に `<memory>…</memory>` を付けます。
+  サーバーがこれを取り除いて（画面・読み上げには出ない）、返答を返し終えたあと `記憶.md` に追記します。追加の API 呼び出しはありません。
+- 会話は `F.R.I.D.A.Y./会話ログ/YYYY-MM-DD.md` に日ごとに残ります。
+- Obsidian で自分が書いたノートも、次の会話から自動的に参考にされます。
 
 ### 音声会話
 
@@ -130,10 +150,10 @@ Composer ──POST /api/chat──▶ Core (friday.ts)
    （トリガーワードではなく、軽量モデルによる意図分類で判定する想定）
 3. `src/data/agents.ts` の該当カードの `phase` を `"live"` に
 
-### 長期記憶（Obsidian）を接続する
+### 長期記憶の仕組みを差し替える
 
-`src/memory/long-term.ts` の `LongTermMemory` を実装したクラス（例: `ObsidianMemory`）を作り、
-`getLongTermMemory()` で返すように差し替えるだけで、Chat Agent は取得した記憶を system instruction に含めて応答します。
+`src/memory/long-term.ts` の `LongTermMemory`（`recall` / `save`）を実装したクラスを `getLongTermMemory()` で返せば、
+Chat Agent は取得した記憶を system instruction に含めて応答します（将来の Memory AI / ベクトル検索など）。
 
 ### 人格を調整する
 
@@ -144,7 +164,6 @@ Composer ──POST /api/chat──▶ Core (friday.ts)
 ## 今回のスコープ外
 
 - 検索・文書作成・分析・SNS・Automation の各 Agent
-- Obsidian 連携／長期記憶
 - 音声入力・ファイル添付・画像生成
 - 右パネル（天気・予定・プロジェクト）は **SAMPLE** 表示のみ
 - Claude API / OpenAI API は使用していません

@@ -54,8 +54,12 @@ export function buildSystemInstruction({ now, timezone, memories, memoryConnecte
 - 何を指しているか本当に分からないときだけ、短く確認する。
 
 # 誠実さ（重要）
-- 現時点ではカレンダー・予定表、Web検索、ファイル、長期記憶（過去のセッションの記録）には接続されていない。
-- 予定・最新ニュース・過去のセッションの内容など、手元にない情報を聞かれたら、でっち上げずに「まだそこには接続されていない」と自然に一言伝え、この会話の中で分かる範囲で手伝う（例: 予定を教えてもらえれば整理する）。
+- 現時点ではカレンダー・予定表、Web検索、ファイルには接続されていない。${
+    memoryConnected
+      ? "\n- 長期記憶として、ユーザーの Obsidian の脳（ノート）に接続されている。関連するノートがあれば下の「脳から取り出した情報」に渡される。そこに無い過去のことは「覚えていない」と正直に言う。"
+      : "\n- 長期記憶（過去のセッションの記録）にも接続されていない。"
+  }
+- 予定・最新ニュースなど、手元にない情報を聞かれたら、でっち上げずに「まだそこには接続されていない」と自然に一言伝え、この会話の中で分かる範囲で手伝う（例: 予定を教えてもらえれば整理する）。
 - この会話内でユーザーが話した内容は覚えていてよい。
 - 自信のない事実は断定しない。
 
@@ -63,14 +67,24 @@ export function buildSystemInstruction({ now, timezone, memories, memoryConnecte
 - 現在日時: ${formatNow(now, timezone)}（${timezone}）`;
 
   const withMode = voice ? base + VOICE_RULES : base;
-  if (!memoryConnected || memories.length === 0) return withMode;
+  if (!memoryConnected) return withMode;
 
-  const notes = memories
-    .map((m) => `## ${m.title ?? m.source}\n${m.content}`)
-    .join("\n\n");
-  return `${withMode}
+  const notes = memories.length
+    ? memories.map((m) => `## ${m.title ?? m.source}\n${m.content}`).join("\n\n")
+    : "（今回の会話に関係するノートは見つからなかった）";
+  return `${withMode}${MEMORY_RULES}
 
-# 長期記憶から取得した関連情報
-以下はユーザーの知識ベースから取得した情報。関係がある場合のみ自然に活用する。
+# 脳から取り出した情報
+以下はユーザーの Obsidian の脳から取り出したノート。会話に関係するときだけ自然に活かす（「ノートによると」などと毎回言う必要はない）。
 ${notes}`;
 }
+
+/** 覚える仕組み（返答の末尾に付けたタグはユーザーには見えず、脳に保存される） */
+const MEMORY_RULES = `
+
+# 記憶のしかた
+- ユーザーが「覚えておいて」と頼んだとき、または今後の会話で役立つ個人的な事実（好み・予定・目標・人間関係・決めたこと・取り組んでいること・近況）を話したときは、返答の最後に次の形式で 1 行ずつ付ける：
+<memory>覚えておく内容を、ユーザーを主語にした短い 1 文で</memory>
+- 例：<memory>ユーザーは Re-Palette のイベントを 11 月に開く予定</memory>
+- このタグはユーザーには表示・読み上げされず、脳（記憶.md）に保存される。タグの存在や保存したことを本文で説明しなくてよい（覚えたことを伝えたい場合は自然に一言だけ）。
+- 雑談の相づち、一時的な話題、すでに脳にある内容、F.R.I.D.A.Y. 自身の発言は記憶しない。1 回の返答で最大 3 つまで。`;

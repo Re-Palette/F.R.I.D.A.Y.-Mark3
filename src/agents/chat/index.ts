@@ -5,7 +5,28 @@
 import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
 import { getGeminiConfig, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
+import type { MemoryRecord } from "@/memory/long-term";
 import { buildSystemInstruction } from "./persona";
+
+/** 脳から思い出すのに待てる時間。間に合わなければ記憶なしで返答する（返答の速さ優先） */
+const RECALL_BUDGET_MS = { text: 1500, voice: 700 };
+
+async function recallWithin(ctx: AgentContext, query: string): Promise<MemoryRecord[]> {
+  if (!ctx.memory.connected) return [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<MemoryRecord[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), ctx.voice ? RECALL_BUDGET_MS.voice : RECALL_BUDGET_MS.text);
+  });
+  const recall = ctx.memory.recall(query, ctx.messages).catch((err) => {
+    console.warn("[friday] recall failed:", err instanceof Error ? err.message : err);
+    return [] as MemoryRecord[];
+  });
+  try {
+    return await Promise.race([recall, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export const chatAgent: Agent = {
   id: "chat",
@@ -21,8 +42,8 @@ export const chatAgent: Agent = {
     const config = getGeminiConfig();
     const latest = ctx.messages[ctx.messages.length - 1]?.content ?? "";
 
-    // 長期記憶（Phase 1 では常に空）。将来は Memory Agent / Obsidian 検索に置き換わる。
-    const memories = ctx.memory.connected ? await ctx.memory.recall(latest, ctx.messages) : [];
+    // 長期記憶: Obsidian の脳から関係するノートを思い出す（時間切れなら記憶なし）
+    const memories = await recallWithin(ctx, latest);
 
     const contents: GeminiContent[] = ctx.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",

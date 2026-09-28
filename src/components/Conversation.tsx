@@ -72,6 +72,15 @@ const Message = memo(function Message({
           </div>
         )}
       </div>
+      {msg.status === "done" && msg.memories && msg.memories.length > 0 && (
+        <ul className="msg__memories" aria-label="脳に覚えたこと">
+          {msg.memories.map((m) => (
+            <li key={m} className="memory-chip" title="Obsidian の脳（記憶.md）に保存">
+              <Icon name="brain" size={12} /> <span>MEMORY SAVED</span> {m}
+            </li>
+          ))}
+        </ul>
+      )}
       {(msg.status === "done" || msg.status === "stopped") && msg.meta && (
         <div className="msg__meta msg__meta--ai">
           {msg.status === "stopped" && <span>STOPPED · </span>}

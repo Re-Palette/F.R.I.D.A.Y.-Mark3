@@ -7,12 +7,19 @@ import { listAgents } from "@/core/router";
 import type { StatusResponse } from "@/core/types";
 import { getContextConfig } from "@/lib/config";
 import { checkGemini } from "@/llm/health";
+import { isBrainConfigured } from "@/memory/github-brain";
+import { checkBrain } from "@/memory/obsidian";
 import { checkTts, isTtsConfigured } from "@/voice/elevenlabs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
+  // 脳（GitHub）の確認は他と並行して進める
+  const brainCheck: Promise<StatusResponse["brain"]> = isBrainConfigured()
+    ? checkBrain().then((b) => ({ configured: true, ...b }))
+    : Promise.resolve({ configured: false, connected: false });
+
   const agents: StatusResponse["agents"] = {};
   for (const agent of listAgents()) {
     const d = agent.describe();
@@ -35,6 +42,7 @@ export async function GET(): Promise<Response> {
     tts = error && error.fatal ? { provider: "browser", reason: error.message } : { provider: "elevenlabs" };
   }
 
-  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts };
+  const brain = await brainCheck;
+  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain };
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

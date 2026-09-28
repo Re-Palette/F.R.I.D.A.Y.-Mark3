@@ -5,6 +5,7 @@
  * Phase 1 で実際に動くのは CHAT AI のみ。他は状態表示だけ。
  */
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { StatusResponse } from "@/core/types";
 import { AGENT_CARDS, type AgentCardDef } from "@/data/agents";
 import type { ChatPhase } from "@/hooks/useChat";
 import { Core } from "./Core";
@@ -27,18 +28,24 @@ function AgentCard({
   index,
   chatStatus,
   onOpenChat,
+  brain,
 }: {
   def: AgentCardDef;
   index: number;
   chatStatus: ChatAgentStatus;
   onOpenChat: () => void;
+  brain?: StatusResponse["brain"];
 }) {
-  const live = def.phase === "live";
-  const state = live ? chatStatus : def.phase;
+  // Obsidian の脳が設定されていれば、MEMORY カードは脳の状態を表示する
+  const isVault = def.key === "vault" && brain?.configured;
+  const live = def.phase === "live" || Boolean(isVault);
+  const cardStatus: ChatAgentStatus = isVault ? (brain?.connected ? "online" : "offline") : chatStatus;
+  const state = live ? cardStatus : def.phase;
+  const opensChat = def.phase === "live";
   const label = live
-    ? chatStatus === "online"
+    ? cardStatus === "online"
       ? "ONLINE"
-      : chatStatus === "checking"
+      : cardStatus === "checking"
         ? "LINKING"
         : "OFFLINE"
     : PHASE_LABEL[def.phase];
@@ -49,13 +56,21 @@ function AgentCard({
       type="button"
       className="agent-card hud"
       data-state={state}
-      data-live={live || undefined}
+      data-live={opensChat || (isVault && brain?.connected) || undefined}
       data-slot={def.slot}
-      onClick={live ? onOpenChat : undefined}
-      aria-disabled={!live}
-      title={live ? "F.R.I.D.A.Y. と会話する" : "このエージェントは今後のアップデートで追加されます"}
+      onClick={opensChat ? onOpenChat : undefined}
+      aria-disabled={!opensChat}
+      title={
+        opensChat
+          ? "F.R.I.D.A.Y. と会話する"
+          : isVault
+            ? brain?.connected
+              ? `Obsidian の脳に接続中（${brain.notes ?? 0} ノート）。会話の中で自動的に思い出し、覚えます`
+              : (brain?.reason ?? "脳に接続できません")
+            : "このエージェントは今後のアップデートで追加されます"
+      }
     >
-      <HudFrame cut={16} leds={live} />
+      <HudFrame cut={16} leds={opensChat || (isVault && brain?.connected)} />
       <span className="agent-card__id">AGT-{String(index + 1).padStart(2, "0")}</span>
       <span className="agent-card__icon">
         <svg className="agent-card__hex" viewBox="0 0 60 60" aria-hidden="true">
@@ -176,11 +191,13 @@ function Readouts({
   context,
   onlineCount,
   voice,
+  brain,
 }: {
   model?: string;
   context: string;
   onlineCount: number;
   voice: string;
+  brain: string;
 }) {
   const [uptime, setUptime] = useState(0);
   useEffect(() => {
@@ -199,6 +216,7 @@ function Readouts({
         </span>
         <span>LINK // {model ?? "—"}</span>
         <span>VOICE // {voice}</span>
+        <span>BRAIN // {brain}</span>
       </div>
       <div className="readout readout--tr">
         <b>SESSION UPTIME</b>
@@ -222,6 +240,7 @@ export const Orbit = memo(function Orbit({
   model,
   context,
   voice = "BROWSER",
+  brain,
 }: {
   phase: ChatPhase;
   chatStatus: ChatAgentStatus;
@@ -230,6 +249,7 @@ export const Orbit = memo(function Orbit({
   model?: string;
   context: string;
   voice?: string;
+  brain?: StatusResponse["brain"];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { traces, box } = useTraces(ref);
@@ -248,12 +268,18 @@ export const Orbit = memo(function Orbit({
           ))}
         </svg>
       )}
-      <Readouts model={model} context={context} onlineCount={chatStatus === "online" ? 1 : 0} voice={voice} />
+      <Readouts
+        model={model}
+        context={context}
+        onlineCount={(chatStatus === "online" ? 1 : 0) + (brain?.connected ? 1 : 0)}
+        voice={voice}
+        brain={!brain?.configured ? "NOT LINKED" : brain.connected ? `${brain.notes ?? 0} NOTES` : "OFFLINE"}
+      />
       <div className="orbit__core">
         <Core phase={phase} />
       </div>
       {AGENT_CARDS.map((c, i) => (
-        <AgentCard key={c.key} def={c} index={i} chatStatus={chatStatus} onOpenChat={onOpenChat} />
+        <AgentCard key={c.key} def={c} index={i} chatStatus={chatStatus} onOpenChat={onOpenChat} brain={brain} />
       ))}
     </div>
   );

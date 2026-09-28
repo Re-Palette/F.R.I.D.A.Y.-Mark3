@@ -21,6 +21,7 @@ function useAgentStatus() {
   const [maxContext, setMaxContext] = useState(24);
   const [reason, setReason] = useState<string>();
   const [tts, setTts] = useState<StatusResponse["tts"]>({ provider: "browser" });
+  const [brain, setBrain] = useState<StatusResponse["brain"]>({ configured: false, connected: false });
 
   const refresh = useCallback(async () => {
     try {
@@ -36,6 +37,7 @@ function useAgentStatus() {
       setReason(chat?.reason);
       setMaxContext(json.context.maxMessages);
       if (json.tts) setTts(json.tts);
+      if (json.brain) setBrain(json.brain);
     } catch {
       setStatus("offline");
       setReason("サーバーに接続できません");
@@ -49,7 +51,7 @@ function useAgentStatus() {
     return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
 
-  return { status, model, maxContext, reason, tts, refresh, setStatus };
+  return { status, model, maxContext, reason, tts, brain, refresh, setStatus };
 }
 
 export function Dashboard() {
@@ -133,6 +135,7 @@ export function Dashboard() {
 
   // ElevenLabs の設定に問題があるときは、音声会話をオンにした時点で一度だけ知らせる
   const [ttsNoticeClosed, setTtsNoticeClosed] = useState(false);
+  const [brainNoticeClosed, setBrainNoticeClosed] = useState(false);
   const ttsNotice =
     voice.state !== "off" && agent.tts.reason && !ttsNoticeClosed ? `${agent.tts.reason}（今はブラウザの声で読み上げます）` : null;
 
@@ -192,6 +195,7 @@ export function Dashboard() {
             model={agent.model}
             context={`${chat.lastRun.contextMessages ?? 0} / ${agent.maxContext} MSG`}
             voice={agent.tts.provider === "elevenlabs" ? "ELEVENLABS" : "BROWSER"}
+            brain={agent.brain}
           />
           <Conversation
             messages={chat.messages}
@@ -213,6 +217,19 @@ export function Dashboard() {
             </span>
             <button type="button" className="ghost-btn" onClick={() => void agent.refresh()}>
               再確認
+            </button>
+          </div>
+        )}
+
+        {agent.brain.configured && !agent.brain.connected && !brainNoticeClosed && (
+          <div className="banner" role="status">
+            <b>BRAIN OFFLINE</b>
+            <span>{agent.brain.reason ?? "脳（Obsidian）に接続できません。"}（記憶なしで会話します）</span>
+            <button type="button" className="ghost-btn" onClick={() => void agent.refresh()}>
+              再確認
+            </button>
+            <button type="button" className="ghost-btn" onClick={() => setBrainNoticeClosed(true)}>
+              閉じる
             </button>
           </div>
         )}

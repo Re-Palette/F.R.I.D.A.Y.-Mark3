@@ -29,6 +29,8 @@ export interface UiMessage {
   meta?: { model?: string; ttftMs?: number; totalMs?: number };
   /** 音声で話しかけた発言への応答（読み上げ対象） */
   voice?: boolean;
+  /** この返答で F.R.I.D.A.Y. が脳に覚えたこと */
+  memories?: string[];
 }
 
 export interface SendOptions {
@@ -280,6 +282,9 @@ export function useChat() {
                 }
                 received += event.text;
                 schedule();
+                break;
+              case "memory":
+                patch(assistantId, (m) => ({ ...m, memories: [...(m.memories ?? []), event.text] }));
                 break;
               case "done": {
                 const totalMs = Math.round(performance.now() - startedAt);
