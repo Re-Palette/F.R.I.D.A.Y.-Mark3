@@ -31,7 +31,12 @@ export interface UiMessage {
   voice?: boolean;
   /** この返答で F.R.I.D.A.Y. が脳に覚えたこと */
   memories?: string[];
+  /** この返答で Google カレンダーに追加した予定（失敗も含む） */
+  calendar?: { ok: boolean; title: string; when: string; error?: string }[];
 }
+
+/** 予定を追加したら右パネルなどに知らせるイベント名 */
+export const CALENDAR_CHANGED = "friday:calendar-changed";
 
 export interface SendOptions {
   /** 音声会話モード（読み上げ向けの短い話し言葉で返答させる） */
@@ -283,6 +288,12 @@ export function useChat() {
                 received += event.text;
                 schedule();
                 break;
+              case "calendar": {
+                const { ok, title, when, error } = event;
+                patch(assistantId, (m) => ({ ...m, calendar: [...(m.calendar ?? []), { ok, title, when, error }] }));
+                if (ok) window.dispatchEvent(new Event(CALENDAR_CHANGED));
+                break;
+              }
               case "memory":
                 patch(assistantId, (m) => ({ ...m, memories: [...(m.memories ?? []), event.text] }));
                 break;

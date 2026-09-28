@@ -33,6 +33,8 @@ export type StreamEvent =
   | { type: "delta"; text: string }
   /** F.R.I.D.A.Y. が脳に覚えたこと（返答の本文には含まれない） */
   | { type: "memory"; text: string }
+  /** Google カレンダーに予定を追加した結果（返答の本文には含まれない） */
+  | { type: "calendar"; ok: boolean; title: string; when: string; error?: string }
   | { type: "done"; finishReason?: string }
   | { type: "error"; code: string; message: string; retryable: boolean };
 
@@ -44,4 +46,29 @@ export interface StatusResponse {
   tts: { provider: "elevenlabs" | "browser"; reason?: string };
   /** Obsidian の脳（GitHub）。未設定なら configured: false */
   brain: { configured: boolean; connected: boolean; notes?: number; reason?: string };
+  /** Google カレンダー（configured: サーバー側の設定あり / connected: この端末が接続済み） */
+  calendar: { configured: boolean; connected: boolean };
+}
+
+/** 右パネルなどに表示する予定（サーバーで表示用に整えたもの） */
+export interface CalendarEventView {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  location?: string;
+  dayLabel: string;
+  timeLabel: string;
+  rangeLabel: string;
+}
+
+/** GET /api/calendar/events のレスポンス */
+export interface CalendarResponse {
+  /** GOOGLE_CLIENT_ID / SECRET が設定されているか */
+  configured: boolean;
+  /** この端末が接続済みか */
+  connected: boolean;
+  events?: CalendarEventView[];
+  reason?: string;
 }

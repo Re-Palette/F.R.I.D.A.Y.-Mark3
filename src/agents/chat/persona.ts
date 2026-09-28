@@ -2,6 +2,7 @@
  * F.R.I.D.A.Y. の人格（system instruction）。
  * 口調・振る舞いを調整したいときはこのファイルだけを編集すればよい。
  */
+import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MemoryRecord } from "@/memory/long-term";
 
 export interface PersonaInput {
@@ -11,6 +12,8 @@ export interface PersonaInput {
   memoryConnected: boolean;
   /** 音声会話モード */
   voice?: boolean;
+  /** Google カレンダー。events が null なら読み込めなかった */
+  calendar?: { connected: true; events: CalendarEvent[] | null } | { connected: false };
 }
 
 function formatNow(now: Date, timezone: string): string {
@@ -34,7 +37,8 @@ const VOICE_RULES = `
 - 数字や英語は読み上げやすい形で書く（例: 「15:30」より「15時半」）。
 - 音声認識の誤変換がありうるので、多少おかしな文でも意図を汲んで答える。`;
 
-export function buildSystemInstruction({ now, timezone, memories, memoryConnected, voice }: PersonaInput): string {
+export function buildSystemInstruction({ now, timezone, memories, memoryConnected, voice, calendar }: PersonaInput): string {
+  const calendarOn = calendar?.connected === true;
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。ユーザー一人のために動く専属AIアシスタントであり、ユーザー専用の「個人用AI OS」の中核です。汎用チャットボットではありません。
 
 # 話し方
@@ -54,7 +58,11 @@ export function buildSystemInstruction({ now, timezone, memories, memoryConnecte
 - 何を指しているか本当に分からないときだけ、短く確認する。
 
 # 誠実さ（重要）
-- 現時点ではカレンダー・予定表、Web検索、ファイルには接続されていない。${
+- ${
+    calendarOn
+      ? "ユーザーの Google カレンダーに接続されている（今後 7 日の予定は下の「カレンダー」に渡される。予定の追加もできる）。Web検索、ファイルには接続されていない。"
+      : "現時点ではカレンダー・予定表、Web検索、ファイルには接続されていない（カレンダーは画面右の「SCHEDULE」から Google カレンダーに接続できる）。"
+  }${
     memoryConnected
       ? "\n- 長期記憶として、ユーザーの Obsidian の脳（ノート）に接続されている。関連するノートがあれば下の「脳から取り出した情報」に渡される。そこに無い過去のことは「覚えていない」と正直に言う。"
       : "\n- 長期記憶（過去のセッションの記録）にも接続されていない。"
@@ -66,13 +74,14 @@ export function buildSystemInstruction({ now, timezone, memories, memoryConnecte
 # 現在の状況
 - 現在日時: ${formatNow(now, timezone)}（${timezone}）`;
 
-  const withMode = voice ? base + VOICE_RULES : base;
-  if (!memoryConnected) return withMode;
+  let out = voice ? base + VOICE_RULES : base;
+  if (calendar?.connected) out += calendarSection(calendar.events, now, timezone);
+  if (!memoryConnected) return out;
 
   const notes = memories.length
     ? memories.map((m) => `## ${m.title ?? m.source}\n${m.content}`).join("\n\n")
     : "（今回の会話に関係するノートは見つからなかった）";
-  return `${withMode}${MEMORY_RULES}
+  return `${out}${MEMORY_RULES}
 
 # 脳から取り出した情報
 以下はユーザーの Obsidian の脳から取り出したノート。会話に関係するときだけ自然に活かす（「ノートによると」などと毎回言う必要はない）。
@@ -88,3 +97,28 @@ const MEMORY_RULES = `
 - 例：<memory>ユーザーは Re-Palette のイベントを 11 月に開く予定</memory>
 - このタグはユーザーには表示・読み上げされず、脳（記憶.md）に保存される。タグの存在や保存したことを本文で説明しなくてよい（覚えたことを伝えたい場合は自然に一言だけ）。
 - 雑談の相づち、一時的な話題、すでに脳にある内容、F.R.I.D.A.Y. 自身の発言は記憶しない。1 回の返答で最大 3 つまで。`;
+
+/** カレンダーの予定と、予定を追加するときのルール */
+function calendarSection(events: CalendarEvent[] | null, now: Date, timezone: string): string {
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: timezone }).format(now);
+  const list =
+    events === null
+      ? "（今回は予定を読み込めなかった。予定を聞かれたら、今は確認できないと正直に伝える）"
+      : events.length
+        ? events.map((e) => `- ${e.dayLabel} ${e.rangeLabel} ${e.title}${e.location ? `（場所: ${e.location}）` : ""}`).join("\n")
+        : "（今後 7 日間、予定は入っていない）";
+  return `
+
+# カレンダー（ユーザーの Google カレンダー・今日から 7 日分）
+${list}
+
+# 予定の追加のしかた
+- ユーザーが予定の追加を頼んだとき（「入れて」「登録して」「予定に追加」など）だけ、返答の最後に次の形式で 1 行付ける：
+<calendar>{"title":"予定の名前","start":"YYYY-MM-DDTHH:MM","end":"YYYY-MM-DDTHH:MM","location":"場所"}</calendar>
+- 日時はユーザーの地域（${timezone}）の時刻で書く。今日は ${today}。「明日」「来週の金曜」などは今日を基準に正しい日付に直す。
+- 終わりの時刻が分からなければ end は省く（1 時間の予定になる）。場所が無ければ location は省く。
+- 時刻の無い終日の予定は {"title":"…","start":"YYYY-MM-DD","allDay":true}。
+- 日付や時刻が曖昧（「今度」「午後のどこか」など）なら、タグを付けずに短く聞き返す。
+- タグはユーザーには見えず、自動で Google カレンダーに登録される。本文では「〇日の〇時に入れておきます」のように自然に一言だけ伝える。タグの存在は説明しない。
+- 予定の変更・削除はまだできない。頼まれたら、Google カレンダーで直接操作してもらうよう伝える。`;
+}

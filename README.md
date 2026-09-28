@@ -35,6 +35,9 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `ELEVENLABS_MODEL` | | `eleven_flash_v2_5` | 音声モデル（音質重視なら `eleven_multilingual_v2`） |
 | `BRAIN_GITHUB_TOKEN` | | — | Obsidian の脳（GitHub リポジトリ）用のトークン。対象リポジトリのみ・Contents: Read and write |
 | `BRAIN_REPO` | | — | 脳のリポジトリ（`owner/repo`） |
+| `GOOGLE_CLIENT_ID` | | — | Google カレンダー連携用の OAuth クライアント ID |
+| `GOOGLE_CLIENT_SECRET` | | — | 同 クライアント シークレット（サーバー側でのみ使用） |
+| `GOOGLE_CALENDAR_ID` | | `primary` | 読み書きするカレンダー |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
@@ -49,6 +52,7 @@ src/
 │  ├─ page.tsx / layout.tsx / globals.css   UI（Next.js App Router）
 │  └─ api/
 │     ├─ chat/route.ts      POST 会話（NDJSON ストリーミング）
+│     ├─ calendar/          Google カレンダー（connect / callback / disconnect / events）
 │     └─ status/route.ts    GET  Agent の稼働状態
 ├─ core/
 │  ├─ friday.ts             F.R.I.D.A.Y. Core：入力検証 → Router → Agent → ストリーム
@@ -66,7 +70,9 @@ src/
 │  ├─ long-term.ts          長期記憶インターフェース（脳が未設定なら Noop）
 │  ├─ obsidian.ts           Obsidian の脳：関連ノートの検索・保存
 │  └─ github-brain.ts       脳（GitHub リポジトリ）の読み書き・初期化
-├─ lib/                     設定読み込み・エラー定義
+├─ integrations/
+│  └─ google-calendar.ts    Google カレンダー（OAuth・予定の読み書き）
+├─ lib/                     設定読み込み・エラー定義・暗号化 Cookie
 ├─ hooks/useChat.ts         会話ループの状態管理（ストリーム受信・停止・再試行）
 ├─ components/              Dashboard / Core / Orbit / Conversation / Composer ほか
 └─ data/                    Agent カード定義・右パネルのサンプルデータ
@@ -110,6 +116,15 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   サーバーがこれを取り除いて（画面・読み上げには出ない）、返答を返し終えたあと `記憶.md` に追記します。追加の API 呼び出しはありません。
 - 会話は `FRIDAY/会話ログ/YYYY-MM-DD.md` に日ごとに残ります。
 - Obsidian で自分が書いたノートも、次の会話から自動的に参考にされます。
+
+### Google カレンダー
+
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を設定すると、画面右の SCHEDULE に「Google カレンダーに接続」ボタンが出ます。
+- 接続すると、Google から受け取った更新用トークンを **暗号化して HttpOnly Cookie に保存** します（その端末で有効。ブラウザの JavaScript からは読めません）。
+- **読む**: 返答の前に今日から 7 日分の予定を取得して渡します（脳の検索と同時に行い、時間内に取れなければ予定なしで返答）。SCHEDULE には今日の予定を表示します。
+- **書く**: 「明日 15 時に打ち合わせを入れて」と頼むと、F.R.I.D.A.Y. が返答の末尾に `<calendar>{…}</calendar>` を付け、サーバーが取り除いて Google カレンダーに登録します。
+  登録できなかったときは返答の中でも知らせます（音声でも読み上げ）。予定の変更・削除は未対応。
+- 権限は `calendar.events`（予定の読み書き）だけを求めます。
 
 ### 音声会話
 
@@ -165,5 +180,5 @@ Chat Agent は取得した記憶を system instruction に含めて応答しま�
 
 - 検索・文書作成・分析・SNS・Automation の各 Agent
 - 音声入力・ファイル添付・画像生成
-- 右パネル（天気・予定・プロジェクト）は **SAMPLE** 表示のみ
+- 右パネルの天気・プロジェクトは **SAMPLE** 表示のみ（予定は Google カレンダー接続時に実データ）
 - Claude API / OpenAI API は使用していません

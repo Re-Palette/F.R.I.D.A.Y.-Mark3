@@ -192,12 +192,14 @@ function Readouts({
   onlineCount,
   voice,
   brain,
+  calendar,
 }: {
   model?: string;
   context: string;
   onlineCount: number;
   voice: string;
   brain: string;
+  calendar: string;
 }) {
   const [uptime, setUptime] = useState(0);
   useEffect(() => {
@@ -217,6 +219,7 @@ function Readouts({
         <span>LINK // {model ?? "—"}</span>
         <span>VOICE // {voice}</span>
         <span>BRAIN // {brain}</span>
+        <span>CALENDAR // {calendar}</span>
       </div>
       <div className="readout readout--tr">
         <b>SESSION UPTIME</b>
@@ -241,6 +244,7 @@ export const Orbit = memo(function Orbit({
   context,
   voice = "BROWSER",
   brain,
+  calendar = "NOT SET",
 }: {
   phase: ChatPhase;
   chatStatus: ChatAgentStatus;
@@ -250,6 +254,7 @@ export const Orbit = memo(function Orbit({
   context: string;
   voice?: string;
   brain?: StatusResponse["brain"];
+  calendar?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { traces, box } = useTraces(ref);
@@ -274,6 +279,7 @@ export const Orbit = memo(function Orbit({
         onlineCount={(chatStatus === "online" ? 1 : 0) + (brain?.connected ? 1 : 0)}
         voice={voice}
         brain={!brain?.configured ? "NOT LINKED" : brain.connected ? `${brain.notes ?? 0} NOTES` : "OFFLINE"}
+        calendar={calendar}
       />
       <div className="orbit__core">
         <Core phase={phase} />

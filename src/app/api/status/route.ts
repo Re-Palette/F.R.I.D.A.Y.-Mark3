@@ -6,6 +6,7 @@
 import { listAgents } from "@/core/router";
 import type { StatusResponse } from "@/core/types";
 import { getContextConfig } from "@/lib/config";
+import { isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-calendar";
 import { checkGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { checkBrain } from "@/memory/obsidian";
@@ -14,7 +15,7 @@ import { checkTts, isTtsConfigured } from "@/voice/elevenlabs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: Request): Promise<Response> {
   // 脳（GitHub）の確認は他と並行して進める
   const brainCheck: Promise<StatusResponse["brain"]> = isBrainConfigured()
     ? checkBrain().then((b) => ({ configured: true, ...b }))
@@ -43,6 +44,7 @@ export async function GET(): Promise<Response> {
   }
 
   const brain = await brainCheck;
-  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain };
+  const calendar = { configured: isCalendarConfigured(), connected: Boolean(refreshTokenFrom(req)) };
+  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar };
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

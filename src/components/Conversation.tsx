@@ -72,6 +72,20 @@ const Message = memo(function Message({
           </div>
         )}
       </div>
+      {msg.calendar && msg.calendar.length > 0 && (
+        <ul className="msg__memories" aria-label="カレンダーに追加した予定">
+          {msg.calendar.map((c, i) => (
+            <li
+              key={`${c.title}-${i}`}
+              className="memory-chip memory-chip--calendar"
+              data-failed={!c.ok || undefined}
+              title={c.ok ? "Google カレンダーに追加しました" : c.error}
+            >
+              <Icon name="calendar" size={12} /> <span>{c.ok ? "CALENDAR ADDED" : "CALENDAR FAILED"}</span> {c.when} {c.title}
+            </li>
+          ))}
+        </ul>
+      )}
       {msg.status === "done" && msg.memories && msg.memories.length > 0 && (
         <ul className="msg__memories" aria-label="脳に覚えたこと">
           {msg.memories.map((m) => (

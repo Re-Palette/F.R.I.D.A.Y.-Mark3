@@ -5,6 +5,8 @@
 import { after } from "next/server";
 import { handleConversation, preflight, sanitizeHistory } from "@/core/friday";
 import type { StreamEvent } from "@/core/types";
+import { CalendarAccess, refreshTokenFrom } from "@/integrations/google-calendar";
+import { getTimezone } from "@/lib/config";
 import { toFridayError } from "@/lib/errors";
 import { getLongTermMemory, type SaveTurnInput } from "@/memory/long-term";
 
@@ -52,7 +54,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const encoder = new TextEncoder();
-  const events = handleConversation(history, req.signal, { voice, onTurn: resolveTurn });
+  const refresh = refreshTokenFrom(req);
+  const calendar = refresh ? new CalendarAccess(refresh, getTimezone()) : undefined;
+  const events = handleConversation(history, req.signal, { voice, onTurn: resolveTurn, calendar });
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {

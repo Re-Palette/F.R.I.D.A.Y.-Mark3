@@ -15,6 +15,28 @@ import { Orbit, type ChatAgentStatus } from "./Orbit";
 import { RightPanel } from "./RightPanel";
 import { Sidebar, type View } from "./Sidebar";
 
+const CALENDAR_NOTICE: Record<string, string> = {
+  connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
+  denied: "Google カレンダーへの接続がキャンセルされました。",
+  failed: "Google カレンダーに接続できませんでした。Google Cloud の設定（リダイレクト URI・テストユーザー）を確認して、もう一度お試しください。",
+  "not-configured": "Google カレンダーの設定（GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET）がまだありません。",
+};
+
+/** Google から戻ってきたとき（?calendar=…）の結果を一度だけ表示する */
+function useCalendarNotice() {
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get("calendar");
+    if (!result) return;
+    setNotice(CALENDAR_NOTICE[result] ?? null);
+    url.searchParams.delete("calendar");
+    url.searchParams.delete("reason");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }, []);
+  return [notice, () => setNotice(null)] as const;
+}
+
 function useAgentStatus() {
   const [status, setStatus] = useState<ChatAgentStatus>("checking");
   const [model, setModel] = useState<string>();
@@ -22,6 +44,7 @@ function useAgentStatus() {
   const [reason, setReason] = useState<string>();
   const [tts, setTts] = useState<StatusResponse["tts"]>({ provider: "browser" });
   const [brain, setBrain] = useState<StatusResponse["brain"]>({ configured: false, connected: false });
+  const [calendar, setCalendar] = useState<StatusResponse["calendar"]>({ configured: false, connected: false });
 
   const refresh = useCallback(async () => {
     try {
@@ -38,6 +61,7 @@ function useAgentStatus() {
       setMaxContext(json.context.maxMessages);
       if (json.tts) setTts(json.tts);
       if (json.brain) setBrain(json.brain);
+      if (json.calendar) setCalendar(json.calendar);
     } catch {
       setStatus("offline");
       setReason("サーバーに接続できません");
@@ -51,12 +75,13 @@ function useAgentStatus() {
     return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
 
-  return { status, model, maxContext, reason, tts, brain, refresh, setStatus };
+  return { status, model, maxContext, reason, tts, brain, calendar, refresh, setStatus };
 }
 
 export function Dashboard() {
   const chat = useChat();
   const agent = useAgentStatus();
+  const [calendarNotice, closeCalendarNotice] = useCalendarNotice();
   const [view, setView] = useState<View>("home");
   const composerRef = useRef<ComposerHandle>(null);
 
@@ -196,6 +221,7 @@ export function Dashboard() {
             context={`${chat.lastRun.contextMessages ?? 0} / ${agent.maxContext} MSG`}
             voice={agent.tts.provider === "elevenlabs" ? "ELEVENLABS" : "BROWSER"}
             brain={agent.brain}
+            calendar={!agent.calendar.configured ? "NOT SET" : agent.calendar.connected ? "LINKED" : "NOT LINKED"}
           />
           <Conversation
             messages={chat.messages}
@@ -217,6 +243,16 @@ export function Dashboard() {
             </span>
             <button type="button" className="ghost-btn" onClick={() => void agent.refresh()}>
               再確認
+            </button>
+          </div>
+        )}
+
+        {calendarNotice && (
+          <div className="banner" role="status">
+            <b>CALENDAR</b>
+            <span>{calendarNotice}</span>
+            <button type="button" className="ghost-btn" onClick={closeCalendarNotice}>
+              閉じる
             </button>
           </div>
         )}

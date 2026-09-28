@@ -5,24 +5,25 @@
 import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
 import { getGeminiConfig, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
+import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MemoryRecord } from "@/memory/long-term";
 import { buildSystemInstruction } from "./persona";
 
-/** 脳から思い出すのに待てる時間。間に合わなければ記憶なしで返答する（返答の速さ優先） */
-const RECALL_BUDGET_MS = { text: 1500, voice: 700 };
+/** 脳・カレンダーから情報を集めるのに待てる時間。間に合わなければ無しで返答する（返答の速さ優先） */
+const CONTEXT_BUDGET_MS = { text: 1500, voice: 700 };
 
-async function recallWithin(ctx: AgentContext, query: string): Promise<MemoryRecord[]> {
-  if (!ctx.memory.connected) return [];
+/** 時間内に終わらなければ fallback を返す（失敗も fallback） */
+async function within<T>(task: Promise<T>, ms: number, fallback: T, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<MemoryRecord[]>((resolve) => {
-    timer = setTimeout(() => resolve([]), ctx.voice ? RECALL_BUDGET_MS.voice : RECALL_BUDGET_MS.text);
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
   });
-  const recall = ctx.memory.recall(query, ctx.messages).catch((err) => {
-    console.warn("[friday] recall failed:", err instanceof Error ? err.message : err);
-    return [] as MemoryRecord[];
+  const safe = task.catch((err) => {
+    console.warn(`[friday] ${label} failed:`, err instanceof Error ? err.message : err);
+    return fallback;
   });
   try {
-    return await Promise.race([recall, timeout]);
+    return await Promise.race([safe, timeout]);
   } finally {
     clearTimeout(timer);
   }
@@ -42,8 +43,12 @@ export const chatAgent: Agent = {
     const config = getGeminiConfig();
     const latest = ctx.messages[ctx.messages.length - 1]?.content ?? "";
 
-    // 長期記憶: Obsidian の脳から関係するノートを思い出す（時間切れなら記憶なし）
-    const memories = await recallWithin(ctx, latest);
+    // 長期記憶（Obsidian の脳）と今後の予定（Google カレンダー）を同時に集める。時間切れなら無しで返答
+    const budget = ctx.voice ? CONTEXT_BUDGET_MS.voice : CONTEXT_BUDGET_MS.text;
+    const [memories, events] = await Promise.all([
+      ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
+      ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
+    ]);
 
     const contents: GeminiContent[] = ctx.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
@@ -62,6 +67,7 @@ export const chatAgent: Agent = {
         timezone: ctx.timezone,
         memories,
         memoryConnected: ctx.memory.connected,
+        calendar: ctx.calendar ? { connected: true, events } : { connected: false },
         voice: ctx.voice,
       }),
       contents,

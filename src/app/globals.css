@@ -1526,6 +1526,26 @@ button:disabled,
   color: var(--cyan);
 }
 
+.memory-chip--calendar {
+  border-color: rgba(255, 150, 60, 0.45);
+  background: rgba(255, 138, 31, 0.07);
+}
+
+.memory-chip--calendar svg,
+.memory-chip--calendar span {
+  color: var(--orange-hi);
+}
+
+.memory-chip--calendar[data-failed] {
+  border-color: rgba(255, 90, 79, 0.5);
+  background: rgba(255, 90, 79, 0.07);
+}
+
+.memory-chip--calendar[data-failed] svg,
+.memory-chip--calendar[data-failed] span {
+  color: var(--red);
+}
+
 .msg__error {
   display: flex;
   flex-wrap: wrap;
@@ -2039,6 +2059,44 @@ button:disabled,
 
 .schedule li[data-accent] .schedule__title {
   color: #4fb7ff;
+}
+
+.schedule li[data-done] .schedule__title,
+.schedule li[data-done] .schedule__time {
+  color: var(--muted);
+}
+
+.schedule[data-sample] {
+  opacity: 0.55;
+}
+
+.schedule-empty,
+.schedule-connect p {
+  margin: 4px 0 0;
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.schedule-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-connect__btn {
+  align-self: flex-start;
+  text-decoration: none;
+}
+
+.panel__extra a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.panel__extra a:hover {
+  color: var(--orange-hi);
 }
 
 .schedule__done {

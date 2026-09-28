@@ -1,9 +1,11 @@
-import { memo } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
+import type { CalendarEventView } from "@/core/types";
 import { QUICK_ACCESS, SAMPLE_PROJECTS, SAMPLE_SCHEDULE, SAMPLE_WEATHER } from "@/data/dashboard";
+import { useCalendar } from "@/hooks/useCalendar";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
-function PanelHead({ title, accent, extra, idx }: { title: string; accent?: string; extra?: string; idx: string }) {
+function PanelHead({ title, accent, extra, idx }: { title: string; accent?: string; extra?: ReactNode; idx: string }) {
   return (
     <div className="panel__head">
       <span className="panel__idx">{idx}</span>
@@ -18,6 +20,93 @@ function PanelHead({ title, accent, extra, idx }: { title: string; accent?: stri
 
 /** Phase 1 の右パネルはサンプル表示（未接続） */
 const SAMPLE_TITLE = "サンプルデータ（連携は今後のアップデートで対応）";
+
+/** 今（1 分ごとに更新）。終わった予定・次の予定の表示に使う */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+const endOf = (e: CalendarEventView) => Date.parse(e.end || e.start);
+
+/** TODAY'S SCHEDULE: Google カレンダーに接続していれば今日の予定、未接続ならサンプル */
+function SchedulePanel() {
+  const cal = useCalendar();
+  const now = useNow();
+
+  if (cal.state !== "connected") {
+    const connectable = cal.state === "disconnected";
+    return (
+      <section className="panel hud" title={connectable ? undefined : SAMPLE_TITLE} data-calendar={cal.state}>
+        <HudFrame cut={14} />
+        <PanelHead title="TODAY'S" accent="SCHEDULE" extra={connectable ? "NOT LINKED" : "SAMPLE"} idx="02" />
+        {connectable ? (
+          <div className="schedule-connect">
+            <p>{cal.reason ?? "Google カレンダーに接続すると、今日の予定が表示され、会話で予定を追加できます。"}</p>
+            <a className="ghost-btn schedule-connect__btn" href="/api/calendar/connect">
+              <Icon name="calendar" size={14} /> Google カレンダーに接続
+            </a>
+          </div>
+        ) : (
+          <ul className="schedule" data-sample>
+            {SAMPLE_SCHEDULE.map((s) => (
+              <li key={s.time} data-accent={s.accent || undefined}>
+                <i />
+                <span className="schedule__time">{s.time}</span>
+                <span className="schedule__title">{s.title}</span>
+                {s.done && <span className="schedule__done">✓</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  }
+
+  // 次（または今）の予定を強調し、終わった予定には ✓
+  const next = cal.events.find((e) => !e.allDay && endOf(e) > now);
+  return (
+    <section className="panel hud" data-calendar="connected">
+      <HudFrame cut={14} />
+      <PanelHead
+        title="TODAY'S"
+        accent="SCHEDULE"
+        idx="02"
+        extra={
+          <a href="https://calendar.google.com/" target="_blank" rel="noreferrer noopener" title="Google カレンダーを開く">
+            GOOGLE ↗
+          </a>
+        }
+      />
+      {cal.events.length === 0 ? (
+        <p className="schedule-empty">今日の予定はありません</p>
+      ) : (
+        <ul className="schedule">
+          {cal.events.slice(0, 7).map((e) => {
+            const done = !e.allDay && endOf(e) <= now;
+            return (
+              <li
+                key={e.id}
+                data-accent={e === next || undefined}
+                data-done={done || undefined}
+                title={`${e.rangeLabel} ${e.title}${e.location ? ` @${e.location}` : ""}`}
+              >
+                <i />
+                <span className="schedule__time">{e.timeLabel}</span>
+                <span className="schedule__title">{e.title}</span>
+                {done && <span className="schedule__done">✓</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 export const RightPanel = memo(function RightPanel() {
   return (
@@ -49,20 +138,7 @@ export const RightPanel = memo(function RightPanel() {
         </div>
       </section>
 
-      <section className="panel hud" title={SAMPLE_TITLE}>
-        <HudFrame cut={14} />
-        <PanelHead title="TODAY'S" accent="SCHEDULE" extra="VIEW ALL" idx="02" />
-        <ul className="schedule">
-          {SAMPLE_SCHEDULE.map((s) => (
-            <li key={s.time} data-accent={s.accent || undefined}>
-              <i />
-              <span className="schedule__time">{s.time}</span>
-              <span className="schedule__title">{s.title}</span>
-              {s.done && <span className="schedule__done">✓</span>}
-            </li>
-          ))}
-        </ul>
-      </section>
+      <SchedulePanel />
 
       <section className="panel hud" title={SAMPLE_TITLE}>
         <HudFrame cut={14} />
