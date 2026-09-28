@@ -41,7 +41,10 @@ export class BrainError extends Error {
 
 /* ---------- 脳の中の決まった場所 ---------- */
 
-export const BRAIN_DIR = "F.R.I.D.A.Y.";
+// Windows は末尾が「.」のフォルダを作れないため、記号なしの名前にする
+export const BRAIN_DIR = "FRIDAY";
+/** 以前のフォルダ名（Windows で取り込めなかったため、見つけたら BRAIN_DIR へ引っ越す） */
+const LEGACY_DIR = "F.R.I.D.A.Y.";
 export const PROFILE_PATH = `${BRAIN_DIR}/プロフィール.md`;
 export const MEMORY_PATH = `${BRAIN_DIR}/記憶.md`;
 export const LOG_DIR = `${BRAIN_DIR}/会話ログ`;
@@ -146,7 +149,9 @@ async function putFile(path: string, text: string, message: string, sha?: string
 export async function updateNote(path: string, update: (current: string | null) => string, message: string): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const current = await getFile(path);
-    const res = await putFile(path, update(current?.text ?? null), message, current?.sha);
+    const next = update(current?.text ?? null);
+    if (current && next === current.text) return; // 変更なし
+    const res = await putFile(path, next, message, current?.sha);
     if (res.ok) {
       treeCache = undefined; // 一覧を取り直させる
       return;
@@ -154,6 +159,36 @@ export async function updateNote(path: string, update: (current: string | null) 
     if ((res.status === 409 || res.status === 422) && attempt === 0) continue;
     throw explain(res.status);
   }
+}
+
+async function deleteFile(path: string, sha: string, message: string): Promise<void> {
+  const c = getBrainConfig();
+  const res = await gh(c, `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {
+    method: "DELETE",
+    body: JSON.stringify({ message, sha }),
+  });
+  if (!res.ok && res.status !== 404) throw explain(res.status);
+}
+
+/** 旧フォルダ（F.R.I.D.A.Y./）のノートを新フォルダへ移す。移した件数を返す */
+async function migrateLegacy(files: BrainFile[]): Promise<number> {
+  const legacy = files.filter((f) => f.path.startsWith(`${LEGACY_DIR}/`));
+  for (const f of legacy) {
+    const text = await readNote(f);
+    const target = `${BRAIN_DIR}/${f.path.slice(LEGACY_DIR.length + 1)}`;
+    // 新しい場所に既にあれば、そちらを優先する
+    await updateNote(target, (current) => current ?? text, `F.R.I.D.A.Y.: フォルダ名を変更（${target}）`);
+    await deleteFile(f.path, f.sha, `F.R.I.D.A.Y.: 旧フォルダを削除（${f.path}）`);
+  }
+  if (legacy.length && files.some((f) => f.path === "README.md")) {
+    await updateNote(
+      "README.md",
+      (current) => (current ?? "").split(`${LEGACY_DIR}/`).join(`${BRAIN_DIR}/`),
+      "F.R.I.D.A.Y.: README のフォルダ名を更新",
+    );
+  }
+  if (legacy.length) treeCache = undefined;
+  return legacy.length;
 }
 
 /* ---------- 初回: 脳を作る ---------- */
@@ -222,7 +257,8 @@ let ensured = false;
 /** 脳が空（または F.R.I.D.A.Y. 用フォルダが無い）なら、最初のノートを作る */
 export async function ensureBrain(tz: string): Promise<{ created: boolean }> {
   if (ensured) return { created: false };
-  const files = await listNotes(true);
+  let files = await listNotes(true);
+  if (await migrateLegacy(files)) files = await listNotes(true);
   const existing = new Set(files.map((f) => f.path));
   const missing = Object.entries(starterFiles(tz)).filter(([p]) => !existing.has(p));
   // 既に脳がある（プロフィールがある）なら何もしない。README だけあるリポジトリには足りないものを作る
@@ -248,9 +284,13 @@ export async function appendMemories(facts: string[], tz: string): Promise<void>
     MEMORY_PATH,
     (current) => {
       let text = current ?? "# 記憶\n";
+      // 既に覚えていることは書き足さない
+      const known = new Set(text.split("\n").map((l) => l.replace(/^\s*-\s*/, "").trim()));
+      const fresh = facts.filter((f) => !known.has(f));
+      if (!fresh.length) return text;
       if (!text.includes(`## ${d}`)) text = `${text.trimEnd()}\n\n## ${d}\n`;
       // 今日の見出しの末尾に追記（今日の見出しは常に一番下にある想定）
-      return `${text.trimEnd()}\n${facts.map((f) => `- ${f}`).join("\n")}\n`;
+      return `${text.trimEnd()}\n${fresh.map((f) => `- ${f}`).join("\n")}\n`;
     },
     `F.R.I.D.A.Y.: 記憶を追加（${facts.length} 件）`,
   );
