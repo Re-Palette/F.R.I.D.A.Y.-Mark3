@@ -139,8 +139,10 @@ button:disabled,
   grid-template-areas:
     "top top top"
     "side center right";
-  height: 100vh;
-  height: 100dvh;
+  /* 画面が基準より小さいときは配置を変えずに全体を縮小（--ui-zoom は layout.tsx のスクリプトが設定） */
+  zoom: var(--ui-zoom, 1);
+  height: calc(100vh / var(--ui-zoom, 1));
+  height: calc(100dvh / var(--ui-zoom, 1));
   isolation: isolate;
   overflow: hidden;
 }
@@ -686,14 +688,15 @@ button:disabled,
 }
 
 /* 大画面では中央側へ張り出す */
-@media (min-width: 1600px) {
+@media (min-width: 1000px) {
   .sidebar {
     overflow: visible;
     z-index: 2;
   }
 
   .sys-status {
-    width: 290px;
+    /* 縮小後の画面幅は常に 1600px 以上 → 入力欄の左端（300px〜）に届かない幅 */
+    width: 270px;
   }
 }
 
@@ -2310,7 +2313,8 @@ button:disabled,
   }
 }
 
-@media (max-width: 1400px) {
+/* タブレット（縮小せず並べ替える幅）: サイドバーをアイコンだけに */
+@media (max-width: 999px) {
   .app {
     grid-template-columns: 76px minmax(0, 1fr) 296px;
   }
@@ -2352,7 +2356,7 @@ button:disabled,
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 999px) {
   .app {
     grid-template-columns: 76px minmax(0, 1fr);
     grid-template-areas:

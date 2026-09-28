@@ -20,9 +20,27 @@ export const viewport: Viewport = {
   themeColor: "#050608",
 };
 
+/**
+ * 画面に合わせた全体の縮小率。ノート PC でもモニターと同じ配置のまま、比率を保って縮める。
+ * 基準サイズ（1600×880）より小さい画面だけ縮小し、幅 1000px 未満（タブレット・スマホ）は縮めずに並べ替える。
+ * 描画前に実行して、ちらつきを防ぐ。
+ */
+const UI_SCALE_SCRIPT = `(function(){
+  function fit(){
+    var w = window.innerWidth, h = window.innerHeight;
+    var z = w < 1000 ? 1 : Math.max(0.6, Math.min(1, w / 1600, h / 880));
+    document.documentElement.style.setProperty("--ui-zoom", String(z));
+  }
+  fit();
+  window.addEventListener("resize", fit);
+})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ja">
+    <html lang="ja" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: UI_SCALE_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );
