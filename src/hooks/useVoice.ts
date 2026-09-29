@@ -53,13 +53,25 @@ const MIN_CHUNK = 12;
 /** 聞こえた言葉がこれ以上「読み上げ中の文章」と一致していたら自分の声とみなす */
 const ECHO_THRESHOLD = 0.5;
 /** 読み上げ終了直後も、この間は自分の声の残響を無視する */
-const ECHO_TAIL_MS = 2000;
+const ECHO_TAIL_MS = 4000;
+/**
+ * 読み上げ後しばらくは、聞こえた言葉が「さっき自分が話した文章」とほぼ同じなら自分の声とみなす。
+ * （ブラウザの聞き取り結果は数秒遅れて届くことがあるため）
+ */
+const ECHO_WINDOW_MS = 45_000;
+/** 話している最中は、これくらい似ていれば自分の声とみなす（誤って割り込まないよう厳しめ） */
+const ECHO_THRESHOLD_SPEAKING = 0.35;
+/** 読み終えてしばらく後は、ほぼ同じ文章のときだけ自分の声とみなす（ユーザーの返事を消さないため） */
+const ECHO_THRESHOLD_LATE = 0.75;
+/** 自分の声でも必ず割り込みとして扱う言葉 */
+const STOP_WORDS = /ストップ|止めて|とめて|待って|まって|フライデー|ふらいでー|friday/i;
 
 export function useVoice({
   onCommand,
   onBargeIn,
   cloudVoice = false,
   speed = 1.15,
+  bargeIn = true,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -68,7 +80,11 @@ export function useVoice({
   cloudVoice?: boolean;
   /** 読み上げの速さ（SETTINGS。ElevenLabs 基準の 0.7〜1.2。ブラウザの声は換算する） */
   speed?: number;
+  /** 話している間も聞く（割り込み）。false なら話している間はマイクを止める（スピーカーで自分の声を拾う環境向け） */
+  bargeIn?: boolean;
 }) {
+  const bargeInOn = useRef(bargeIn);
+  bargeInOn.current = bargeIn;
   const speedRef = useRef(speed);
   speedRef.current = speed;
   const [state, setState] = useState<VoiceState>("off");
@@ -116,7 +132,25 @@ export function useVoice({
     guard: 0,
     audible: "", // いまスピーカーから出ている（前後を含む）文章。自分の声の聞き取りを見分けるのに使う
     lastSpokeAt: 0,
+    log: [] as { text: string; at: number }[], // 最近読み上げた文章（自分の声の聞き取りを見分けるのに使う）
   });
+
+  /** 聞こえた言葉が、F.R.I.D.A.Y. 自身の声をマイクが拾ったものか */
+  const looksLikeEcho = useCallback((heard: string, talking: boolean): boolean => {
+    const sp = speech.current;
+    const now = Date.now();
+    sp.log = sp.log.filter((x) => now - x.at < ECHO_WINDOW_MS);
+    const spoken = `${sp.log.map((x) => x.text).join(" ")} ${sp.audible}`;
+    if (!spoken.trim()) return false;
+    // 「ストップ」「待って」などは、自分がその言葉を話していない限り割り込みとして通す
+    const stop = STOP_WORDS.exec(heard);
+    if (stop && !spoken.includes(stop[0])) return false;
+    const since = now - sp.lastSpokeAt;
+    const score = echoScore(heard, spoken);
+    if (talking) return score >= ECHO_THRESHOLD_SPEAKING;
+    if (since < ECHO_TAIL_MS) return score >= ECHO_THRESHOLD;
+    return since < ECHO_WINDOW_MS && normalizeForEcho(heard).length >= 6 && score >= ECHO_THRESHOLD_LATE;
+  }, []);
 
   const set = useCallback((s: VoiceState) => {
     stateRef.current = s;
@@ -219,6 +253,11 @@ export function useVoice({
           listenFor(FOLLOW_UP_MS);
         }
       } else if (mode === "listening") {
+        // 送る直前にもう一度確かめる（遅れて届いた自分の声の聞き取りを送らない）
+        if (looksLikeEcho(text, speech.current.speaking)) {
+          setInterim("");
+          return;
+        }
         dispatch(text);
       }
     };
@@ -235,14 +274,13 @@ export function useVoice({
       clearTimeout(silenceTimer.current);
       const heard = finalText || interimText;
       const sp = speech.current;
-      const isEcho = () =>
-        (mode === "speaking" || Date.now() - sp.lastSpokeAt < ECHO_TAIL_MS) &&
-        echoScore(heard, sp.audible) >= ECHO_THRESHOLD;
+      const isEcho = () => looksLikeEcho(heard, mode === "speaking" || sp.speaking);
 
       // F.R.I.D.A.Y. が話している / 考えている最中にユーザーが話し始めたら割り込む
       if (mode === "speaking" || mode === "thinking") {
         const len = normalizeForEcho(heard).length;
-        if (isEcho() || len < (finalText ? 2 : 3)) {
+        const stopWord = STOP_WORDS.test(heard);
+        if (isEcho() || (!stopWord && len < (finalText ? 3 : 4))) {
           pendingRef.current = ""; // 自分の声・物音は無視
           return;
         }
@@ -300,7 +338,8 @@ export function useVoice({
       if (leftover.trim()) handleUtterance(leftover);
       const s = stateRef.current;
       // 待機・聞き取り中に途切れたら自動で再開（ブラウザは一定時間で認識を止めるため）
-      if (s === "standby" || s === "listening" || s === "speaking" || s === "thinking") {
+      const listenWhileTalking = bargeInOn.current;
+      if (s === "standby" || s === "listening" || (listenWhileTalking && (s === "speaking" || s === "thinking"))) {
         clearTimeout(restartTimer.current);
         // 自分で止めた直後はすぐ再開（話し始めの言葉を取りこぼさない）。それ以外は少し待つ
         restartTimer.current = window.setTimeout(startRec, wasAborting ? 0 : 200);
@@ -319,7 +358,7 @@ export function useVoice({
       runningRef.current = false;
       abortingRef.current = false;
     };
-  }, [dispatch, listenFor, set, startRec]);
+  }, [dispatch, listenFor, looksLikeEcho, set, startRec]);
 
   /* 日本語の音声を選ぶ（一覧は非同期に読み込まれる） */
   useEffect(() => {
@@ -341,7 +380,14 @@ export function useVoice({
     if (stateRef.current === "off") return;
     // 読み上げ中の認識には自分の声の残響が混ざるので、いったん打ち切って聞き直す
     if (stateRef.current === "speaking") stopRec();
-    listenFor(FOLLOW_UP_MS);
+    if (bargeInOn.current) listenFor(FOLLOW_UP_MS);
+    else {
+      // 割り込みオフ: スピーカーの残響が消えてから聞き始める
+      clearTimeout(followTimer.current);
+      followTimer.current = window.setTimeout(() => {
+        if (stateRef.current !== "off" && !speech.current.speaking) listenFor(FOLLOW_UP_MS);
+      }, 700);
+    }
   }, [listenFor, stopRec]);
 
   const canUseCloud = () => cloudRef.current && !cloudDisabled.current && Boolean(getAudioContext());
@@ -448,15 +494,20 @@ export function useVoice({
       ensureFetch(item);
       ensureFetch(sp.queue[0]); // 次の文を先読み
       sp.audible = [sp.audible.slice(-60), item.text, sp.queue[0]?.text ?? ""].join(" ");
+      sp.log.push({ text: item.text, at: Date.now() });
       if (stateRef.current !== "off") {
         set("speaking");
-        startRec(); // 話している間も聞き続ける（割り込みのため）
+        // 話している間も聞き続ける（割り込みのため）。割り込みオフならマイクを止める
+        if (bargeInOn.current) startRec();
+        else stopRec();
       }
       let played = false;
       if (item.audio) played = await playCloud(item.audio, gen);
       if (gen !== sp.gen) return;
       if (!played) await playBrowser(item.text);
       sp.lastSpokeAt = Date.now();
+      const last = sp.log[sp.log.length - 1];
+      if (last) last.at = sp.lastSpokeAt; // 読み終えた時刻から数える
     }
     if (gen !== sp.gen) return;
     sp.speaking = false;
@@ -631,5 +682,24 @@ export function useVoice({
     [],
   );
 
-  return { state, interim, error, supported, toggle, talkNow, speak, cancelSpeech, replyFinished, dismissError: () => setError(null) };
+  /** ほかの場所で読み上げた文章（リマインダーなど）も、自分の声として覚えておく */
+  const noteSpoken = useCallback((text: string) => {
+    const sp = speech.current;
+    sp.log.push({ text, at: Date.now() + 8000 }); // 読み上げが終わるまでの分を見込む
+    sp.lastSpokeAt = Date.now() + 4000;
+  }, []);
+
+  return {
+    state,
+    interim,
+    error,
+    supported,
+    toggle,
+    talkNow,
+    speak,
+    cancelSpeech,
+    replyFinished,
+    noteSpoken,
+    dismissError: () => setError(null),
+  };
 }

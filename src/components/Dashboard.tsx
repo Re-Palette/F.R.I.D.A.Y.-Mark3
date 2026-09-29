@@ -9,6 +9,7 @@ import type { StatusResponse } from "@/core/types";
 import { STATUS_CHANGED, useChat } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
 import { useVoice } from "@/hooks/useVoice";
+import { useBargeIn } from "@/hooks/useBargeIn";
 import { chime, pickJapaneseVoice } from "@/lib/speech";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
@@ -109,6 +110,7 @@ export function Dashboard() {
   const chat = useChat();
   const agent = useAgentStatus();
   const [calendarNotice, closeCalendarNotice] = useCalendarNotice();
+  const [bargeIn] = useBargeIn();
   const narrow = useNarrow();
   const [view, setView] = useState<View>("home");
   const composerRef = useRef<ComposerHandle>(null);
@@ -159,8 +161,11 @@ export function Dashboard() {
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
     cloudVoice: agent.tts.provider === "elevenlabs",
     speed: agent.voiceSpeed,
+    bargeIn,
   });
   const { speak, cancelSpeech, replyFinished } = voice;
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
 
   // 音声で話しかけた発言への応答を、届いた文から順に読み上げる
   const lastMsg = chat.messages[chat.messages.length - 1];
@@ -195,6 +200,7 @@ export function Dashboard() {
       setReminder(r);
       chime("wake");
       const text = late ? `${r.label.split(" ")[1]}のお知らせです。${r.text}` : `お知らせです。${r.text}`;
+      voiceRef.current?.noteSpoken(text); // 自分で読み上げた言葉を聞き取って返事しないように
       window.setTimeout(() => {
         if (cloudTts) {
           const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`);

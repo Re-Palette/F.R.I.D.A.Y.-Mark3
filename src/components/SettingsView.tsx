@@ -6,6 +6,7 @@
  */
 import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
+import { useBargeIn } from "@/hooks/useBargeIn";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -101,6 +102,7 @@ export const SettingsView = memo(function SettingsView({
   const [topics, setTopics] = useState("");
   const [speed, setSpeed] = useState(1.15);
   const [notify, setNotify] = useState<string>("default");
+  const [bargeIn, setBargeIn] = useBargeIn();
 
   const load = useCallback(async () => {
     try {
@@ -208,6 +210,19 @@ export const SettingsView = memo(function SettingsView({
             </button>
           </div>
           <p className="settings__note">声：{status.tts.provider === "elevenlabs" ? "ElevenLabs" : "ブラウザの声"}（ElevenLabs は保存後の次の返答から）</p>
+          <span className="settings__label">話している間も聞く（割り込み）— この端末だけの設定</span>
+          <Choice
+            value={bargeIn ? "on" : "off"}
+            options={[
+              { value: "on", label: "聞く（ヘッドホン向け）" },
+              { value: "off", label: "聞かない（スピーカー向け）" },
+            ]}
+            onChange={(v) => {
+              setBargeIn(v === "on");
+              setMessage({ ok: true, text: v === "on" ? "話している間も聞きます（割り込みできます）。" : "話している間はマイクを止めます。" });
+            }}
+          />
+          <p className="settings__note">F.R.I.D.A.Y. が自分の声を聞き取ってしまうときは「聞かない」にしてください。</p>
         </Section>
 
         <Section title="REPLY" sub="返答">
