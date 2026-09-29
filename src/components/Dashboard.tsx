@@ -20,6 +20,7 @@ import { RightPanel } from "./RightPanel";
 import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./Pages";
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
+import { TAB_BLOCKED } from "@/lib/tabs";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -111,6 +112,12 @@ export function Dashboard() {
   const chat = useChat();
   const agent = useAgentStatus();
   const [calendarNotice, closeCalendarNotice] = useCalendarNotice();
+  const [blockedTab, setBlockedTab] = useState<{ url: string; label: string } | null>(null);
+  useEffect(() => {
+    const onBlocked = (e: Event) => setBlockedTab((e as CustomEvent<{ url: string; label: string }>).detail);
+    window.addEventListener(TAB_BLOCKED, onBlocked);
+    return () => window.removeEventListener(TAB_BLOCKED, onBlocked);
+  }, []);
   const [bargeIn] = useBargeIn();
   const narrow = useNarrow();
   const [view, setView] = useState<View>("home");
@@ -367,6 +374,27 @@ export function Dashboard() {
             </button>
             <button type="button" className="ghost-btn" onClick={() => setAskNotify(false)}>
               あとで
+            </button>
+          </div>
+        )}
+
+        {blockedTab && (
+          <div className="banner" role="alert">
+            <b>OPEN</b>
+            <span>
+              ブラウザが自動で開くのを止めました。「開く」を押してください。毎回押さずに済ませるには、アドレスバー右のアイコンからこのサイトのポップアップを「常に許可」にしてください。
+            </span>
+            <a
+              className="ghost-btn"
+              href={blockedTab.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setBlockedTab(null)}
+            >
+              {blockedTab.label} を開く
+            </a>
+            <button type="button" className="ghost-btn" onClick={() => setBlockedTab(null)}>
+              閉じる
             </button>
           </div>
         )}

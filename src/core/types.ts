@@ -44,6 +44,9 @@ export type StreamEvent =
   /** ニュースの設定（時間・興味のある分野）を変えた結果 */
   | { type: "news-settings"; ok: boolean; time?: string; topics?: string[]; error?: string }
   /** prepMs: 返答前の準備（記憶・予定・天気の取得）にかかった時間 */
+  /** Web ページを開く・F.R.I.D.A.Y. が開いたタブを閉じる（実行は画面側） */
+  | { type: "browser"; action: "open"; ok: boolean; url?: string; label: string; error?: string }
+  | { type: "browser"; action: "close"; target: "last" | "all" }
   | { type: "done"; finishReason?: string; prepMs?: number }
   | { type: "error"; code: string; message: string; retryable: boolean };
 

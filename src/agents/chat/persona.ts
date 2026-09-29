@@ -128,6 +128,7 @@ export function buildSystemInstruction({
   if (replyLength === "long") out += "\n\n# ユーザーの好み\n- 返答は詳しめに。理由・具体例・次の一手まで丁寧に説明する。";
   if (weather) out += `\n\n# 天気（Open-Meteo）\n${weatherSummary(weather)}`;
   out += MORNING_RULES;
+  out += BROWSER_RULES;
   if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
   if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
   if (mail) out += mailSection(mail);
@@ -146,6 +147,20 @@ export function buildSystemInstruction({
 以下はユーザーの Obsidian の脳から取り出したノート。会話に関係するときだけ自然に活かす（「ノートによると」などと毎回言う必要はない）。
 ${notes}`;
 }
+
+/** Web ページを開く・閉じる（ユーザーのブラウザで新しいタブを開く） */
+const BROWSER_RULES = `
+
+# Web ページを開く・閉じる
+- ユーザーのブラウザで Web ページを新しいタブで開ける。「〇〇開いて」「〇〇のサイト見せて」「YouTube で〇〇流して」「〇〇を Google で検索して（ページを出して）」のように、ページを開くことを頼まれたときだけ使う。
+- 開くときは返答の最後に <open-url label="短い名前">URL</open-url> を付ける（画面には出ない。一度に 3 つまで）。本文は「YouTube を開きます。」のように短く。URL は本文に書かない。
+- URL は https:// から書く。確実に分かる有名なサイトの公式 URL だけを使い、分からないサイトは推測せず Google 検索の URL にする。
+  - Google 検索: https://www.google.com/search?q=検索語
+  - YouTube で探す・流す: https://www.youtube.com/results?search_query=検索語
+  - 地図・道順: https://www.google.com/maps/search/場所 ／ https://www.google.com/maps/dir/?api=1&destination=目的地
+  - 画像: https://www.google.com/search?tbm=isch&q=検索語
+- 「閉じて」「さっきのタブ消して」と言われたら <close-tab>last</close-tab>、「全部閉じて」なら <close-tab>all</close-tab> を付ける。閉じられるのは F.R.I.D.A.Y. が開いたタブだけ（ユーザーが自分で開いたタブは閉じられない、と聞かれたら説明する）。
+- 「調べて」「教えて」のように答えを求められたときは、ページを開かずに自分で答える。パソコンのアプリやファイルの操作はまだできない。`;
 
 /** 覚える仕組み（返答の末尾に付けたタグはユーザーには見えず、脳に保存される） */
 const MEMORY_RULES = `

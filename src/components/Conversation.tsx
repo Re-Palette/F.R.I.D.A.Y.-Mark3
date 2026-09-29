@@ -132,6 +132,22 @@ const Message = memo(function Message({
           ))}
         </ul>
       )}
+      {msg.tabs && msg.tabs.length > 0 && (
+        <ul className="msg__memories" aria-label="開いたページ">
+          {msg.tabs.map((t, i) => (
+            <li key={i} className="memory-chip memory-chip--calendar" data-failed={!t.ok || undefined} title={t.error ?? t.url}>
+              <Icon name="link" size={12} /> <span>{t.action === "close" ? (t.ok ? "CLOSED" : "NOTHING TO CLOSE") : t.ok ? "OPENED" : "OPEN FAILED"}</span>{" "}
+              {t.action === "open" && t.ok && t.url ? (
+                <a href={t.url} target="_blank" rel="noopener noreferrer">
+                  {t.label}
+                </a>
+              ) : (
+                t.label
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       {msg.newsSettings && (
         <ul className="msg__memories" aria-label="ニュースの設定">
           <li

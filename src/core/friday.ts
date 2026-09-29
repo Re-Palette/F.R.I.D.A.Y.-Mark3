@@ -15,6 +15,7 @@ import type { AgentContext } from "@/agents/types";
 import { BRAIN_TAGS, runBrainActions } from "./brain-actions";
 import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
+import { BROWSER_TAGS, toBrowserEvent } from "./browser-actions";
 import { saveDocument, toFolder } from "@/integrations/documents";
 
 export const MAX_MESSAGE_CHARS = 16000;
@@ -86,10 +87,20 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS] as const, {
       document: 30_000,
     });
     const sources: { title: string; uri: string }[] = [];
+    // ページを開く・閉じるは待たせたくないので、タグが閉じた時点ですぐ画面に送る
+    const browserSent = { "open-url": 0, "close-tab": 0 };
+    const browserEvents = function* () {
+      for (const tag of BROWSER_TAGS) {
+        const list = tags.captures[tag];
+        for (; browserSent[tag] < list.length; browserSent[tag]++) {
+          yield toBrowserEvent(tag, list[browserSent[tag]], tags.attrs[tag][browserSent[tag]]);
+        }
+      }
+    };
     for await (const chunk of agent.run({
       messages: window.messages,
       memory,
@@ -110,6 +121,7 @@ export async function* handleConversation(
           reply += text;
           yield { type: "delta", text };
         }
+        yield* browserEvents();
       }
       if (chunk.finishReason) finishReason = chunk.finishReason;
       if (chunk.prepMs !== undefined) prepMs = chunk.prepMs;
@@ -120,6 +132,7 @@ export async function* handleConversation(
       reply += rest;
       yield { type: "delta", text: rest };
     }
+    yield* browserEvents();
 
     // 頼まれた予定の追加・変更・削除（失敗したら本文でも知らせる＝読み上げにも乗る）
     for await (const { event, note } of runCalendarActions(tags.captures, options.calendar, signal)) {

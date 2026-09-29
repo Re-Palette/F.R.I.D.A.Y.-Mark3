@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, StreamEvent } from "@/core/types";
+import { closeTabs, openTab } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
 
 export interface UiError {
@@ -41,6 +42,8 @@ export interface UiMessage {
   actions?: { kind: "todo-add" | "todo-done" | "project-progress" | "reminder"; ok: boolean; label: string; error?: string }[];
   /** この返答で書いた文書（脳に保存したもの） */
   documents?: { ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string }[];
+  /** この返答で開いた（開こうとした）Web ページ・閉じたタブ */
+  tabs?: { action: "open" | "close"; ok: boolean; label: string; url?: string; blocked?: boolean; error?: string }[];
   /** ニュースの設定を変えた結果 */
   newsSettings?: { ok: boolean; time?: string; topics?: string[]; error?: string };
 }
@@ -323,6 +326,18 @@ export function useChat() {
                 const { ok, time, topics, error } = event;
                 patch(assistantId, (m) => ({ ...m, newsSettings: { ok, time, topics, error } }));
                 window.dispatchEvent(new Event(STATUS_CHANGED));
+                break;
+              }
+              case "browser": {
+                if (event.action === "open") {
+                  const { ok, url, label, error } = event;
+                  const blocked = ok && url ? !openTab(url, label) : undefined;
+                  patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, url, blocked, error }] }));
+                } else {
+                  const n = closeTabs(event.target);
+                  const label = n ? `${n} 件のタブ` : "閉じられるタブがありません";
+                  patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "close", ok: n > 0, label }] }));
+                }
                 break;
               }
               case "sources": {

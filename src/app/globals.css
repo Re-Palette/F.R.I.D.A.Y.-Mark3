@@ -2090,6 +2090,12 @@ button:disabled,
   clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
 }
 
+.memory-chip a {
+  color: var(--cyan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .memory-chip svg {
   flex: none;
   color: var(--cyan);
