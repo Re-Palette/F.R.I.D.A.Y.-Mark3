@@ -4,11 +4,12 @@
  *   文書/<タイトル>.md       … 企画書・レポート・メールの下書き・投稿文など（同じタイトルなら上書き＝直した版）
  *   振り返り/<タイトル>.md   … 週次の振り返り
  *   日記/YYYY-MM-DD.md      … 毎日の日記
+ *   SNS/<タイトル>.md        … SNS の投稿案
  */
 import { getTimezone } from "@/lib/config";
 import { isBrainConfigured, listNotes, readNote, updateNote } from "@/memory/github-brain";
 
-export const DOC_FOLDERS = { 文書: "文書", 振り返り: "振り返り", 日記: "日記" } as const;
+export const DOC_FOLDERS = { 文書: "文書", 振り返り: "振り返り", 日記: "日記", SNS: "SNS" } as const;
 export type DocFolder = keyof typeof DOC_FOLDERS;
 const MAX_DOC_CHARS = 30_000;
 

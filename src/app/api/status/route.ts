@@ -11,6 +11,8 @@ import { checkGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { checkBrain } from "@/memory/obsidian";
 import { readNewsSettings } from "@/integrations/news";
+import { readAppSettings } from "@/integrations/settings";
+import { getTtsConfig } from "@/lib/config";
 import { checkTts, isTtsConfigured } from "@/voice/elevenlabs";
 
 export const runtime = "nodejs";
@@ -46,10 +48,13 @@ export async function GET(req: Request): Promise<Response> {
 
   const brain = await brainCheck;
   const newsSettings = await readNewsSettings().catch(() => ({ time: "07:00", topics: [] as string[] }));
+  const appSettings = await readAppSettings().catch(() => ({}) as { voiceSpeed?: number; search?: "auto" | "always" | "off" });
   const refresh = refreshTokenFrom(req);
   const gmail = refresh ? await hasGmailScope(refresh).catch(() => false) : false;
   const calendar = { configured: isCalendarConfigured(), connected: Boolean(refresh), gmail };
-  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar, search: getSearchMode(),
+  const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar, search: appSettings.search ?? getSearchMode(),
+    voiceSpeed: appSettings.voiceSpeed ?? getTtsConfig().speed,
+    automation: { diary: Boolean(process.env.CRON_SECRET?.trim()) },
     news: { time: newsSettings.time, topics: newsSettings.topics },
   };
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });

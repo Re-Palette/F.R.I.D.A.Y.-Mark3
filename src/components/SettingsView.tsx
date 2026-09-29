@@ -1,0 +1,333 @@
+"use client";
+
+/**
+ * SETTINGS 画面。声の速さ・返答・天気の場所・ニュースを変え、各接続の状態を一覧で見る。
+ * 変えた設定は脳（Obsidian）に保存されるので、パソコンでもスマホでも同じになる。
+ */
+import { memo, useCallback, useEffect, useState } from "react";
+import type { StatusResponse } from "@/core/types";
+import { HudFrame } from "./HudFrame";
+import { Icon } from "./icons";
+
+interface SettingsData {
+  canSave: boolean;
+  effective: {
+    voiceSpeed: number;
+    weatherCity: string;
+    search: "auto" | "always" | "off";
+    replyLength: "short" | "normal" | "long";
+    newsTime: string;
+    newsTopics: string[];
+  };
+}
+
+export interface SettingsStatus {
+  chatStatus: string;
+  model?: string;
+  brain: StatusResponse["brain"];
+  calendar: StatusResponse["calendar"];
+  tts: StatusResponse["tts"];
+  automation: StatusResponse["automation"];
+}
+
+function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <section className="settings__section hud">
+      <HudFrame cut={14} small={6} ticks={false} />
+      <h2>
+        {title}
+        {sub && <span>{sub}</span>}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function Choice<T extends string>({
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="settings__choice" role="radiogroup">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          data-on={value === o.value || undefined}
+          disabled={disabled}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Row({ label, state, detail, children }: { label: string; state: "ok" | "warn" | "off"; detail: string; children?: React.ReactNode }) {
+  return (
+    <li className="settings__row" data-state={state}>
+      <i />
+      <b>{label}</b>
+      <span>{detail}</span>
+      {children}
+    </li>
+  );
+}
+
+export const SettingsView = memo(function SettingsView({
+  hidden,
+  status,
+  onChanged,
+}: {
+  hidden: boolean;
+  status: SettingsStatus;
+  onChanged: () => void;
+}) {
+  const [data, setData] = useState<SettingsData | null>(null);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [city, setCity] = useState("");
+  const [newsTime, setNewsTime] = useState("");
+  const [topics, setTopics] = useState("");
+  const [speed, setSpeed] = useState(1.15);
+  const [notify, setNotify] = useState<string>("default");
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings", { cache: "no-store" });
+      const json = (await res.json()) as SettingsData;
+      setData(json);
+      setCity(json.effective.weatherCity);
+      setNewsTime(json.effective.newsTime);
+      setTopics(json.effective.newsTopics.join("、"));
+      setSpeed(json.effective.voiceSpeed);
+    } catch {
+      setMessage({ ok: false, text: "設定を読み込めませんでした。" });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (hidden) return;
+    void load();
+    if ("Notification" in window) setNotify(Notification.permission);
+  }, [hidden, load]);
+
+  const save = useCallback(
+    async (change: Record<string, unknown>, done: string) => {
+      setBusy(true);
+      setMessage(null);
+      try {
+        const res = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(change),
+        });
+        const json = (await res.json()) as SettingsData & { error?: string };
+        if (!res.ok) throw new Error(json.error ?? "保存できませんでした。");
+        setData(json);
+        setCity(json.effective.weatherCity);
+        setMessage({ ok: true, text: done });
+        onChanged();
+      } catch (err) {
+        setMessage({ ok: false, text: err instanceof Error ? err.message : "保存できませんでした。" });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onChanged],
+  );
+
+  const testVoice = () => {
+    const text = "こんにちは。この速さで話します。";
+    if (status.tts.provider === "elevenlabs") void new Audio(`/api/tts?text=${encodeURIComponent(text)}`).play().catch(() => {});
+    else if ("speechSynthesis" in window) {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ja-JP";
+      u.rate = Math.min(1.8, Math.max(0.8, (speed / 1.15) * 1.25));
+      window.speechSynthesis.speak(u);
+    }
+  };
+
+  const disconnectGoogle = async () => {
+    await fetch("/api/calendar/disconnect", { method: "POST" }).catch(() => {});
+    setMessage({ ok: true, text: "この端末の Google 接続を解除しました。" });
+    onChanged();
+  };
+
+  const e = data?.effective;
+  const locked = !data?.canSave || busy;
+
+  return (
+    <section className="settings" aria-hidden={hidden} inert={hidden} aria-label="設定">
+      <header className="settings__bar">
+        <div>
+          <div className="settings__title">SETTINGS</div>
+          <div className="settings__sub">
+            {data && !data.canSave ? "設定の保存には脳（Obsidian）の接続が必要です" : "変えた設定は脳に保存され、どの端末でも同じになります"}
+          </div>
+        </div>
+        {message && (
+          <p className="settings__msg" data-ok={message.ok || undefined} role="status">
+            {message.text}
+          </p>
+        )}
+      </header>
+
+      <div className="settings__grid">
+        <Section title="VOICE" sub="声">
+          <label className="settings__field">
+            <span>
+              読み上げの速さ <b>{speed.toFixed(2)}</b>
+            </span>
+            <input
+              type="range"
+              min={0.7}
+              max={1.2}
+              step={0.05}
+              value={speed}
+              disabled={locked}
+              onChange={(ev) => setSpeed(Number(ev.target.value))}
+            />
+          </label>
+          <div className="settings__actions">
+            <button type="button" className="ghost-btn" onClick={testVoice}>
+              <Icon name="mic" size={13} /> 試しに聞く
+            </button>
+            <button type="button" className="ghost-btn" disabled={locked} onClick={() => void save({ voiceSpeed: speed }, "読み上げの速さを保存しました。")}>
+              保存
+            </button>
+          </div>
+          <p className="settings__note">声：{status.tts.provider === "elevenlabs" ? "ElevenLabs" : "ブラウザの声"}（ElevenLabs は保存後の次の返答から）</p>
+        </Section>
+
+        <Section title="REPLY" sub="返答">
+          <span className="settings__label">返答の長さ</span>
+          <Choice
+            value={e?.replyLength ?? "normal"}
+            disabled={locked}
+            options={[
+              { value: "short", label: "短め" },
+              { value: "normal", label: "普通" },
+              { value: "long", label: "詳しめ" },
+            ]}
+            onChange={(v) => void save({ replyLength: v }, "返答の長さを保存しました。")}
+          />
+          <span className="settings__label">Web 検索</span>
+          <Choice
+            value={e?.search ?? "auto"}
+            disabled={locked}
+            options={[
+              { value: "auto", label: "必要なときだけ" },
+              { value: "always", label: "いつも" },
+              { value: "off", label: "使わない" },
+            ]}
+            onChange={(v) => void save({ search: v }, "Web 検索の設定を保存しました。")}
+          />
+          <p className="settings__note">「いつも」は無料枠の検索回数を早く使い切ることがあります。</p>
+        </Section>
+
+        <Section title="WEATHER" sub="天気の場所">
+          <form
+            className="settings__inline"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              void save({ weatherCity: city }, `天気の場所を「${city}」にしました。`);
+            }}
+          >
+            <input value={city} onChange={(ev) => setCity(ev.target.value)} placeholder="例：渋谷区、大阪市、札幌" disabled={locked} />
+            <button type="submit" className="ghost-btn" disabled={locked || !city.trim()}>
+              保存
+            </button>
+          </form>
+          <p className="settings__note">市区町村名で探します。</p>
+        </Section>
+
+        <Section title="NEWS" sub="毎日のニュース">
+          <form
+            className="settings__stack"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              void save(
+                { newsTime, newsTopics: topics.split(/[,、，\n]/).map((t) => t.trim()).filter(Boolean) },
+                "ニュースの設定を保存しました。",
+              );
+            }}
+          >
+            <label className="settings__field">
+              <span>時間（この時刻以降の最初の会話で伝える。off で自動なし）</span>
+              <input value={newsTime} onChange={(ev) => setNewsTime(ev.target.value)} placeholder="07:00" disabled={locked} />
+            </label>
+            <label className="settings__field">
+              <span>興味のある分野（「、」区切り）</span>
+              <input value={topics} onChange={(ev) => setTopics(ev.target.value)} placeholder="AI、ファッション、サッカー" disabled={locked} />
+            </label>
+            <button type="submit" className="ghost-btn" disabled={locked}>
+              保存
+            </button>
+          </form>
+        </Section>
+
+        <Section title="LINKS" sub="接続の状態">
+          <ul className="settings__rows">
+            <Row label="Gemini" state={status.chatStatus === "online" ? "ok" : "warn"} detail={status.model ?? "—"} />
+            <Row
+              label="脳（Obsidian）"
+              state={status.brain.connected ? "ok" : status.brain.configured ? "warn" : "off"}
+              detail={status.brain.connected ? `${status.brain.notes ?? 0} ノート` : status.brain.configured ? (status.brain.reason ?? "接続できません") : "未設定"}
+            />
+            <Row
+              label="Google カレンダー"
+              state={status.calendar.connected ? "ok" : status.calendar.configured ? "warn" : "off"}
+              detail={status.calendar.connected ? "この端末で接続中" : status.calendar.configured ? "未接続" : "未設定"}
+            >
+              {status.calendar.configured &&
+                (status.calendar.connected ? (
+                  <button type="button" className="ghost-btn" onClick={() => void disconnectGoogle()}>
+                    解除
+                  </button>
+                ) : (
+                  <a className="ghost-btn" href="/api/calendar/connect">
+                    接続
+                  </a>
+                ))}
+            </Row>
+            <Row
+              label="Gmail"
+              state={status.calendar.gmail ? "ok" : status.calendar.connected ? "warn" : "off"}
+              detail={status.calendar.gmail ? "読める" : status.calendar.connected ? "許可が必要" : "Google 未接続"}
+            >
+              {status.calendar.connected && !status.calendar.gmail && (
+                <a className="ghost-btn" href="/api/calendar/connect">
+                  再接続
+                </a>
+              )}
+            </Row>
+            <Row
+              label="ElevenLabs"
+              state={status.tts.provider === "elevenlabs" ? "ok" : status.tts.reason ? "warn" : "off"}
+              detail={status.tts.provider === "elevenlabs" ? "使用中" : (status.tts.reason ?? "未設定（ブラウザの声）")}
+            />
+            <Row label="自動日記" state={status.automation.diary ? "ok" : "off"} detail={status.automation.diary ? "毎晩 23 時ごろ" : "CRON_SECRET 未設定"} />
+            <Row label="通知" state={notify === "granted" ? "ok" : notify === "denied" ? "warn" : "off"} detail={notify === "granted" ? "許可済み" : notify === "denied" ? "ブロック中（ブラウザの設定で許可）" : "未許可"}>
+              {notify === "default" && (
+                <button type="button" className="ghost-btn" onClick={() => void Notification.requestPermission().then(setNotify)}>
+                  許可
+                </button>
+              )}
+            </Row>
+          </ul>
+        </Section>
+      </div>
+    </section>
+  );
+});

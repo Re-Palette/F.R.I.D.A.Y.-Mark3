@@ -4,6 +4,7 @@
  */
 import { getTimezone } from "@/lib/config";
 import { swr } from "@/lib/swr";
+import { peekAppSettings } from "@/integrations/settings";
 
 export type WeatherKind = "clear" | "partly" | "cloudy" | "fog" | "rain" | "snow" | "storm";
 
@@ -30,10 +31,12 @@ export interface WeatherReport {
 
 function config() {
   const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) ? Number(v) : d);
+  // 画面の SETTINGS で場所を変えていればそちらを使う
+  const chosen = peekAppSettings().weather;
   return {
-    lat: num(process.env.WEATHER_LATITUDE, 35.6895),
-    lon: num(process.env.WEATHER_LONGITUDE, 139.6917),
-    city: process.env.WEATHER_CITY?.trim() || "TOKYO",
+    lat: chosen?.latitude ?? num(process.env.WEATHER_LATITUDE, 35.6895),
+    lon: chosen?.longitude ?? num(process.env.WEATHER_LONGITUDE, 139.6917),
+    city: chosen?.city ?? (process.env.WEATHER_CITY?.trim() || "TOKYO"),
     base: (process.env.WEATHER_API_BASE?.trim() || "https://api.open-meteo.com/v1").replace(/\/+$/, ""),
   };
 }

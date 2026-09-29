@@ -59,6 +59,10 @@ export interface StatusResponse {
   calendar: { configured: boolean; connected: boolean; gmail?: boolean };
   /** Web 検索（auto: 必要なときだけ / always / off） */
   search: "auto" | "always" | "off";
+  /** 読み上げの速さ（SETTINGS。ブラウザの声の換算にも使う） */
+  voiceSpeed: number;
+  /** 自動日記（CRON_SECRET が設定されているか） */
+  automation: { diary: boolean };
   /** 毎日のニュース（time: "07:00" / "off"） */
   news: { time: string; topics: string[] };
 }

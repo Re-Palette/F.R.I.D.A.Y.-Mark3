@@ -4,7 +4,7 @@ import type { ChatAgentStatus } from "./Orbit";
 import { HudFrame } from "./HudFrame";
 import { Icon, type IconName } from "./icons";
 
-export type View = "home" | "chat";
+export type View = "home" | "chat" | "settings";
 
 const NAV: { key: string; label: string; icon: IconName; view?: View }[] = [
   { key: "home", label: "HOME", icon: "home", view: "home" },
@@ -14,7 +14,7 @@ const NAV: { key: string; label: string; icon: IconName; view?: View }[] = [
   { key: "tasks", label: "TASKS", icon: "tasks" },
   { key: "calendar", label: "CALENDAR", icon: "calendar" },
   { key: "files", label: "FILES", icon: "files" },
-  { key: "settings", label: "SETTINGS", icon: "settings" },
+  { key: "settings", label: "SETTINGS", icon: "settings", view: "settings" },
 ];
 
 function Meter({ label, value, ratio }: { label: string; value: string; ratio: number }) {

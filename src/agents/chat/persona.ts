@@ -32,6 +32,10 @@ export interface PersonaInput {
   reminders?: Reminder[] | null;
   /** 未読メール */
   mail?: MailData;
+  /** SNS の投稿づくり・トレンドの相談（SNS AI） */
+  sns?: boolean;
+  /** 返答の長さの好み（SETTINGS） */
+  replyLength?: "short" | "normal" | "long";
   /** 振り返り（week）・日記（day）の材料。material が null なら読み込めなかった */
   review?: { kind: "week" | "day"; material: string | null } | null | false;
 }
@@ -74,6 +78,8 @@ export function buildSystemInstruction({
   reminders,
   mail,
   review,
+  replyLength,
+  sns,
 }: PersonaInput): string {
   const calendarOn = calendar?.connected === true;
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。ユーザー一人のために動く専属AIアシスタントであり、ユーザー専用の「個人用AI OS」の中核です。汎用チャットボットではありません。
@@ -118,6 +124,8 @@ export function buildSystemInstruction({
 - 現在日時: ${formatNow(now, timezone)}（${timezone}）`;
 
   let out = voice ? base + VOICE_RULES : base;
+  if (replyLength === "short") out += "\n\n# ユーザーの好み\n- 返答は短く。要点だけを 1〜3 文で。説明は聞かれたら足す。";
+  if (replyLength === "long") out += "\n\n# ユーザーの好み\n- 返答は詳しめに。理由・具体例・次の一手まで丁寧に説明する。";
   if (weather) out += `\n\n# 天気（Open-Meteo）\n${weatherSummary(weather)}`;
   out += MORNING_RULES;
   if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
@@ -125,6 +133,7 @@ export function buildSystemInstruction({
   if (mail) out += mailSection(mail);
   if (memoryConnected) out += WRITING_RULES;
   if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
+  if (sns) out += snsSection(Boolean(search), memoryConnected);
   if (calendar?.connected) out += calendarSection(calendar.events, now, timezone);
   if (!memoryConnected) return out;
 
@@ -358,4 +367,24 @@ ${data}`;
 
 # 日記の材料
 ${data}`;
+}
+
+/** SNS AI: 投稿案づくりとトレンドの活かし方 */
+function snsSection(search: boolean, canSave: boolean): string {
+  return `
+
+# SNS AI（今回の話題は SNS）
+- 投稿案を頼まれたら、媒体に合わせて 3 案（切り口を変える：共感・情報・ストーリーなど）を作る。
+  - Instagram：冒頭 1 行で目を止める → 本文は改行を入れて読みやすく（〜300 字目安）→ 行動を促す一言 → ハッシュタグ 8〜15 個（大きいタグと小さいタグを混ぜる）
+  - X：全角 140 字以内。1 案ずつ文字数を添える。ハッシュタグは 1〜2 個まで
+  - TikTok・リール：最初の 2 秒のフック、構成（秒数つき）、キャプション、使えそうな音源の方向性
+- 投稿に向いた曜日・時間帯を、一般的な傾向として理由つきで 1 つ提案する（断定しない）。
+- ブランドやプロジェクトの情報（脳のノート）があれば、その世界観・言葉づかいに合わせる。無ければ 1 つだけ質問してよい。
+- ${search ? "トレンドは Google 検索の結果に基づいて、いま話題のもの・使えそうな切り口を具体的に挙げる。出典は画面に出るので URL は書かない。" : "最新のトレンドを聞かれたら「調べて」と言ってもらえれば検索すると伝える（知らないトレンドを作らない）。"}
+- ${
+    canSave
+      ? `投稿案はまとめて <document title="Instagram投稿案 〇〇" folder="SNS"> … </document> に書く（脳の「SNS」フォルダに保存される）。タグの外では要点を 1〜3 文で伝える。`
+      : "投稿案は本文にそのまま書く。"
+  }
+- 誇大表現・事実でない数字・他人の権利を侵す内容（無断の画像や音源の利用など）は勧めない。`;
 }

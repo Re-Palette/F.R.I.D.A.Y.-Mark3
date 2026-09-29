@@ -15,6 +15,16 @@ const SEARCH_HINTS = [
 /** 検索しなくてよい話題（予定・天気・記憶は手元の情報で答える） */
 const LOCAL_ONLY = /^(おはよう|こんにちは|こんばんは|おやすみ|ありがとう|了解|OK|うん|はい)/i;
 
+/** SNS の投稿づくり・トレンドの相談か（SNS AI） */
+export function asksForSns(text: string): boolean {
+  return /インスタ|Instagram|instagram|X\s?の投稿|ツイート|ポスト(文|案)|投稿(文|案|内容)|SNS|ハッシュタグ|TikTok|ティックトック|リール|ストーリーズ|バズ/.test(text);
+}
+
+/** SNS のトレンドを調べる必要があるか */
+export function asksForTrend(text: string): boolean {
+  return asksForSns(text) && /トレンド|流行|はやって|話題|最近|今の/.test(text);
+}
+
 export function needsSearch(text: string): boolean {
   const t = text.trim();
   if (!t || t.length < 3 || LOCAL_ONLY.test(t)) return false;

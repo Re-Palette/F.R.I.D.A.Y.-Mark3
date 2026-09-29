@@ -1,6 +1,7 @@
 /**
  * ElevenLabs 音声合成（サーバー専用）。API キーはここでのみ使い、ブラウザには渡さない。
  */
+import { peekAppSettings } from "@/integrations/settings";
 import { getTtsConfig, settingsHint, type TtsConfig } from "@/lib/config";
 
 export const MAX_TTS_CHARS = 1000;
@@ -86,7 +87,9 @@ async function loadVoiceSettings(config: TtsConfig): Promise<Record<string, unkn
 
 /** 文章を音声（MP3）のストリームにする */
 export async function synthesize(text: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
-  const config = getTtsConfig();
+  // 画面の SETTINGS で変えた速さがあればそちらを使う
+  const base = getTtsConfig();
+  const config = { ...base, speed: peekAppSettings().voiceSpeed ?? base.speed };
   if (!isTtsConfigured(config)) {
     throw new TtsError("TTS_NOT_CONFIGURED", "ElevenLabs が設定されていません。", 503, true);
   }

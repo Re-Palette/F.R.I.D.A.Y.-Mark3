@@ -59,13 +59,18 @@ export function useVoice({
   onCommand,
   onBargeIn,
   cloudVoice = false,
+  speed = 1.15,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
   onBargeIn?: () => void;
   /** ElevenLabs の声を使う（サーバー側で設定済みのとき） */
   cloudVoice?: boolean;
+  /** 読み上げの速さ（SETTINGS。ElevenLabs 基準の 0.7〜1.2。ブラウザの声は換算する） */
+  speed?: number;
 }) {
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
   const [state, setState] = useState<VoiceState>("off");
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -414,7 +419,8 @@ export function useVoice({
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "ja-JP";
       if (sp.voice) u.voice = sp.voice;
-      u.rate = 1.25;
+      // ElevenLabs の 1.15 ≒ ブラウザの 1.25 として換算
+      u.rate = Math.min(1.8, Math.max(0.8, (speedRef.current / 1.15) * 1.25));
       u.pitch = 1;
       let ended = false;
       const end = () => {

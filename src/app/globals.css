@@ -744,7 +744,8 @@ button:disabled,
   transition: opacity 0.45s var(--ease), transform 0.55s var(--ease), visibility 0s linear 0s;
 }
 
-.stage[data-view="chat"] .orbit {
+.stage[data-view="chat"] .orbit,
+.stage[data-view="settings"] .orbit {
   opacity: 0;
   transform: scale(0.94);
   visibility: hidden;
@@ -752,7 +753,8 @@ button:disabled,
   transition: opacity 0.35s var(--ease), transform 0.45s var(--ease), visibility 0s linear 0.45s;
 }
 
-.stage[data-view="chat"] .orbit * {
+.stage[data-view="chat"] .orbit *,
+.stage[data-view="settings"] .orbit * {
   animation-play-state: paused !important;
 }
 
@@ -1308,6 +1310,259 @@ button:disabled,
   visibility: visible;
   pointer-events: auto;
   transition: opacity 0.4s var(--ease) 0.1s, transform 0.5s var(--ease) 0.1s, visibility 0s;
+}
+
+/* ---------- SETTINGS ---------- */
+.settings {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 1080px;
+  margin: 0 auto;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(14px);
+  transition: opacity 0.3s var(--ease), transform 0.4s var(--ease), visibility 0s linear 0.4s;
+}
+
+.stage[data-view="settings"] .settings {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity 0.4s var(--ease) 0.1s, transform 0.5s var(--ease) 0.1s, visibility 0s;
+}
+
+.settings__bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 4px 14px;
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.settings__title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 0.2em;
+  color: #fff;
+}
+
+.settings__sub,
+.settings__note {
+  font-family: var(--font-jp);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings__note {
+  position: relative;
+  margin: 8px 0 0;
+}
+
+.settings__msg {
+  margin: 0;
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+  color: var(--red);
+}
+
+.settings__msg[data-ok] {
+  color: var(--cyan);
+}
+
+.settings__grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-content: start;
+  gap: 14px;
+  padding: 16px 2px 8px;
+}
+
+.settings__section {
+  position: relative;
+  padding: 14px 18px 16px;
+}
+
+.settings__section:last-child {
+  grid-column: 1 / -1;
+}
+
+.settings__section h2 {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--orange-hi);
+}
+
+.settings__section h2 span {
+  font-family: var(--font-jp);
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+
+.settings__field,
+.settings__stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings__stack {
+  gap: 10px;
+}
+
+.settings__stack .ghost-btn {
+  align-self: flex-start;
+}
+
+.settings__field > span,
+.settings__label {
+  position: relative;
+  display: block;
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.settings__label {
+  margin: 10px 0 6px;
+}
+
+.settings__field b {
+  font-family: var(--font-mono);
+  color: var(--orange-hi);
+}
+
+.settings input[type="text"],
+.settings input:not([type]) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--line-soft);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-family: var(--font-jp);
+  font-size: 14px;
+}
+
+.settings input:focus {
+  outline: none;
+  border-color: var(--line);
+}
+
+.settings input[type="range"] {
+  accent-color: var(--orange);
+}
+
+.settings__inline {
+  position: relative;
+  display: flex;
+  gap: 8px;
+}
+
+.settings__actions {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings__choice {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings__choice button {
+  padding: 5px 12px;
+  border: 1px solid var(--line-soft);
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.settings__choice button[data-on] {
+  border-color: var(--orange);
+  background: rgba(255, 138, 31, 0.14);
+  color: var(--orange-hi);
+}
+
+.settings__rows {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 8px 20px;
+}
+
+.settings__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+}
+
+.settings__row i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  background: var(--muted);
+}
+
+.settings__row[data-state="ok"] i {
+  background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan);
+}
+
+.settings__row[data-state="warn"] i {
+  background: var(--orange);
+  box-shadow: 0 0 6px var(--orange);
+}
+
+.settings__row b {
+  flex: none;
+  width: 128px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.settings__row span {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings__row .ghost-btn {
+  flex: none;
+  text-decoration: none;
+}
+
+.settings .ghost-btn {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* HOME のまま会話するときの字幕パネル */

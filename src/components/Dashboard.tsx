@@ -16,6 +16,7 @@ import { Header } from "./Header";
 import { HomeDialog } from "./HomeDialog";
 import { Orbit, type ChatAgentStatus } from "./Orbit";
 import { RightPanel } from "./RightPanel";
+import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
 
 const CALENDAR_NOTICE: Record<string, string> = {
@@ -62,6 +63,8 @@ function useAgentStatus() {
   const [brain, setBrain] = useState<StatusResponse["brain"]>({ configured: false, connected: false });
   const [calendar, setCalendar] = useState<StatusResponse["calendar"]>({ configured: false, connected: false });
   const [news, setNews] = useState<StatusResponse["news"]>();
+  const [voiceSpeed, setVoiceSpeed] = useState(1.15);
+  const [automation, setAutomation] = useState<StatusResponse["automation"]>({ diary: false });
 
   const refresh = useCallback(async () => {
     try {
@@ -80,6 +83,8 @@ function useAgentStatus() {
       if (json.brain) setBrain(json.brain);
       if (json.calendar) setCalendar(json.calendar);
       if (json.news) setNews(json.news);
+      if (typeof json.voiceSpeed === "number") setVoiceSpeed(json.voiceSpeed);
+      if (json.automation) setAutomation(json.automation);
     } catch {
       setStatus("offline");
       setReason("サーバーに接続できません");
@@ -97,7 +102,7 @@ function useAgentStatus() {
     };
   }, [refresh]);
 
-  return { status, model, maxContext, reason, tts, brain, calendar, news, refresh, setStatus };
+  return { status, model, maxContext, reason, tts, brain, calendar, news, voiceSpeed, automation, refresh, setStatus };
 }
 
 export function Dashboard() {
@@ -119,7 +124,7 @@ export function Dashboard() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && view === "chat" && chat.phase === "idle") setView("home");
+      if (e.key === "Escape" && view !== "home" && chat.phase === "idle") setView("home");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -153,6 +158,7 @@ export function Dashboard() {
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
     cloudVoice: agent.tts.provider === "elevenlabs",
+    speed: agent.voiceSpeed,
   });
   const { speak, cancelSpeech, replyFinished } = voice;
 
@@ -269,7 +275,7 @@ export function Dashboard() {
             phase={chat.phase}
             chatStatus={agent.status}
             onOpenChat={openChat}
-            hidden={inChat}
+            hidden={view !== "home"}
             model={agent.model}
             context={`${chat.lastRun.contextMessages ?? 0} / ${agent.maxContext} MSG`}
             voice={agent.tts.provider === "elevenlabs" ? "ELEVENLABS" : "BROWSER"}
@@ -283,8 +289,20 @@ export function Dashboard() {
             messages={chat.messages}
             phase={chat.phase}
             voiceState={voice.state}
-            hidden={inChat}
+            hidden={view !== "home"}
             onOpenChat={openChat}
+          />
+          <SettingsView
+            hidden={view !== "settings"}
+            onChanged={agent.refresh}
+            status={{
+              chatStatus: agent.status,
+              model: agent.model,
+              brain: agent.brain,
+              calendar: agent.calendar,
+              tts: agent.tts,
+              automation: agent.automation,
+            }}
           />
           <Conversation
             messages={chat.messages}

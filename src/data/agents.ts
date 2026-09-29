@@ -27,6 +27,6 @@ export const AGENT_CARDS: AgentCardDef[] = [
   { key: "vault", id: "memory", title: "MEMORY", engine: "Obsidian Vault", tags: ["Knowledge", "Notes", "Long-term"], icon: "vault", phase: "soon", slot: "ml" },
   { key: "automation", id: "automation", title: "AUTOMATION", engine: "Nightly Diary", tags: ["Schedule", "Task", "Workflow"], icon: "automation", phase: "live", slot: "mr" },
   { key: "analysis", id: "analysis", title: "ANALYSIS AI", engine: "Weekly Review", tags: ["Data", "Strategy", "Decision"], icon: "analysis", phase: "live", slot: "bl" },
-  { key: "sns", id: "sns", title: "SNS AI", engine: "Trend Agent", tags: ["SNS Analysis", "Trend", "Marketing"], icon: "share", phase: "soon", slot: "br" },
+  { key: "sns", id: "sns", title: "SNS AI", engine: "Post & Trend", tags: ["SNS Analysis", "Trend", "Marketing"], icon: "share", phase: "live", slot: "br" },
   { key: "memai", id: "memory", title: "MEMORY AI", engine: "Vector DB", tags: ["Context", "Recall", "Connect"], icon: "brain", phase: "soon", slot: "bottom" },
 ];
