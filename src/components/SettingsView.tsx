@@ -85,6 +85,156 @@ function Row({ label, state, detail, children }: { label: string; state: "ok" | 
   );
 }
 
+/** 公開鍵（base64url）→ ブラウザに渡す形 */
+function keyBytes(base64: string): Uint8Array {
+  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+/** この端末の名前（通知の宛先一覧の表示用） */
+function deviceLabel(): string {
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : "端末";
+  const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /Firefox\//.test(ua) ? "Firefox" : "";
+  return `${os}${browser ? ` / ${browser}` : ""}`;
+}
+
+interface PushConfig {
+  configured: boolean;
+  brain: boolean;
+  publicKey: string | null;
+  cron: boolean;
+  devices: { label: string; endpoint: string }[];
+}
+
+/** プッシュ通知の登録・テスト・解除 */
+function PushControls({ hidden }: { hidden: boolean }) {
+  const [config, setConfig] = useState<PushConfig | null>(null);
+  const [endpoint, setEndpoint] = useState<string | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  // ブラウザの対応状況は表示後に調べる（サーバーの HTML と食い違わないように）
+  const [env, setEnv] = useState<{ supported: boolean; iosBrowser: boolean } | null>(null);
+  useEffect(() => {
+    setEnv({
+      supported: "serviceWorker" in navigator && "PushManager" in window,
+      iosBrowser: /iPhone|iPad/.test(navigator.userAgent) && !window.matchMedia("(display-mode: standalone)").matches,
+    });
+  }, []);
+  const supported = env?.supported ?? false;
+  const iosBrowser = env?.iosBrowser ?? false;
+
+  const load = useCallback(async () => {
+    try {
+      setConfig((await (await fetch("/api/push/config", { cache: "no-store" })).json()) as PushConfig);
+      const reg = await navigator.serviceWorker?.getRegistration("/sw.js");
+      setEndpoint((await reg?.pushManager.getSubscription())?.endpoint ?? null);
+    } catch {
+      /* 表示は未登録のまま */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hidden && supported) void load();
+  }, [hidden, load, supported]);
+
+  const run = async (fn: () => Promise<string>) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      setNote({ ok: true, text: await fn() });
+    } catch (err) {
+      setNote({ ok: false, text: err instanceof Error ? err.message : "うまくいきませんでした。" });
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  };
+
+  const subscribe = () =>
+    run(async () => {
+      if (!config?.publicKey) throw new Error("鍵が設定されていません。");
+      if ((await Notification.requestPermission()) !== "granted") throw new Error("通知が許可されませんでした。ブラウザの設定で許可してください。");
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      const sub =
+        (await reg.pushManager.getSubscription()) ??
+        (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(config.publicKey) as BufferSource }));
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON(), label: deviceLabel() }),
+      });
+      if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? "登録できませんでした。");
+      return "この端末で通知を受け取るようにしました。「テスト」で確かめてください。";
+    });
+
+  const test = () =>
+    run(async () => {
+      const res = await fetch("/api/push/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint }) });
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "送れませんでした。もう一度「受け取る」を押してください。");
+      return "テストの通知を送りました。";
+    });
+
+  const unsubscribe = () =>
+    run(async () => {
+      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/push/subscribe", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+        await sub.unsubscribe();
+      }
+      return "この端末では通知を受け取らないようにしました。";
+    });
+
+  if (!env) return <p className="settings__note">読み込み中…</p>;
+  if (!supported) return <p className="settings__note">このブラウザはプッシュ通知に対応していません。</p>;
+  if (iosBrowser)
+    return <p className="settings__note">iPhone では、Safari の共有ボタン →「ホーム画面に追加」で開いた F.R.I.D.A.Y. から設定できます。</p>;
+  if (!config) return <p className="settings__note">読み込み中…</p>;
+  if (!config.configured)
+    return (
+      <>
+        <p className="settings__note">通知の鍵がまだ設定されていません。下のボタンで鍵を作り、Vercel の環境変数に入れてください。</p>
+        <a className="ghost-btn" href="/api/push/keys" target="_blank" rel="noreferrer">
+          鍵を作る
+        </a>
+      </>
+    );
+
+  return (
+    <>
+      <div className="settings__actions">
+        {endpoint ? (
+          <>
+            <button type="button" className="ghost-btn" disabled={busy} onClick={() => void test()}>
+              テスト
+            </button>
+            <button type="button" className="ghost-btn" disabled={busy} onClick={() => void unsubscribe()}>
+              この端末で受け取らない
+            </button>
+          </>
+        ) : (
+          <button type="button" className="ghost-btn" disabled={busy || !config.brain} onClick={() => void subscribe()}>
+            <Icon name="bell" size={13} /> この端末で受け取る
+          </button>
+        )}
+      </div>
+      {note && (
+        <p className="settings__note" style={{ color: note.ok ? "var(--cyan)" : "var(--red)" }}>
+          {note.text}
+        </p>
+      )}
+      <p className="settings__note">
+        受け取る端末：{config.devices.length ? config.devices.map((d) => d.label).join("、") : "なし"}
+        {!config.cron && "（自動で送るには GitHub の設定が必要です）"}
+      </p>
+    </>
+  );
+}
+
 export const SettingsView = memo(function SettingsView({
   hidden,
   status,
@@ -290,6 +440,10 @@ export const SettingsView = memo(function SettingsView({
               保存
             </button>
           </form>
+        </Section>
+
+        <Section title="PUSH" sub="アプリを閉じていても通知">
+          <PushControls hidden={hidden} />
         </Section>
 
         <Section title="LINKS" sub="接続の状態">

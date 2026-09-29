@@ -1,0 +1,29 @@
+# F.R.I.D.A.Y. の定期実行（無料の GitHub Actions）。
+# 5 分ごとに /api/cron/push を呼び、時間が来たリマインダーと朝のニュースをプッシュ通知で送る。
+# 必要なもの（このリポジトリの Settings → Secrets and variables → Actions）:
+#   FRIDAY_URL   … 例 https://f-r-i-d-a-y-mark3.vercel.app
+#   CRON_SECRET  … Vercel の環境変数 CRON_SECRET と同じ値
+# ※ GitHub の定期実行は混雑時に数分〜十数分遅れることがあります。
+name: friday-cron
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send due notifications
+        env:
+          FRIDAY_URL: ${{ secrets.FRIDAY_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$FRIDAY_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "FRIDAY_URL / CRON_SECRET が未設定のため何もしません"; exit 0
+          fi
+          curl -fsS --max-time 90 -H "Authorization: Bearer $CRON_SECRET" "${FRIDAY_URL%/}/api/cron/push"

@@ -41,7 +41,9 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `WEATHER_CITY` / `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` | | 東京 | 天気の場所（Open-Meteo・登録不要） |
 | `FRIDAY_SEARCH` | | `auto` | Web 検索。`auto`（必要なときだけ）/ `always` / `off` |
 | `NEWS_TIME` / `NEWS_TOPICS` | | `07:00` / なし | 毎日のニュースの時間と興味のある分野（脳の「ニュース」ノートが優先） |
-| `CRON_SECRET` | | — | 毎夜の自動日記（Vercel Cron）用の合言葉 |
+| `CRON_SECRET` | | — | 毎夜の自動日記・プッシュ通知の定期実行用の合言葉 |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | | — | プッシュ通知の鍵（SETTINGS → PUSH の「鍵を作る」で作成） |
+| `VAPID_SUBJECT` | | `mailto:friday@example.com` | プッシュ通知の送り主（`mailto:自分のメール`） |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
@@ -214,6 +216,18 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   （「麺類が食べたい」で「味噌ラーメン」のノートを思い出す、など）。間に合わなければ（0.55 秒）言葉の一致だけで探します。
 - 索引づくりは返答とは別に、入力中・画面を開いたとき（10 分に 1 回まで、1 回 300 段落まで）と夜の自動日記のときに少しずつ進めます。
   会話ログ・プロフィール・記憶.md は索引に入れません（プロフィールと最近の記憶は毎回そのまま渡すため）。
+
+### プッシュ通知（アプリを閉じていても通知）
+
+- SETTINGS → PUSH の「この端末で受け取る」で、その端末（パソコン・Android・ホーム画面に追加した iPhone）を宛先に登録します。
+  宛先は脳の `.friday/push.json` に保存されます（Obsidian には表示されません）。
+- `.github/workflows/friday-cron.yml` が 5 分ごとに `/api/cron/push` を呼び、
+  時間が来たリマインダー（通知したら完了にする）と、ニュースの時間を過ぎたその日の見出し（1 日 1 回）を送ります。
+  GitHub の定期実行は混雑時に 5〜15 分ほど遅れることがあります。
+- 必要な設定:
+  1. Vercel に `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`（「鍵を作る」で表示される値。鍵が未設定のときだけ作れます）と `CRON_SECRET`。
+  2. このアプリの GitHub リポジトリの Settings → Secrets and variables → Actions に `FRIDAY_URL`（公開 URL）と `CRON_SECRET`（Vercel と同じ値）。
+     ワークフローは既定のブランチ（main）にあるときだけ動きます。未設定なら何もせず終わります。
 
 ### スマホ
 

@@ -9,7 +9,7 @@ export async function proxy(request: NextRequest) {
   // ログイン画面と、Google の審査用に公開が必要なプライバシーポリシーは合言葉なしで開ける
   if (pathname === "/login" || pathname === "/api/login" || pathname === "/privacy") return NextResponse.next();
   // アプリのアイコンと manifest は、ブラウザが Cookie なしで読みに来るので公開する
-  if (pathname === "/manifest.webmanifest" || pathname.startsWith("/icons/")) return NextResponse.next();
+  if (pathname === "/manifest.webmanifest" || pathname === "/sw.js" || pathname.startsWith("/icons/")) return NextResponse.next();
   // 自動実行（Vercel Cron）は合言葉の代わりに CRON_SECRET で確かめる（各ルートで検証）
   if (pathname.startsWith("/api/cron/")) return NextResponse.next();
 
