@@ -11,12 +11,14 @@ import {
   appendMemories,
   ensureBrain,
   listNotes,
+  LOG_DIR,
   MEMORY_PATH,
   PROFILE_PATH,
   readNote,
   type BrainFile,
 } from "./github-brain";
 import type { LongTermMemory, MemoryRecord, SaveTurnInput } from "./long-term";
+import { chunkId, similarity, updateIndex, type IndexedChunk } from "./semantic";
 
 const MAX_NOTES = 400; // 読み込むノート数の上限
 const MAX_NOTE_BYTES = 40_000; // 大きすぎるノートは読まない
@@ -25,6 +27,10 @@ const RECENT_MEMORY_CHARS = 2500;
 const CHUNK_CHARS = 600;
 const TOP_CHUNKS = 4;
 const RECALL_BUDGET_CHARS = 5000;
+/** 意味の近さを測るのに待てる時間（返答を遅らせないため短め） */
+const SEMANTIC_BUDGET_MS = 550;
+/** これより意味が近ければ、言葉が一致しなくても候補にする */
+const SEMANTIC_MIN = 0.62;
 
 /* ---------- 検索（日本語でも効くよう 2 文字ずつの一致で点数化） ---------- */
 
@@ -120,15 +126,28 @@ export class ObsidianMemory implements LongTermMemory {
     // 検索語: 最新の発言を重視し、直前の数発言も少し混ぜる
     const recent = history.slice(-4).map((m) => m.content).join(" ");
     const q = bigrams(`${query} ${query} ${recent}`.slice(0, 600));
-    const candidates: (Chunk & { s: number })[] = [];
+    const all: (Chunk & { id: string; s: number })[] = [];
     for (const [path, text] of notes) {
       if (path === PROFILE_PATH || path === MEMORY_PATH) continue;
       for (const c of toChunks(path, text)) {
-        const s = score(q, `${c.heading} ${c.text}`);
-        if (s > 0.35) candidates.push({ ...c, s });
+        all.push({ ...c, id: chunkId(c.path, c.heading, c.text), s: score(q, `${c.heading} ${c.text}`) });
       }
     }
-    candidates.sort((a, b) => b.s - a.s);
+
+    // MEMORY AI: 意味の近さも測る（言い回しが違っても見つかる）。間に合わなければ言葉の一致だけで探す
+    const sims = await Promise.race([
+      similarity(`${query}\n${history.slice(-2, -1).map((m) => m.content).join(" ")}`.slice(0, 800), all.map((c) => c.id)).catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), SEMANTIC_BUDGET_MS)),
+    ]);
+    const combined = (c: { id: string; s: number }) => {
+      const cos = sims?.get(c.id);
+      const lexical = Math.min(1, c.s / 1.2);
+      return cos === undefined ? lexical : 0.45 * lexical + Math.max(0, (cos - 0.45) / 0.35);
+    };
+    const candidates = all
+      .filter((c) => c.s > 0.35 || (sims?.get(c.id) ?? 0) > SEMANTIC_MIN)
+      .map((c) => ({ ...c, rank: combined(c) }))
+      .sort((a, b) => b.rank - a.rank);
 
     let budget = RECALL_BUDGET_CHARS;
     for (const c of candidates.slice(0, TOP_CHUNKS)) {
@@ -180,4 +199,23 @@ export function warmBrain(): Promise<void> {
     .then(loadAll)
     .then(() => undefined)
     .catch(() => undefined);
+}
+
+/** 索引に入れる段落（会話ログ・プロフィール・記憶は除く。ノートと文書が中心） */
+export async function indexableChunks(): Promise<IndexedChunk[]> {
+  const notes = await loadAll(await listNotes());
+  const out: IndexedChunk[] = [];
+  for (const [path, text] of notes) {
+    if (path === PROFILE_PATH || path === MEMORY_PATH || path.startsWith(`${LOG_DIR}/`)) continue;
+    for (const c of toChunks(path, text)) out.push({ id: chunkId(c.path, c.heading, c.text), text: `${c.heading}\n${c.text}` });
+  }
+  return out;
+}
+
+/** 意味で探すための索引を少しずつ作る（入力中・画面を開いたとき・夜の自動日記で呼ぶ） */
+let lastIndexRun = 0;
+export async function refreshMemoryIndex(force = false): Promise<number> {
+  if (!force && Date.now() - lastIndexRun < 10 * 60_000) return 0;
+  lastIndexRun = Date.now();
+  return updateIndex(await indexableChunks());
 }

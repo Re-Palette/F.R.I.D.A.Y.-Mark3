@@ -254,3 +254,28 @@ export async function setProgress(input: { project?: unknown; progress?: unknown
   await afterWrite();
   return { ...project, progress: value, manual: true };
 }
+
+/** 画面のチェックボックスから、ToDo を完了／未完了にする（ノートと本文を指定する） */
+export async function setTodoDone(input: { path?: unknown; text?: unknown; done?: unknown }): Promise<void> {
+  const path = String(input.path ?? "");
+  const text = String(input.text ?? "");
+  const done = input.done === true;
+  if (!(path === TODO_PATH || path.startsWith(PROJECT_DIR)) || !text) throw new Error("どのやることか分かりませんでした。");
+  let changed = false;
+  await updateNote(
+    path,
+    (current) =>
+      (current ?? "")
+        .split("\n")
+        .map((l) => {
+          const m = CHECKBOX.exec(l);
+          if (changed || !m || norm(m[4].replace(DUE, "")) !== norm(text) || (m[2] !== " ") === done) return l;
+          changed = true;
+          return `${m[1]}${done ? "x" : " "}${m[3]}${m[4]}`;
+        })
+        .join("\n"),
+    `F.R.I.D.A.Y.: ToDo を${done ? "完了" : "未完了"}に（${text}）`,
+  );
+  if (!changed) throw new Error("そのやることが見つかりませんでした。");
+  await afterWrite();
+}

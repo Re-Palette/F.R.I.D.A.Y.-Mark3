@@ -10,7 +10,7 @@ import { getWeather } from "@/integrations/weather";
 import { getTimezone } from "@/lib/config";
 import { warmGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
-import { warmBrain } from "@/memory/obsidian";
+import { refreshMemoryIndex, warmBrain } from "@/memory/obsidian";
 import { warmTts } from "@/voice/elevenlabs";
 
 export const runtime = "nodejs";
@@ -20,7 +20,8 @@ export function POST(req: Request): Response {
   warmGemini();
   warmTts();
   const tasks: Promise<unknown>[] = [getWeather()];
-  if (isBrainConfigured()) tasks.push(warmBrain(), readNewsSettings());
+  // 脳の読み込みのあと、意味で探すための索引を少しずつ作る（10 分に 1 回まで）
+  if (isBrainConfigured()) tasks.push(warmBrain().then(() => refreshMemoryIndex()), readNewsSettings());
   const refresh = refreshTokenFrom(req);
   if (refresh) tasks.push(new CalendarAccess(refresh, getTimezone()).upcoming(7));
   after(() => Promise.allSettled(tasks));

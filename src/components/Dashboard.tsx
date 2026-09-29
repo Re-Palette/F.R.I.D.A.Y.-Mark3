@@ -17,6 +17,7 @@ import { Header } from "./Header";
 import { HomeDialog } from "./HomeDialog";
 import { Orbit, type ChatAgentStatus } from "./Orbit";
 import { RightPanel } from "./RightPanel";
+import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./Pages";
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
 
@@ -298,6 +299,11 @@ export function Dashboard() {
             hidden={view !== "home"}
             onOpenChat={openChat}
           />
+          <ProjectsPage hidden={view !== "projects"} />
+          <TasksPage hidden={view !== "tasks"} />
+          <CalendarPage hidden={view !== "calendar"} />
+          <MemoryPage hidden={view !== "memory"} />
+          <FilesPage hidden={view !== "files"} />
           <SettingsView
             hidden={view !== "settings"}
             onChanged={agent.refresh}

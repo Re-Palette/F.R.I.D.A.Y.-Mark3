@@ -4,16 +4,16 @@ import type { ChatAgentStatus } from "./Orbit";
 import { HudFrame } from "./HudFrame";
 import { Icon, type IconName } from "./icons";
 
-export type View = "home" | "chat" | "settings";
+export type View = "home" | "chat" | "projects" | "memory" | "tasks" | "calendar" | "files" | "settings";
 
 const NAV: { key: string; label: string; icon: IconName; view?: View }[] = [
   { key: "home", label: "HOME", icon: "home", view: "home" },
   { key: "chat", label: "CHAT", icon: "chat", view: "chat" },
-  { key: "projects", label: "PROJECTS", icon: "projects" },
-  { key: "memory", label: "MEMORY", icon: "memory" },
-  { key: "tasks", label: "TASKS", icon: "tasks" },
-  { key: "calendar", label: "CALENDAR", icon: "calendar" },
-  { key: "files", label: "FILES", icon: "files" },
+  { key: "projects", label: "PROJECTS", icon: "projects", view: "projects" },
+  { key: "memory", label: "MEMORY", icon: "memory", view: "memory" },
+  { key: "tasks", label: "TASKS", icon: "tasks", view: "tasks" },
+  { key: "calendar", label: "CALENDAR", icon: "calendar", view: "calendar" },
+  { key: "files", label: "FILES", icon: "files", view: "files" },
   { key: "settings", label: "SETTINGS", icon: "settings", view: "settings" },
 ];
 

@@ -170,7 +170,7 @@ export const SettingsView = memo(function SettingsView({
   const locked = !data?.canSave || busy;
 
   return (
-    <section className="settings" aria-hidden={hidden} inert={hidden} aria-label="設定">
+    <section className="settings" data-active={!hidden || undefined} aria-hidden={hidden} inert={hidden} aria-label="設定">
       <header className="settings__bar">
         <div>
           <div className="settings__title">SETTINGS</div>

@@ -744,8 +744,7 @@ button:disabled,
   transition: opacity 0.45s var(--ease), transform 0.55s var(--ease), visibility 0s linear 0s;
 }
 
-.stage[data-view="chat"] .orbit,
-.stage[data-view="settings"] .orbit {
+.stage:not([data-view="home"]) .orbit {
   opacity: 0;
   transform: scale(0.94);
   visibility: hidden;
@@ -753,8 +752,7 @@ button:disabled,
   transition: opacity 0.35s var(--ease), transform 0.45s var(--ease), visibility 0s linear 0.45s;
 }
 
-.stage[data-view="chat"] .orbit *,
-.stage[data-view="settings"] .orbit * {
+.stage:not([data-view="home"]) .orbit * {
   animation-play-state: paused !important;
 }
 
@@ -1327,7 +1325,7 @@ button:disabled,
   transition: opacity 0.3s var(--ease), transform 0.4s var(--ease), visibility 0s linear 0.4s;
 }
 
-.stage[data-view="settings"] .settings {
+.settings[data-active] {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
@@ -1390,7 +1388,8 @@ button:disabled,
   padding: 14px 18px 16px;
 }
 
-.settings__section:last-child {
+.settings:not(.page) .settings__section:last-child,
+.settings__section[data-wide] {
   grid-column: 1 / -1;
 }
 
@@ -1472,7 +1471,14 @@ button:disabled,
 .settings__inline {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.settings__inline > input,
+.settings__inline > select {
+  flex: 1 1 120px;
+  min-width: 0;
 }
 
 .settings__actions {
@@ -1563,6 +1569,128 @@ button:disabled,
 .settings .ghost-btn {
   flex: none;
   white-space: nowrap;
+}
+
+/* ---------- PROJECTS / TASKS / CALENDAR / MEMORY / FILES ---------- */
+.settings select,
+.settings input[type="date"],
+.settings input[type="time"] {
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color-scheme: dark;
+}
+
+.page-todos {
+  position: relative;
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-todo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 2px 4px;
+  border-bottom: 1px dashed var(--line-faint);
+  font-family: var(--font-jp);
+  font-size: 13.5px;
+}
+
+.page-todo > span,
+.page-todo label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-todo input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--orange);
+}
+
+.page-todo[data-done] label span {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.page-todo em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: #4fb7ff;
+}
+
+.page-todo time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--orange-hi);
+}
+
+.page-todo[data-active] {
+  background: rgba(255, 138, 31, 0.08);
+}
+
+.page-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-jp);
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.page-file:hover {
+  color: var(--orange-hi);
+}
+
+.page-day {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.page-day > b {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  color: var(--orange);
+}
+
+.page-progress {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.page-progress .projects__bar {
+  flex: 1;
+}
+
+.page-md {
+  position: relative;
+  max-height: 480px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  font-size: 13.5px;
 }
 
 /* HOME のまま会話するときの字幕パネル */
@@ -3013,6 +3141,14 @@ button:disabled,
 
   .nav__item {
     padding: 8px 14px;
+  }
+
+  .nav {
+    overflow-x: auto;
+  }
+
+  .nav__item {
+    padding: 8px 10px;
   }
 
   .nav__item[aria-disabled="true"],

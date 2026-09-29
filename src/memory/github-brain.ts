@@ -149,6 +149,11 @@ export async function readNote(file: BrainFile): Promise<string> {
   return text;
 }
 
+/** ノートを最新の状態で読む（キャッシュを使わない。無ければ null） */
+export async function readFresh(path: string): Promise<string | null> {
+  return (await getFile(path))?.text ?? null;
+}
+
 async function getFile(path: string): Promise<{ text: string; sha: string } | null> {
   const c = getBrainConfig();
   const res = await gh(c, `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`);
@@ -326,6 +331,53 @@ export async function appendMemories(facts: string[], tz: string): Promise<void>
     },
     `F.R.I.D.A.Y.: 記憶を追加（${facts.length} 件）`,
   );
+}
+
+export interface MemoryEntry {
+  date: string;
+  text: string;
+}
+
+/** 記憶.md の中身を日付ごとの 1 行ずつにする */
+export function parseMemories(text: string): MemoryEntry[] {
+  const out: MemoryEntry[] = [];
+  let date = "";
+  for (const line of text.split("\n")) {
+    const h = /^##\s+(\d{4}-\d{2}-\d{2})/.exec(line);
+    if (h) {
+      date = h[1];
+      continue;
+    }
+    const m = /^\s*-\s+(.+)$/.exec(line);
+    if (m && date) out.push({ date, text: m[1].trim() });
+  }
+  return out;
+}
+
+/** 記憶を 1 行消す（間違って覚えたことなど） */
+export async function removeMemory(entry: MemoryEntry): Promise<boolean> {
+  let removed = false;
+  await updateNote(
+    MEMORY_PATH,
+    (current) => {
+      let date = "";
+      return (current ?? "")
+        .split("\n")
+        .filter((line) => {
+          const h = /^##\s+(\d{4}-\d{2}-\d{2})/.exec(line);
+          if (h) date = h[1];
+          const m = /^\s*-\s+(.+)$/.exec(line);
+          if (!removed && m && date === entry.date && m[1].trim() === entry.text) {
+            removed = true;
+            return false;
+          }
+          return true;
+        })
+        .join("\n");
+    },
+    "F.R.I.D.A.Y.: 記憶を 1 件削除",
+  );
+  return removed;
 }
 
 /** 会話を日ごとの会話ログに追記する */
