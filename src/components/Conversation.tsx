@@ -96,6 +96,28 @@ const Message = memo(function Message({
           ))}
         </ul>
       )}
+      {msg.documents?.map((d, i) => (
+        <details key={`${d.title}-${i}`} className="doc-card hud" open={i === 0 && (msg.documents?.length ?? 0) === 1}>
+          <HudFrame cut={12} small={5} ticks={false} />
+          <summary>
+            <Icon name="doc" size={14} />
+            <b>{d.title}</b>
+            <span className="doc-card__state" data-failed={!d.ok || undefined}>
+              {d.ok ? (d.updated ? "UPDATED" : "SAVED") : "NOT SAVED"}
+            </span>
+            {d.path && <span className="doc-card__path">{d.path}</span>}
+          </summary>
+          {!d.ok && d.error && <p className="doc-card__error">{d.error}</p>}
+          <div className="doc-card__body md">
+            <Markdown text={d.content ?? ""} />
+          </div>
+          {d.content && (
+            <button type="button" className="ghost-btn doc-card__copy" onClick={() => void navigator.clipboard?.writeText(d.content ?? "")}>
+              コピー
+            </button>
+          )}
+        </details>
+      ))}
       {msg.actions && msg.actions.length > 0 && (
         <ul className="msg__memories" aria-label="脳に書き込んだこと">
           {msg.actions.map((a, i) => (

@@ -32,6 +32,8 @@ export interface PersonaInput {
   reminders?: Reminder[] | null;
   /** 未読メール */
   mail?: MailData;
+  /** 振り返り（week）・日記（day）の材料。material が null なら読み込めなかった */
+  review?: { kind: "week" | "day"; material: string | null } | null | false;
 }
 
 /** 未読メール（読まなかったときは null、読めなかったときは error） */
@@ -71,6 +73,7 @@ export function buildSystemInstruction({
   tasks,
   reminders,
   mail,
+  review,
 }: PersonaInput): string {
   const calendarOn = calendar?.connected === true;
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。ユーザー一人のために動く専属AIアシスタントであり、ユーザー専用の「個人用AI OS」の中核です。汎用チャットボットではありません。
@@ -120,6 +123,8 @@ export function buildSystemInstruction({
   if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
   if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
   if (mail) out += mailSection(mail);
+  if (memoryConnected) out += WRITING_RULES;
+  if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
   if (calendar?.connected) out += calendarSection(calendar.events, now, timezone);
   if (!memoryConnected) return out;
 
@@ -306,4 +311,51 @@ function mailSection(mail: NonNullable<MailData>): string {
 ${list}
 - メールについて聞かれたら、件数と、重要そうなもの（締め切り・予定・返信が要りそうなもの）を優先して短く要約する。本文にない内容は推測しない。
 - メールの送信・削除・既読にすることはできない。`;
+}
+
+/** WRITING AI: 文書を書いて脳に保存する */
+const WRITING_RULES = `
+
+# 文書の作成（WRITING AI）
+- 企画書・レポート・報告書・メールや手紙の下書き・SNS の投稿文・スピーチ原稿など「文書」を頼まれたら、本文を次のタグの中に Markdown で書く：
+<document title="文書のタイトル">
+# 文書のタイトル
+（本文）
+</document>
+- タグの中身は画面に文書カードとして表示され、脳の「文書/タイトル.md」に保存される（読み上げはされない）。タグの外の返答には本文を重ねて書かず、「〇〇の企画書を作って保存しました。ポイントは〜です」のように 1〜3 文で要点だけ伝える。
+- 直してほしいと言われたら、直した全文を同じ title で書き直す（上書き保存される）。
+- 目的・相手・分量が分からないときは、書き始める前に 1 つだけ質問してよい。短い一文やちょっとした例文なら、タグを使わず普通に答える。
+- 脳の記憶・プロジェクト・予定など、手元の情報を活かして具体的に書く。分からない数字や事実は作らず【要確認】と書く。`;
+
+/** 振り返り・日記 */
+function reviewSection(kind: "week" | "day", material: string | null, voice: boolean): string {
+  const data = material ?? "（今回は材料を読み込めなかった。分かる範囲で書き、読み込めなかったことを一言伝える）";
+  if (kind === "week") {
+    return `
+
+# 1 週間の振り返り（ANALYSIS AI・今回実行する）
+- 下の材料から、この 1 週間を振り返る文書を作り、<document title="週次振り返り 開始日〜終了日" folder="振り返り"> … </document> に書く。
+- 構成：
+  1. 今週のハイライト（3 つまで）
+  2. できたこと・進んだこと（プロジェクトごと）
+  3. うまくいかなかったこと・課題（事実ベースで。責めない）
+  4. 気づき（会話や予定の傾向から分かること）
+  5. 来週の提案（具体的な行動を 3 つまで。未完了の ToDo と予定を踏まえる）
+- 材料に無いことは書かない。材料が少なければ短くてよい。
+- タグの外では${voice ? "話し言葉で 2〜3 文" : "2〜4 文"}で要点だけ伝える。
+
+# 振り返りの材料
+${data}`;
+  }
+  return `
+
+# 今日の日記（今回実行する）
+- 下の材料から今日の日記を作り、<document title="日記 今日の日付" folder="日記"> … </document> に書く。
+- ユーザーの一日を、あとで読み返して楽しい・役に立つように、やさしい「です・ます」体でまとめる。
+- 構成：今日のできごと ／ 決めたこと・覚えたこと ／ 終わったこと ／ 明日へのひとこと
+- 材料に無いことは書かない。
+- タグの外では${voice ? "話し言葉で 1〜2 文" : "1〜2 文"}で伝える。
+
+# 日記の材料
+${data}`;
 }

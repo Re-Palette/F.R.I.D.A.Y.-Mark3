@@ -10,6 +10,8 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/login" || pathname === "/api/login" || pathname === "/privacy") return NextResponse.next();
   // アプリのアイコンと manifest は、ブラウザが Cookie なしで読みに来るので公開する
   if (pathname === "/manifest.webmanifest" || pathname.startsWith("/icons/")) return NextResponse.next();
+  // 自動実行（Vercel Cron）は合言葉の代わりに CRON_SECRET で確かめる（各ルートで検証）
+  if (pathname.startsWith("/api/cron/")) return NextResponse.next();
 
   const mode = getAuthMode();
   if (mode === "open") return NextResponse.next();

@@ -185,8 +185,9 @@ function addDays(day: string, n: number): string {
 }
 
 /** 今日から days 日分の範囲（その地域の 0 時区切り） */
-function dayRange(tz: string, days: number, now = new Date()): { timeMin: string; timeMax: string } {
-  const start = ymd(now, tz);
+/** 今日から offset 日ずらした日の 0 時から days 日分（offset が負なら過去） */
+function dayRange(tz: string, days: number, now = new Date(), offset = 0): { timeMin: string; timeMax: string } {
+  const start = addDays(ymd(now, tz), offset);
   const end = addDays(start, days);
   const at = (day: string) => `${day}T00:00:00${tzOffset(new Date(`${day}T12:00:00Z`), tz)}`;
   return { timeMin: at(start), timeMax: at(end) };
@@ -354,13 +355,19 @@ export class CalendarAccess {
    * 今日から days 日分の予定。返答を待たせないよう、1 分以内は前回の結果を使い、
    * 30 分以内なら前回の結果を返しつつ裏で取り直す。予定を書き換えたら捨てる。
    */
+  /** 今日から offset 日ずらした日から days 日分（振り返り用に過去も読める。1 分キャッシュ） */
+  between(offset: number, days: number, max = 60): Promise<CalendarEvent[]> {
+    const key = `${this.cacheKey}${ymd(new Date(), this.tz)}:range:${offset}:${days}:${max}`;
+    return swr(key, 60_000, 30 * 60_000, () => this.fetchUpcoming(days, max, offset));
+  }
+
   upcoming(days = 7, max = 40): Promise<CalendarEvent[]> {
     const key = `${this.cacheKey}${ymd(new Date(), this.tz)}:${days}:${max}`;
     return swr(key, 60_000, 30 * 60_000, () => this.fetchUpcoming(days, max));
   }
 
-  private async fetchUpcoming(days: number, max: number): Promise<CalendarEvent[]> {
-    const { timeMin, timeMax } = dayRange(this.tz, days);
+  private async fetchUpcoming(days: number, max: number, offset = 0): Promise<CalendarEvent[]> {
+    const { timeMin, timeMax } = dayRange(this.tz, days, new Date(), offset);
     const params = new URLSearchParams({
       timeMin,
       timeMax,

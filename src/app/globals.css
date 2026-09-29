@@ -1578,6 +1578,76 @@ button:disabled,
   margin-left: 4px;
 }
 
+/* WRITING AI が書いた文書 */
+.doc-card {
+  position: relative;
+  margin: 10px 0 0 4px;
+  max-width: min(92%, 780px);
+  padding: 10px 16px 12px;
+}
+
+.doc-card summary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-jp);
+  font-size: 13.5px;
+}
+
+.doc-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.doc-card summary svg {
+  color: var(--orange-hi);
+  flex: none;
+}
+
+.doc-card__state {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--cyan);
+}
+
+.doc-card__state[data-failed] {
+  color: var(--red);
+}
+
+.doc-card__path {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-card__body {
+  position: relative;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-faint);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.doc-card__error {
+  position: relative;
+  margin: 8px 0 0;
+  color: var(--red);
+  font-size: 12.5px;
+}
+
+.doc-card__copy {
+  position: relative;
+  margin-top: 8px;
+}
+
 /* Web 検索の出典 */
 .msg__sources {
   list-style: none;

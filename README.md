@@ -41,6 +41,7 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `WEATHER_CITY` / `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` | | 東京 | 天気の場所（Open-Meteo・登録不要） |
 | `FRIDAY_SEARCH` | | `auto` | Web 検索。`auto`（必要なときだけ）/ `always` / `off` |
 | `NEWS_TIME` / `NEWS_TOPICS` | | `07:00` / なし | 毎日のニュースの時間と興味のある分野（脳の「ニュース」ノートが優先） |
+| `CRON_SECRET` | | — | 毎夜の自動日記（Vercel Cron）用の合言葉 |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
@@ -165,6 +166,25 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   メールの本文全体は読まず、保存もしません。送信・削除・既読にはしません。
 - Google Cloud で **Gmail API を有効** にする必要があります。
 
+### WRITING AI（文書作成）
+
+- 企画書・レポート・メールの下書き・投稿文などを頼むと、本文を `<document title="…">` タグの中に書き、
+  返答の下に文書カードとして表示し、脳の `文書/<タイトル>.md` に保存します（読み上げは要点だけ）。
+- 「さっきの企画書の予算のところを直して」→ 同じタイトルで書き直して上書き保存します。
+
+### 振り返り（ANALYSIS AI）
+
+- 「今週の振り返りして」→ 直近 7 日の会話ログ・日記・予定（過去分）・完了/未完了の ToDo・覚えたことを集め、
+  ハイライト／できたこと／課題／気づき／来週の提案 を `振り返り/` に保存します。
+- 「今日の日記書いて」でも、その日の分から日記を作ります（`日記/YYYY-MM-DD.md`）。
+
+### 毎夜の自動日記（AUTOMATION）
+
+- `vercel.json` の Cron で毎日 14:00 UTC（日本時間 23 時ごろ、無料プランは前後 1 時間ずれることがある）に `/api/cron/diary` を実行。
+  画面を開いていなくても、その日の会話ログ・覚えたこと・ToDo から日記を書いて `日記/YYYY-MM-DD.md` に保存します。
+- 環境変数 `CRON_SECRET` が必要（Vercel が `Authorization: Bearer <CRON_SECRET>` を付けて呼ぶので、それ以外は拒否）。
+- 自分で書いた日記がある日は消さずに、下に「F.R.I.D.A.Y. のまとめ」を足します。記録が何も無い日は書きません。
+
 ### スマホ
 
 - ブラウザの「ホーム画面に追加」で、アプリのように全画面で開けます（`/manifest.webmanifest`、アイコンは `public/icons/`）。
@@ -229,7 +249,7 @@ Chat Agent は取得した記憶を system instruction に含めて応答しま�
 
 ## 今回のスコープ外
 
-- 文書作成・分析・SNS・Automation の各 Agent
+- SNS AI・Memory AI（ベクトル検索）
 - 音声入力・ファイル添付・画像生成
 - 右パネルのプロジェクトは **SAMPLE** 表示のみ
 - Claude API / OpenAI API は使用していません

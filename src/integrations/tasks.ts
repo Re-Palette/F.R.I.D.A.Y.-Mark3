@@ -42,6 +42,8 @@ export interface TasksOverview {
   projects: Project[];
   /** 未完了の ToDo（期限の近い順） */
   todos: Task[];
+  /** 完了した ToDo（振り返り用。最大 40 件） */
+  done: Task[];
 }
 
 const CHECKBOX = /^(\s*[-*+]\s+\[)([ xX])(\]\s+)(.+)$/;
@@ -106,12 +108,12 @@ async function loadOverview(): Promise<TasksOverview> {
     todos.push(...tasks);
   });
   const open = todos.filter((t) => !t.done).sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
-  return { projects, todos: open };
+  return { projects, todos: open, done: todos.filter((t) => t.done).slice(-40) };
 }
 
 /** 一覧（1 分以内は前回の結果、1 時間以内なら前回の結果を返しつつ裏で取り直す） */
 export function getTasksOverview(): Promise<TasksOverview> {
-  if (!isBrainConfigured()) return Promise.resolve({ projects: [], todos: [] });
+  if (!isBrainConfigured()) return Promise.resolve({ projects: [], todos: [], done: [] });
   return swr(CACHE_KEY, 60_000, 60 * 60_000, loadOverview);
 }
 

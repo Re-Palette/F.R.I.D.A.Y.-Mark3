@@ -9,6 +9,7 @@ import { readNewsSettings } from "@/integrations/news";
 import { asksForMail } from "@/integrations/gmail";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
+import { asksForDiary, asksForReview, formatMaterial, gatherReview } from "@/integrations/review";
 import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import type { CalendarEvent } from "@/integrations/google-calendar";
@@ -20,6 +21,9 @@ import { buildSystemInstruction, type MailData } from "./persona";
  * どれも前回の結果をキャッシュから即座に返すので、普段はほぼ待たない（上限は初回や障害時の保険）。
  */
 const CONTEXT_BUDGET_MS = { text: 900, voice: 450 };
+
+/** 振り返り・日記の材料集めに待てる時間（頼まれたときだけなので長め） */
+const REVIEW_BUDGET_MS = 3000;
 
 /** この長さ未満の普通の発言は、Gemini に考えさせる量を最小にして最初の一言を速くする */
 const QUICK_REPLY_CHARS = 120;
@@ -67,7 +71,17 @@ export const chatAgent: Agent = {
           (err: unknown) => ({ error: err instanceof Error ? err.message : "メールを読めませんでした。" }),
         )
       : Promise.resolve(null);
-    const [memories, events, weather, newsSettings, tasks, reminders, mail] = await Promise.all([
+    // 振り返り（1 週間）・日記（今日）を頼まれたら、会話ログ・ToDo・予定などの材料を集める（少し長めに待つ）
+    const reviewKind = !ctx.memory.connected ? null : asksForReview(latest) ? "week" : asksForDiary(latest) ? "day" : null;
+    const reviewTask: Promise<string | null> = reviewKind
+      ? within(
+          gatherReview(ctx.timezone, reviewKind === "week" ? 7 : 1, ctx.calendar).then(formatMaterial),
+          REVIEW_BUDGET_MS,
+          null,
+          "review",
+        )
+      : Promise.resolve(null);
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -76,6 +90,7 @@ export const chatAgent: Agent = {
       ctx.memory.connected ? within<TasksOverview | null>(getTasksOverview(), budget, null, "tasks") : null,
       ctx.memory.connected ? within<Reminder[] | null>(listReminders(), budget, null, "reminders") : null,
       within<MailData>(mailTask, budget + 600, wantsMail ? { error: "メールの読み込みが間に合いませんでした。" } : null, "mail"),
+      reviewTask,
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -93,11 +108,16 @@ export const chatAgent: Agent = {
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
     // ニュースのまとめは長くなるので上限を広げる
     // 短い普通の発言（検索・まとめ以外）も考える量を最小にする（最初の一言が速くなる）
-    const quick = !search && !briefing && latest.length < QUICK_REPLY_CHARS;
+    const quick = !search && !briefing && !reviewKind && latest.length < QUICK_REPLY_CHARS;
     const runConfig = ctx.voice
-      ? { ...config, thinkingLevel: "minimal" as const, maxOutputTokens: briefing ? 1200 : Math.min(config.maxOutputTokens, 400) }
-      : briefing
-        ? { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, 3000) }
+      ? {
+          ...config,
+          thinkingLevel: "minimal" as const,
+          // 文書・振り返りは本文を隠しタグに書くので長く、読み上げは短い
+          maxOutputTokens: briefing ? 1200 : reviewKind || /企画書|レポート|報告書|文書|原稿|下書き/.test(latest) ? 5000 : Math.min(config.maxOutputTokens, 400),
+        }
+      : briefing || reviewKind || /企画書|レポート|報告書|文書|原稿|下書き|書いて|作成して/.test(latest)
+        ? { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, 6000) }
         : quick
           ? { ...config, thinkingLevel: "minimal" as const }
           : config;
@@ -117,6 +137,7 @@ export const chatAgent: Agent = {
         tasks,
         reminders,
         mail,
+        review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         voice: ctx.voice,
       }),
       contents,

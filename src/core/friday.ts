@@ -15,6 +15,7 @@ import type { AgentContext } from "@/agents/types";
 import { BRAIN_TAGS, runBrainActions } from "./brain-actions";
 import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
+import { saveDocument, toFolder } from "@/integrations/documents";
 
 export const MAX_MESSAGE_CHARS = 16000;
 const MAX_HISTORY_ITEMS = 400;
@@ -85,7 +86,9 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", ...CALENDAR_TAGS, ...BRAIN_TAGS] as const);
+    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS] as const, {
+      document: 30_000,
+    });
     const sources: { title: string; uri: string }[] = [];
     for await (const chunk of agent.run({
       messages: window.messages,
@@ -134,6 +137,19 @@ export async function* handleConversation(
         const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;
         reply += text;
         yield { type: "delta", text };
+      }
+    }
+    // 書いた文書を脳に保存（本文は画面のカードに出す。読み上げはしない）
+    for (const [i, content] of tags.captures.document.entries()) {
+      const attrs = tags.attrs.document[i] ?? {};
+      const title = attrs.title || /^#\s+(.+)$/m.exec(content)?.[1]?.trim() || "無題";
+      try {
+        if (!memory.connected) throw new Error("脳（Obsidian）が接続されていないため保存できません。");
+        const saved = await saveDocument({ title, folder: toFolder(attrs.folder), content });
+        yield { type: "document", ok: true, title: saved.title, path: saved.path, content, updated: saved.updated };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : "脳に保存できませんでした。";
+        yield { type: "document", ok: false, title, content, error };
       }
     }
     if (sources.length) yield { type: "sources", sources: sources.slice(0, 8) };

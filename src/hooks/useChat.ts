@@ -39,6 +39,8 @@ export interface UiMessage {
   sources?: { title: string; uri: string }[];
   /** 脳への書き込み（ToDo・進捗・リマインダー）の結果 */
   actions?: { kind: "todo-add" | "todo-done" | "project-progress" | "reminder"; ok: boolean; label: string; error?: string }[];
+  /** この返答で書いた文書（脳に保存したもの） */
+  documents?: { ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string }[];
   /** ニュースの設定を変えた結果 */
   newsSettings?: { ok: boolean; time?: string; topics?: string[]; error?: string };
 }
@@ -304,6 +306,11 @@ export function useChat() {
                 const { action, ok, title, when, error } = event;
                 patch(assistantId, (m) => ({ ...m, calendar: [...(m.calendar ?? []), { action, ok, title, when, error }] }));
                 if (ok) window.dispatchEvent(new Event(CALENDAR_CHANGED));
+                break;
+              }
+              case "document": {
+                const { ok, title, path, content, updated, error } = event;
+                patch(assistantId, (m) => ({ ...m, documents: [...(m.documents ?? []), { ok, title, path, content, updated, error }] }));
                 break;
               }
               case "action": {
