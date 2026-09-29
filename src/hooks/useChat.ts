@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, StreamEvent } from "@/core/types";
-import { closeTabs, openTab } from "@/lib/tabs";
+import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
 
 export interface UiError {
@@ -331,12 +331,19 @@ export function useChat() {
               case "browser": {
                 if (event.action === "open") {
                   const { ok, url, label, error } = event;
-                  const blocked = ok && url ? !openTab(url, label) : undefined;
-                  patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, url, blocked, error }] }));
+                  if (ok && url) {
+                    void openTab(url, label).then((opened) =>
+                      patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, url, blocked: !opened }] })),
+                    );
+                  } else {
+                    patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, error }] }));
+                  }
                 } else {
-                  const n = closeTabs(event.target);
-                  const label = n ? `${n} 件のタブ` : "閉じられるタブがありません";
-                  patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "close", ok: n > 0, label }] }));
+                  void closeTabs(event.target).then(({ closed, reason }) => {
+                    const label = closed ? `${closed} 件のタブ` : reason ? "閉じられませんでした" : "閉じられるタブがありません";
+                    patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "close", ok: closed > 0, label, error: reason }] }));
+                    if (reason) window.dispatchEvent(new CustomEvent(TAB_BLOCKED, { detail: { reason } }));
+                  });
                 }
                 break;
               }

@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useBargeIn } from "@/hooks/useBargeIn";
+import { hasExtension } from "@/lib/tabs";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -235,6 +236,42 @@ function PushControls({ hidden }: { hidden: boolean }) {
   );
 }
 
+/** Web ページを開く・閉じるための Chrome 拡張機能 */
+function BrowserControls({ hidden }: { hidden: boolean }) {
+  const [installed, setInstalled] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!hidden) void hasExtension().then(setInstalled);
+  }, [hidden]);
+
+  return (
+    <>
+      <p className="settings__note">
+        拡張機能：
+        {installed === null ? "確認中…" : installed ? <b style={{ color: "var(--cyan)" }}>接続済み（開く・閉じるが使えます）</b> : "未導入"}
+      </p>
+      {installed === false && (
+        <>
+          <p className="settings__note">
+            入れると「〇〇開いて」でポップアップが止められずに開き、YouTube や Google のページも「閉じて」で閉じられます（パソコンの Chrome / Edge 用）。
+          </p>
+          <div className="settings__actions">
+            <a className="ghost-btn" href="/friday-extension.zip" download>
+              拡張機能をダウンロード
+            </a>
+          </div>
+          <ol className="settings__note">
+            <li>ダウンロードした ZIP を右クリック →「すべて展開」</li>
+            <li>アドレスバーに chrome://extensions（Edge は edge://extensions）と入れて開く</li>
+            <li>右上（Edge は左下）の「デベロッパー モード」をオン</li>
+            <li>「パッケージ化されていない拡張機能を読み込む」→ 展開した「friday-extension」フォルダを選ぶ</li>
+            <li>この画面を再読み込み</li>
+          </ol>
+        </>
+      )}
+    </>
+  );
+}
+
 export const SettingsView = memo(function SettingsView({
   hidden,
   status,
@@ -444,6 +481,10 @@ export const SettingsView = memo(function SettingsView({
 
         <Section title="PUSH" sub="アプリを閉じていても通知">
           <PushControls hidden={hidden} />
+        </Section>
+
+        <Section title="BROWSER" sub="Web ページを開く・閉じる">
+          <BrowserControls hidden={hidden} />
         </Section>
 
         <Section title="LINKS" sub="接続の状態">

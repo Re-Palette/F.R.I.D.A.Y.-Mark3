@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "F.R.I.D.A.Y. Tabs",
+  "version": "1.0.0",
+  "description": "F.R.I.D.A.Y. Mark3 から、Web ページを開く・閉じる操作をできるようにします。",
+  "permissions": ["storage"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://f-r-i-d-a-y-mark3.vercel.app/*", "http://localhost/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": { "128": "icon-128.png" }
+}

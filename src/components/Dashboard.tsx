@@ -20,7 +20,7 @@ import { RightPanel } from "./RightPanel";
 import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./Pages";
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
-import { TAB_BLOCKED } from "@/lib/tabs";
+import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -112,9 +112,10 @@ export function Dashboard() {
   const chat = useChat();
   const agent = useAgentStatus();
   const [calendarNotice, closeCalendarNotice] = useCalendarNotice();
-  const [blockedTab, setBlockedTab] = useState<{ url: string; label: string } | null>(null);
+  const [blockedTab, setBlockedTab] = useState<TabNotice | null>(null);
   useEffect(() => {
-    const onBlocked = (e: Event) => setBlockedTab((e as CustomEvent<{ url: string; label: string }>).detail);
+    void hasExtension(); // 最初の「開いて」を待たせないよう、先に調べておく
+    const onBlocked = (e: Event) => setBlockedTab((e as CustomEvent<TabNotice>).detail);
     window.addEventListener(TAB_BLOCKED, onBlocked);
     return () => window.removeEventListener(TAB_BLOCKED, onBlocked);
   }, []);
@@ -380,19 +381,35 @@ export function Dashboard() {
 
         {blockedTab && (
           <div className="banner" role="alert">
-            <b>OPEN</b>
+            <b>{blockedTab.reason ? "TABS" : "OPEN"}</b>
             <span>
-              ブラウザが自動で開くのを止めました。「開く」を押してください。毎回押さずに済ませるには、アドレスバー右のアイコンからこのサイトのポップアップを「常に許可」にしてください。
+              {blockedTab.reason ??
+                "ブラウザが自動で開くのを止めました。「開く」を押してください。SETTINGS の「BROWSER」から拡張機能を入れると、毎回押さずに開けて、閉じることもできます。"}
             </span>
-            <a
-              className="ghost-btn"
-              href={blockedTab.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setBlockedTab(null)}
-            >
-              {blockedTab.label} を開く
-            </a>
+            {blockedTab.url && (
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  openTabNow(blockedTab.url!);
+                  setBlockedTab(null);
+                }}
+              >
+                {blockedTab.label} を開く
+              </button>
+            )}
+            {blockedTab.reason && (
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  setBlockedTab(null);
+                  setView("settings");
+                }}
+              >
+                拡張機能を入れる
+              </button>
+            )}
             <button type="button" className="ghost-btn" onClick={() => setBlockedTab(null)}>
               閉じる
             </button>

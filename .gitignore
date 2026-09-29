@@ -16,3 +16,6 @@ next-env.d.ts
 .DS_Store
 npm-debug.log*
 .vercel
+
+# 拡張機能の ZIP は build 時に作る
+public/friday-extension.zip

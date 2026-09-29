@@ -5,6 +5,7 @@
   "description": "F.R.I.D.A.Y. Mark3 — personal AI OS (Phase 1: Chat Agent)",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/pack-extension.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
