@@ -49,12 +49,17 @@ function askExtension(message: Record<string, unknown>, timeoutMs: number): Prom
   });
 }
 
-let extension: Promise<boolean> | null = null;
+let found = false;
 
-/** 拡張機能が入っているか（一度調べたら覚えておく） */
-export function hasExtension(): Promise<boolean> {
-  extension ??= askExtension({ type: "ping" }, 600).then((r) => Boolean(r?.ok));
-  return extension;
+/**
+ * 拡張機能が入っているか。拡張機能はページに data-friday-tabs の印を付ける（古い版は印なし → 問い合わせて確かめる）。
+ * 見つからなかった結果は覚えない（後から入れても、再読み込みなしで使えるように）。
+ */
+export async function hasExtension(): Promise<boolean> {
+  if (found || typeof document === "undefined") return found;
+  if (document.documentElement.dataset.fridayTabs) return (found = true);
+  found = Boolean((await askExtension({ type: "ping" }, 500))?.ok);
+  return found;
 }
 
 /** 開けたら true（拡張機能なしでポップアップが止められたら false） */
