@@ -31,7 +31,9 @@ export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speakin
 
 const FOLLOW_UP_MS = 8000;
 /** 聞き取り途中の文字がこの時間変わらなければ「話し終わった」とみなす（ブラウザの確定待ちより速い） */
-const END_OF_SPEECH_MS = 700;
+const END_OF_SPEECH_MS = 1000;
+/** ブラウザが 1 区切りを確定したあと、続きを話し始めるのを待つ時間（息継ぎで途中送信しないため） */
+const AFTER_FINAL_MS = 700;
 const STORAGE_KEY = "friday.voice.v1";
 
 export interface SpeakInput {
@@ -100,6 +102,8 @@ export function useVoice({
   const followTimer = useRef(0);
   /** 確定前の聞き取り途中テキスト（確定の合図が来ないブラウザでは、区切りでこれを使う） */
   const pendingRef = useRef("");
+  /** 確定済みで、続きを待っている発言（息継ぎをはさんだ長い発言を 1 つにまとめる） */
+  const heldRef = useRef("");
   const silenceTimer = useRef(0);
   const restartTimer = useRef(0);
   const onCommandRef = useRef(onCommand);
@@ -175,6 +179,7 @@ export function useVoice({
     clearTimeout(restartTimer.current);
     clearTimeout(silenceTimer.current);
     pendingRef.current = "";
+    heldRef.current = "";
     const rec = recRef.current;
     if (!rec || !runningRef.current) return;
     abortingRef.current = true;
@@ -205,6 +210,14 @@ export function useVoice({
     },
     [set, startRec, toStandby],
   );
+
+  /** 話している間は、聞き取りの受付時間を延ばす（話の途中で待機に戻らないように） */
+  const keepListening = useCallback(() => {
+    clearTimeout(followTimer.current);
+    followTimer.current = window.setTimeout(() => {
+      if (stateRef.current === "listening" && !heldRef.current && !pendingRef.current) toStandby();
+    }, FOLLOW_UP_MS);
+  }, [toStandby]);
 
   const dispatch = useCallback(
     (text: string) => {
@@ -246,8 +259,11 @@ export function useVoice({
           setInterim(`聞こえた：${text}`);
           return;
         }
-        if (command.length >= 2) dispatch(command);
-        else {
+        if (command.length >= 2) {
+          set("listening"); // 呼びかけに続けて話した内容。続きがあるかもしれないので少し待つ
+          keepListening();
+          hold(command);
+        } else {
           chime("wake");
           setInterim("");
           listenFor(FOLLOW_UP_MS);
@@ -255,11 +271,26 @@ export function useVoice({
       } else if (mode === "listening") {
         // 送る直前にもう一度確かめる（遅れて届いた自分の声の聞き取りを送らない）
         if (looksLikeEcho(text, speech.current.speaking)) {
-          setInterim("");
+          if (heldRef.current) hold("");
+          else setInterim("");
           return;
         }
-        dispatch(text);
+        hold(text);
       }
+    };
+
+    /** 確定した区切りを溜め、続きが無ければまとめて送る */
+    const hold = (text: string, waitMs = AFTER_FINAL_MS) => {
+      heldRef.current += text;
+      clearTimeout(silenceTimer.current);
+      if (!heldRef.current.trim()) return;
+      setInterim(heldRef.current.trim());
+      silenceTimer.current = window.setTimeout(() => {
+        const all = heldRef.current;
+        heldRef.current = "";
+        if (all.trim() && !looksLikeEcho(all, speech.current.speaking)) dispatch(all);
+        else setInterim("");
+      }, waitMs);
     };
 
     rec.onresult = (e) => {
@@ -288,12 +319,18 @@ export function useVoice({
         mode = "listening";
       } else if (mode === "listening" && isEcho()) {
         pendingRef.current = ""; // 読み終えた直後の残響
+        if (heldRef.current) hold("");
         return;
       }
+      if (mode === "listening" && heard.trim()) keepListening();
 
       if (finalText.trim()) {
         pendingRef.current = "";
         handleUtterance(finalText);
+        return;
+      }
+      if (!interimText.trim() && heldRef.current) {
+        hold(""); // 物音だけだった → まとめ待ちを続ける
         return;
       }
       pendingRef.current = interimText;
@@ -308,10 +345,16 @@ export function useVoice({
           } catch {
             /* noop */
           }
-          handleUtterance(text);
+          // もう十分黙っていたので、溜めた分と合わせてすぐ送る
+          const waiting = stateRef.current === "listening" ? heldRef.current : "";
+          if (waiting) hold(text, 0);
+          else {
+            handleUtterance(text);
+            if (heldRef.current) hold("", 0);
+          }
         }, END_OF_SPEECH_MS);
       }
-      if (mode === "listening") setInterim(interimText.trim());
+      if (mode === "listening") setInterim(`${heldRef.current}${interimText}`.trim());
       else if (mode === "standby") setInterim(splitWake(interimText).woke ? "…" : `聞こえた：${interimText.trim()}`);
     };
 
@@ -358,7 +401,7 @@ export function useVoice({
       runningRef.current = false;
       abortingRef.current = false;
     };
-  }, [dispatch, listenFor, looksLikeEcho, set, startRec]);
+  }, [dispatch, keepListening, listenFor, looksLikeEcho, set, startRec]);
 
   /* 日本語の音声を選ぶ（一覧は非同期に読み込まれる） */
   useEffect(() => {
