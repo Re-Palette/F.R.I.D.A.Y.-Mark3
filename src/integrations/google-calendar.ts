@@ -16,7 +16,9 @@ import { invalidate, swr } from "@/lib/swr";
 export const CALENDAR_COOKIE = "friday_gcal";
 export const STATE_COOKIE = "friday_gcal_state";
 export const CALENDAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 400; // ブラウザの上限（約 400 日）
-const SCOPE = "https://www.googleapis.com/auth/calendar.events";
+/** 予定の読み書きと、Gmail を読む権限（Gmail は読むだけ） */
+export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+const SCOPE = `https://www.googleapis.com/auth/calendar.events ${GMAIL_SCOPE}`;
 
 export interface CalendarConfig {
   clientId: string | undefined;
@@ -83,7 +85,9 @@ export function buildAuthUrl(redirect: string, state: string): string {
   return `${c.authUrl}?${params}`;
 }
 
-async function tokenRequest(params: Record<string, string>): Promise<{ access_token?: string; refresh_token?: string; expires_in?: number }> {
+async function tokenRequest(
+  params: Record<string, string>,
+): Promise<{ access_token?: string; refresh_token?: string; expires_in?: number; scope?: string }> {
   const c = getCalendarConfig();
   let res: Response;
   try {
@@ -97,7 +101,13 @@ async function tokenRequest(params: Record<string, string>): Promise<{ access_to
   } catch {
     throw new CalendarError("CALENDAR_NETWORK", "Google に接続できませんでした。");
   }
-  const json = (await res.json().catch(() => ({}))) as { error?: string; access_token?: string; refresh_token?: string; expires_in?: number };
+  const json = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+  };
   if (res.ok) return json;
   if (json.error === "invalid_grant")
     throw new CalendarError("CALENDAR_EXPIRED", "Google カレンダーの接続が切れました。もう一度「接続」してください。", true);
@@ -127,16 +137,32 @@ export function refreshTokenFrom(req: Request): string | undefined {
   return unseal(readCookie(req, CALENDAR_COOKIE), c.clientSecret ?? "") ?? c.refreshToken;
 }
 
-const accessCache = new Map<string, { token: string; until: number }>();
+const accessCache = new Map<string, { token: string; until: number; scopes: string[] }>();
 
-async function accessToken(refresh: string): Promise<string> {
+async function accessGrant(refresh: string): Promise<{ token: string; scopes: string[] }> {
   const hit = accessCache.get(refresh);
-  if (hit && hit.until > Date.now()) return hit.token;
+  if (hit && hit.until > Date.now()) return hit;
   const json = await tokenRequest({ refresh_token: refresh, grant_type: "refresh_token" });
   if (!json.access_token) throw new CalendarError("CALENDAR_UPSTREAM", "Google からアクセス用トークンを受け取れませんでした。");
   if (accessCache.size > 50) accessCache.clear();
-  accessCache.set(refresh, { token: json.access_token, until: Date.now() + Math.max(60, (json.expires_in ?? 3600) - 120) * 1000 });
-  return json.access_token;
+  const grant = {
+    token: json.access_token,
+    until: Date.now() + Math.max(60, (json.expires_in ?? 3600) - 120) * 1000,
+    // scope が返らない場合は、少なくともカレンダーは許可されているとみなす
+    scopes: (json.scope ?? "https://www.googleapis.com/auth/calendar.events").split(/\s+/),
+  };
+  accessCache.set(refresh, grant);
+  return grant;
+}
+
+/** Google API 用のアクセストークン（1 時間ほど使い回す） */
+export async function accessToken(refresh: string): Promise<string> {
+  return (await accessGrant(refresh)).token;
+}
+
+/** この接続で Gmail を読む許可があるか（以前の接続は予定の権限だけのことがある） */
+export async function hasGmailScope(refresh: string): Promise<boolean> {
+  return (await accessGrant(refresh)).scopes.includes(GMAIL_SCOPE);
 }
 
 /* ---------- 日付（タイムゾーン付き） ---------- */

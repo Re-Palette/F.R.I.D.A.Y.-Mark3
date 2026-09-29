@@ -6,7 +6,7 @@
 import { listAgents } from "@/core/router";
 import type { StatusResponse } from "@/core/types";
 import { getContextConfig, getSearchMode } from "@/lib/config";
-import { isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-calendar";
+import { hasGmailScope, isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-calendar";
 import { checkGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { checkBrain } from "@/memory/obsidian";
@@ -46,7 +46,9 @@ export async function GET(req: Request): Promise<Response> {
 
   const brain = await brainCheck;
   const newsSettings = await readNewsSettings().catch(() => ({ time: "07:00", topics: [] as string[] }));
-  const calendar = { configured: isCalendarConfigured(), connected: Boolean(refreshTokenFrom(req)) };
+  const refresh = refreshTokenFrom(req);
+  const gmail = refresh ? await hasGmailScope(refresh).catch(() => false) : false;
+  const calendar = { configured: isCalendarConfigured(), connected: Boolean(refresh), gmail };
   const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar, search: getSearchMode(),
     news: { time: newsSettings.time, topics: newsSettings.topics },
   };

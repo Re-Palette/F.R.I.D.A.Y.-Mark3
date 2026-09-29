@@ -3,6 +3,9 @@
  * 口調・振る舞いを調整したいときはこのファイルだけを編集すればよい。
  */
 import type { CalendarEvent } from "@/integrations/google-calendar";
+import type { MailSummary } from "@/integrations/gmail";
+import type { Reminder } from "@/integrations/reminders";
+import type { TasksOverview } from "@/integrations/tasks";
 import type { WeatherReport } from "@/integrations/weather";
 import { weatherSummary } from "@/integrations/weather";
 import type { AgentContext } from "@/agents/types";
@@ -23,7 +26,16 @@ export interface PersonaInput {
   search?: boolean;
   /** ニュースの設定と、今回まとめて伝えるか */
   news?: AgentContext["news"];
+  /** プロジェクトと未完了の ToDo（脳が無ければ null） */
+  tasks?: TasksOverview | null;
+  /** これからのリマインダー */
+  reminders?: Reminder[] | null;
+  /** 未読メール */
+  mail?: MailData;
 }
+
+/** 未読メール（読まなかったときは null、読めなかったときは error） */
+export type MailData = { list: MailSummary[] } | { error: string } | null;
 
 function formatNow(now: Date, timezone: string): string {
   return new Intl.DateTimeFormat("ja-JP", {
@@ -56,6 +68,9 @@ export function buildSystemInstruction({
   weather,
   search,
   news,
+  tasks,
+  reminders,
+  mail,
 }: PersonaInput): string {
   const calendarOn = calendar?.connected === true;
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。ユーザー一人のために動く専属AIアシスタントであり、ユーザー専用の「個人用AI OS」の中核です。汎用チャットボットではありません。
@@ -103,6 +118,8 @@ export function buildSystemInstruction({
   if (weather) out += `\n\n# 天気（Open-Meteo）\n${weatherSummary(weather)}`;
   out += MORNING_RULES;
   if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
+  if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
+  if (mail) out += mailSection(mail);
   if (calendar?.connected) out += calendarSection(calendar.events, now, timezone);
   if (!memoryConnected) return out;
 
@@ -167,8 +184,10 @@ const MORNING_RULES = `
 - ユーザーが「おはよう」など朝のあいさつをしたら、あいさつを返してから、その日の段取りを短くまとめて伝える：
   1. 今日の天気（天気・最高/最低気温・傘が要るか）
   2. 今日の予定を時間順に（カレンダーがあれば。無ければ触れない）
-  3. 脳の記憶やプロジェクトから、今日意識するとよいことを一つ
-  4. 最後に一言（励ましや提案）
+  3. 期限が今日・明日の ToDo や、今日のリマインダー（あれば）
+  4. 未読メールがあれば、大事そうなものだけ一言（件数と差出人程度）
+  5. 脳の記憶やプロジェクトから、今日意識するとよいことを一つ
+  6. 最後に一言（励ましや提案）
 - 分かっていない情報は作らず、その項目は飛ばす。文字の会話でも全体で 5〜7 行程度、音声なら 3〜4 文に収める。`;
 
 /** ニュースのまとめと、ニュース設定の変え方 */
@@ -211,4 +230,80 @@ function newsSection(news: NonNullable<AgentContext["news"]>, search: boolean, v
     : `
 - ニュースの時間や分野を変えたいと言われたら、脳（Obsidian）を接続すると声で変えられると伝える。`;
   return out;
+}
+
+/** プロジェクト・ToDo・リマインダーと、その書き方 */
+function tasksSection(tasks: TasksOverview | null, reminders: Reminder[] | null, now: Date, timezone: string): string {
+  const current = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .format(now)
+    .replace(" ", "T");
+  const projects = !tasks
+    ? "（今回は読み込めなかった）"
+    : tasks.projects.length
+      ? tasks.projects
+          .map((p) => `- ${p.name}: 進捗 ${p.progress}%（未完了 ${p.open} / 完了 ${p.done}）${p.next ? ` 次: ${p.next}` : ""}${p.status ? ` 状況: ${p.status}` : ""}`)
+          .join("\n")
+      : "（まだプロジェクトのノートは無い。「プロジェクト/名前.md」を作ると表示される）";
+  const todos = !tasks
+    ? "（今回は読み込めなかった）"
+    : tasks.todos.length
+      ? tasks.todos
+          .slice(0, 25)
+          .map((t) => `- ${t.text}${t.project ? `［${t.project}］` : ""}${t.due ? `（期限 ${t.due}）` : ""}`)
+          .join("\n")
+      : "（未完了の ToDo は無い）";
+  const upcoming = !reminders
+    ? "（今回は読み込めなかった）"
+    : reminders.length
+      ? reminders.slice(0, 10).map((r) => `- ${r.label} ${r.text}`).join("\n")
+      : "（予定されているリマインダーは無い）";
+  return `
+
+# プロジェクト（脳の「プロジェクト/」）
+${projects}
+
+# 未完了の ToDo
+${todos}
+
+# これからのリマインダー
+${upcoming}
+
+# ToDo・進捗・リマインダーの書き方（頼まれたときだけ、返答の最後に 1 行ずつ付ける）
+- ToDo の追加：<todo-add>{"text":"やること","project":"プロジェクト名","due":"YYYY-MM-DD"}</todo-add>（project・due は分かるときだけ）
+- ToDo の完了：<todo-done>{"text":"上の一覧のやること"}</todo-done>
+- 進捗の記録：<project-progress>{"project":"プロジェクト名","progress":60}</project-progress>（「6割くらい」→ 60）
+- リマインダー：<reminder>{"at":"YYYY-MM-DDTHH:MM","text":"知らせる内容"}</reminder>
+  現在は ${current}。「30分後」「18時に」「明日の朝8時」などは現在を基準に正しい日時に直す。時刻が曖昧なら聞き返す。
+  時間になると画面が声と通知で知らせる（F.R.I.D.A.Y. の画面を開いている間）。
+- タグは見えず、脳のノートに保存される。本文では「〇〇を ToDo に入れておきます」「18時にお知らせします」と自然に一言だけ伝える。`;
+}
+
+/** 未読メール */
+function mailSection(mail: NonNullable<MailData>): string {
+  if ("error" in mail) {
+    return `
+
+# メール（Gmail）
+- 今回はメールを読めなかった：${mail.error}
+- メールについて聞かれたら、この理由を短く伝える。`;
+  }
+  const list = mail.list.length
+    ? mail.list
+        .map((m) => `- ${m.from}「${m.subject}」 ${m.snippet}`)
+        .join("\n")
+    : "（直近 3 日の未読メールは無い）";
+  return `
+
+# 未読メール（Gmail・直近 3 日・広告/SNS 以外）
+${list}
+- メールについて聞かれたら、件数と、重要そうなもの（締め切り・予定・返信が要りそうなもの）を優先して短く要約する。本文にない内容は推測しない。
+- メールの送信・削除・既読にすることはできない。`;
 }

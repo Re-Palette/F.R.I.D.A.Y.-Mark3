@@ -14,10 +14,21 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "F.R.I.D.A.Y. Mark3",
   description: "Personal AI Operating System — F.R.I.D.A.Y. Mark3",
+  // スマホのホーム画面に追加したとき、アプリのように全画面で開く
+  appleWebApp: { capable: true, title: "FRIDAY", statusBarStyle: "black-translucent" },
+  icons: {
+    icon: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {
   themeColor: "#050608",
+  width: "device-width",
+  initialScale: 1,
+  // 入力欄にフォーカスしたときに勝手に拡大しない・ノッチの裏まで使う
+  maximumScale: 1,
+  viewportFit: "cover",
 };
 
 /**

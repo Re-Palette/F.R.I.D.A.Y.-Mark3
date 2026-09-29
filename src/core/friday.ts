@@ -12,6 +12,7 @@ import { getLongTermMemory, type SaveTurnInput } from "@/memory/long-term";
 import type { CalendarAccess } from "@/integrations/google-calendar";
 import { saveNewsSettings } from "@/integrations/news";
 import type { AgentContext } from "@/agents/types";
+import { BRAIN_TAGS, runBrainActions } from "./brain-actions";
 import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
 
@@ -63,6 +64,8 @@ export async function* handleConversation(
     calendar?: CalendarAccess;
     /** ニュースの設定と、今回まとめて伝えるか */
     news?: AgentContext["news"];
+    /** 未読メールを読む */
+    mail?: AgentContext["mail"];
   } = {},
 ): AsyncGenerator<StreamEvent> {
   let turn: SaveTurnInput | null = null;
@@ -82,7 +85,7 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", ...CALENDAR_TAGS] as const);
+    const tags = new TagFilter(["memory", "news-settings", ...CALENDAR_TAGS, ...BRAIN_TAGS] as const);
     const sources: { title: string; uri: string }[] = [];
     for await (const chunk of agent.run({
       messages: window.messages,
@@ -92,6 +95,7 @@ export async function* handleConversation(
       voice: options.voice ?? false,
       calendar: options.calendar,
       news: options.news,
+      mail: options.mail,
       signal,
     })) {
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
@@ -116,6 +120,15 @@ export async function* handleConversation(
 
     // 頼まれた予定の追加・変更・削除（失敗したら本文でも知らせる＝読み上げにも乗る）
     for await (const { event, note } of runCalendarActions(tags.captures, options.calendar, signal)) {
+      yield event;
+      if (note) {
+        const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;
+        reply += text;
+        yield { type: "delta", text };
+      }
+    }
+    // ToDo・進捗・リマインダーを脳に書く（失敗したら本文でも知らせる）
+    for await (const { event, note } of runBrainActions(tags.captures, memory.connected, signal)) {
       yield event;
       if (note) {
         const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;

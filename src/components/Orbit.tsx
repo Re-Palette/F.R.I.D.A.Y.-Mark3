@@ -251,6 +251,7 @@ export const Orbit = memo(function Orbit({
   brain,
   calendar = "NOT SET",
   news = "—",
+  children,
 }: {
   phase: ChatPhase;
   chatStatus: ChatAgentStatus;
@@ -262,6 +263,8 @@ export const Orbit = memo(function Orbit({
   brain?: StatusResponse["brain"];
   calendar?: string;
   news?: string;
+  /** スマホ・タブレットで、カードの下に並べるもの（天気・予定・プロジェクト） */
+  children?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { traces, box } = useTraces(ref);
@@ -295,6 +298,7 @@ export const Orbit = memo(function Orbit({
       {AGENT_CARDS.map((c, i) => (
         <AgentCard key={c.key} def={c} index={i} chatStatus={chatStatus} onOpenChat={onOpenChat} brain={brain} />
       ))}
+      {children}
     </div>
   );
 });

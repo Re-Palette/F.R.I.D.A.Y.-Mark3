@@ -2,6 +2,7 @@ import { memo, useEffect, useState, type ReactNode } from "react";
 import type { CalendarEventView } from "@/core/types";
 import { QUICK_ACCESS, SAMPLE_PROJECTS, SAMPLE_SCHEDULE, SAMPLE_WEATHER } from "@/data/dashboard";
 import { useCalendar } from "@/hooks/useCalendar";
+import { TASKS_CHANGED } from "@/hooks/useChat";
 import type { WeatherKind, WeatherReport } from "@/integrations/weather";
 import { HudFrame } from "./HudFrame";
 import { Icon, type IconName } from "./icons";
@@ -123,7 +124,7 @@ function useNow(): number {
 const endOf = (e: CalendarEventView) => Date.parse(e.end || e.start);
 
 /** TODAY'S SCHEDULE: Google カレンダーに接続していれば今日の予定、未接続ならサンプル */
-function SchedulePanel() {
+function SchedulePanel({ gmail }: { gmail?: boolean }) {
   const cal = useCalendar();
   const now = useNow();
 
@@ -166,9 +167,16 @@ function SchedulePanel() {
         accent="SCHEDULE"
         idx="02"
         extra={
-          <a href="https://calendar.google.com/" target="_blank" rel="noreferrer noopener" title="Google カレンダーを開く">
-            GOOGLE ↗
-          </a>
+          <>
+            {gmail === false && (
+              <a href="/api/calendar/connect" title="Gmail も読めるように、Google にもう一度接続します" className="panel__warn">
+                再接続
+              </a>
+            )}{" "}
+            <a href="https://calendar.google.com/" target="_blank" rel="noreferrer noopener" title="Google カレンダーを開く">
+              GOOGLE ↗
+            </a>
+          </>
         }
       />
       {cal.events.length === 0 ? (
@@ -197,24 +205,47 @@ function SchedulePanel() {
   );
 }
 
-export const RightPanel = memo(function RightPanel() {
+interface ProjectView {
+  name: string;
+  progress: number;
+  open: number;
+  next?: string;
+  color: string;
+  initial: string;
+}
+
+/** CURRENT PROJECTS: 脳の「プロジェクト/」のノートから。脳が無ければサンプル */
+function ProjectsPanel() {
+  const [data, setData] = useState<{ configured: boolean; projects: ProjectView[]; todos: unknown[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/projects", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j) => alive && setData(j))
+        .catch(() => {});
+    void load();
+    window.addEventListener(TASKS_CHANGED, load);
+    window.addEventListener("focus", load);
+    return () => {
+      alive = false;
+      window.removeEventListener(TASKS_CHANGED, load);
+      window.removeEventListener("focus", load);
+    };
+  }, []);
+
+  const real = data?.configured;
+  const projects: ProjectView[] = real ? data.projects : SAMPLE_PROJECTS.map((p) => ({ ...p, open: 0 }));
   return (
-    <aside className="rightbar">
-      <p className="quote">
-        「明日の君を、もっと好きにさせる。」
-        <span>— F.R.I.D.A.Y.</span>
-      </p>
-
-      <WeatherPanel />
-
-      <SchedulePanel />
-
-      <section className="panel hud" title={SAMPLE_TITLE}>
-        <HudFrame cut={14} />
-        <PanelHead title="CURRENT" accent="PROJECTS" extra="VIEW ALL" idx="03" />
-        <ul className="projects">
-          {SAMPLE_PROJECTS.map((p) => (
-            <li key={p.name}>
+    <section className="panel hud" title={real ? undefined : SAMPLE_TITLE}>
+      <HudFrame cut={14} />
+      <PanelHead title="CURRENT" accent="PROJECTS" extra={real ? `TODO ${data.todos.length}` : "SAMPLE"} idx="03" />
+      {real && projects.length === 0 ? (
+        <p className="schedule-empty">脳の「プロジェクト」フォルダにノートを作ると、ここに表示されます。</p>
+      ) : (
+        <ul className="projects" data-sample={real ? undefined : true}>
+          {projects.slice(0, 4).map((p) => (
+            <li key={p.name} title={p.next ? `次: ${p.next}` : undefined}>
               <span className="projects__avatar" style={{ background: p.color }}>
                 {p.initial}
               </span>
@@ -230,7 +261,36 @@ export const RightPanel = memo(function RightPanel() {
             </li>
           ))}
         </ul>
-      </section>
+      )}
+    </section>
+  );
+}
+
+/**
+ * 右パネル。inline はスマホ・タブレット用（HUB のカードの下に並べる。見出しの言葉などは省く）。
+ */
+export const RightPanel = memo(function RightPanel({ gmail, inline }: { gmail?: boolean; inline?: boolean }) {
+  if (inline) {
+    return (
+      <div className="rightbar rightbar--inline">
+        <WeatherPanel />
+        <SchedulePanel gmail={gmail} />
+        <ProjectsPanel />
+      </div>
+    );
+  }
+  return (
+    <aside className="rightbar">
+      <p className="quote">
+        「明日の君を、もっと好きにさせる。」
+        <span>— F.R.I.D.A.Y.</span>
+      </p>
+
+      <WeatherPanel />
+
+      <SchedulePanel gmail={gmail} />
+
+      <ProjectsPanel />
 
       <section className="panel hud">
         <HudFrame cut={14} />

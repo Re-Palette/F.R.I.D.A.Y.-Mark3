@@ -4,6 +4,7 @@
  */
 import type { AgentId, ChatMessage } from "@/core/types";
 import type { CalendarAccess } from "@/integrations/google-calendar";
+import type { MailSummary } from "@/integrations/gmail";
 import type { NewsSettings } from "@/integrations/news";
 import type { LongTermMemory } from "@/memory/long-term";
 
@@ -14,6 +15,8 @@ export interface AgentContext {
   memory: LongTermMemory;
   /** Google カレンダー（この端末で接続済みの場合だけ） */
   calendar?: CalendarAccess;
+  /** 未読メールを読む（Google に接続済みの場合だけ） */
+  mail?: () => Promise<MailSummary[]>;
   /** ニュースの設定と、今回ニュースをまとめて伝えるか（scheduled: 決まった時間 / asked: 頼まれた） */
   news?: { settings: NewsSettings; deliver: false | "scheduled" | "asked"; canSave: boolean };
   /** 現在時刻とタイムゾーン */

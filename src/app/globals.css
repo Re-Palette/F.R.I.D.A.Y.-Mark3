@@ -2191,6 +2191,7 @@ button:disabled,
 }
 
 .weather[data-sample],
+.projects[data-sample],
 .schedule[data-sample] {
   opacity: 0.55;
 }
@@ -2218,6 +2219,11 @@ button:disabled,
 .panel__extra a {
   color: inherit;
   text-decoration: none;
+}
+
+.panel__extra a.panel__warn {
+  margin-right: 6px;
+  color: var(--orange-hi);
 }
 
 .panel__extra a:hover {
@@ -2591,15 +2597,46 @@ button:disabled,
       "side center";
   }
 
-  .rightbar {
+  .rightbar:not(.rightbar--inline) {
     display: none;
   }
+}
+
+/* スマホ・タブレット: 天気・予定・プロジェクトを HUB のカードの下に並べる */
+.rightbar--inline {
+  grid-area: auto;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  width: auto;
+  padding: 0;
+  overflow: visible;
 }
 
 @media (max-width: 720px) {
   html,
   body {
     overflow: auto;
+  }
+
+  /* ホーム画面から開いたとき、ノッチ・ホームバーに重ならないように */
+  .app {
+    box-sizing: border-box;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  .brand__mk {
+    display: none;
+  }
+
+  /* スマホでは、まだ使えない Agent カードは出さない（天気・予定・プロジェクトをすぐ見られるように） */
+  .agent-card[data-state="soon"] {
+    display: none;
+  }
+
+  .clock__time {
+    font-size: 20px;
   }
 
   .app {
@@ -2914,4 +2951,17 @@ button:disabled,
   margin-top: 32px;
   color: var(--muted);
   font-size: 13px;
+}
+
+/* リマインダーのお知らせ */
+.banner--reminder {
+  border-color: var(--orange-hi);
+  box-shadow: 0 0 18px rgba(255, 138, 31, 0.35);
+  animation: reminder-pulse 1.2s ease-in-out 3;
+}
+
+@keyframes reminder-pulse {
+  50% {
+    box-shadow: 0 0 34px rgba(255, 138, 31, 0.7);
+  }
 }

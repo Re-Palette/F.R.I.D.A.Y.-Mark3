@@ -15,6 +15,13 @@ function time(ts: number) {
   return new Date(ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 }
 
+const ACTION_LABEL = {
+  "todo-add": ["TODO ADDED", "tasks"],
+  "todo-done": ["TODO DONE", "tasks"],
+  "project-progress": ["PROGRESS", "analysis"],
+  reminder: ["REMINDER SET", "memory"],
+} as const;
+
 const CALENDAR_LABEL = { add: "CALENDAR ADDED", update: "CALENDAR UPDATED", delete: "CALENDAR DELETED" } as const;
 
 const SUGGESTIONS = ["おはよう", "ちょっと相談がある", "大学受験どうしようかな", "この企画どう思う？"];
@@ -85,6 +92,20 @@ const Message = memo(function Message({
             >
               <Icon name="calendar" size={12} /> <span>{c.ok ? CALENDAR_LABEL[c.action] : "CALENDAR FAILED"}</span> {c.when}{" "}
               {c.title}
+            </li>
+          ))}
+        </ul>
+      )}
+      {msg.actions && msg.actions.length > 0 && (
+        <ul className="msg__memories" aria-label="脳に書き込んだこと">
+          {msg.actions.map((a, i) => (
+            <li
+              key={`${a.kind}-${i}`}
+              className="memory-chip memory-chip--calendar"
+              data-failed={!a.ok || undefined}
+              title={a.ok ? "脳（Obsidian）に保存しました" : a.error}
+            >
+              <Icon name={ACTION_LABEL[a.kind][1]} size={12} /> <span>{a.ok ? ACTION_LABEL[a.kind][0] : "FAILED"}</span> {a.label}
             </li>
           ))}
         </ul>

@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, StreamEvent } from "@/core/types";
+import { REMINDERS_CHANGED } from "./useReminders";
 
 export interface UiError {
   code: string;
@@ -36,6 +37,8 @@ export interface UiMessage {
   calendar?: { action: "add" | "update" | "delete"; ok: boolean; title: string; when: string; error?: string }[];
   /** Web 検索で参照したページ */
   sources?: { title: string; uri: string }[];
+  /** 脳への書き込み（ToDo・進捗・リマインダー）の結果 */
+  actions?: { kind: "todo-add" | "todo-done" | "project-progress" | "reminder"; ok: boolean; label: string; error?: string }[];
   /** ニュースの設定を変えた結果 */
   newsSettings?: { ok: boolean; time?: string; topics?: string[]; error?: string };
 }
@@ -44,6 +47,8 @@ export interface UiMessage {
 export const CALENDAR_CHANGED = "friday:calendar-changed";
 /** 設定が変わったので状態を読み直してほしいときのイベント名 */
 export const STATUS_CHANGED = "friday:status-changed";
+/** ToDo・進捗が変わったとき（右パネルを読み直す） */
+export const TASKS_CHANGED = "friday:tasks-changed";
 
 export interface SendOptions {
   /** 音声会話モード（読み上げ向けの短い話し言葉で返答させる） */
@@ -299,6 +304,12 @@ export function useChat() {
                 const { action, ok, title, when, error } = event;
                 patch(assistantId, (m) => ({ ...m, calendar: [...(m.calendar ?? []), { action, ok, title, when, error }] }));
                 if (ok) window.dispatchEvent(new Event(CALENDAR_CHANGED));
+                break;
+              }
+              case "action": {
+                const { kind, ok, label, error } = event;
+                patch(assistantId, (m) => ({ ...m, actions: [...(m.actions ?? []), { kind, ok, label, error }] }));
+                if (ok) window.dispatchEvent(new Event(kind === "reminder" ? REMINDERS_CHANGED : TASKS_CHANGED));
                 break;
               }
               case "news-settings": {

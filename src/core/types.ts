@@ -37,6 +37,8 @@ export type StreamEvent =
   | { type: "calendar"; action: "add" | "update" | "delete"; ok: boolean; title: string; when: string; error?: string }
   /** Web 検索で参照したページ */
   | { type: "sources"; sources: { title: string; uri: string }[] }
+  /** 脳への書き込み（ToDo の追加・完了、進捗、リマインダー）の結果 */
+  | { type: "action"; kind: "todo-add" | "todo-done" | "project-progress" | "reminder"; ok: boolean; label: string; error?: string }
   /** ニュースの設定（時間・興味のある分野）を変えた結果 */
   | { type: "news-settings"; ok: boolean; time?: string; topics?: string[]; error?: string }
   /** prepMs: 返答前の準備（記憶・予定・天気の取得）にかかった時間 */
@@ -52,7 +54,7 @@ export interface StatusResponse {
   /** Obsidian の脳（GitHub）。未設定なら configured: false */
   brain: { configured: boolean; connected: boolean; notes?: number; reason?: string };
   /** Google カレンダー（configured: サーバー側の設定あり / connected: この端末が接続済み） */
-  calendar: { configured: boolean; connected: boolean };
+  calendar: { configured: boolean; connected: boolean; gmail?: boolean };
   /** Web 検索（auto: 必要なときだけ / always / off） */
   search: "auto" | "always" | "off";
   /** 毎日のニュース（time: "07:00" / "off"） */

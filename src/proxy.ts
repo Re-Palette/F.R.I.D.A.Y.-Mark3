@@ -8,6 +8,8 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // ログイン画面と、Google の審査用に公開が必要なプライバシーポリシーは合言葉なしで開ける
   if (pathname === "/login" || pathname === "/api/login" || pathname === "/privacy") return NextResponse.next();
+  // アプリのアイコンと manifest は、ブラウザが Cookie なしで読みに来るので公開する
+  if (pathname === "/manifest.webmanifest" || pathname.startsWith("/icons/")) return NextResponse.next();
 
   const mode = getAuthMode();
   if (mode === "open") return NextResponse.next();

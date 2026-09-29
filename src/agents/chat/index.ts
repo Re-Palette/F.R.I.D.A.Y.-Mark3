@@ -6,11 +6,14 @@ import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
 import { needsSearch } from "@/agents/search/needs-search";
 import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { readNewsSettings } from "@/integrations/news";
+import { asksForMail } from "@/integrations/gmail";
+import { listReminders, type Reminder } from "@/integrations/reminders";
+import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MemoryRecord } from "@/memory/long-term";
-import { buildSystemInstruction } from "./persona";
+import { buildSystemInstruction, type MailData } from "./persona";
 
 /**
  * 脳・カレンダー・天気を集めるのに待てる時間。間に合わなければ無しで返答する（返答の速さ優先）。
@@ -56,12 +59,23 @@ export const chatAgent: Agent = {
     const prepStart = Date.now();
     const budget = ctx.voice ? CONTEXT_BUDGET_MS.voice : CONTEXT_BUDGET_MS.text;
     const briefing = Boolean(ctx.news?.deliver);
-    const [memories, events, weather, newsSettings] = await Promise.all([
+    // メールは頼まれたとき・朝のあいさつ・ニュースのまとめのときだけ読む
+    const wantsMail = Boolean(ctx.mail) && (asksForMail(latest) || briefing || /^おはよう/.test(latest.trim()));
+    const mailTask: Promise<MailData> = wantsMail
+      ? ctx.mail!().then(
+          (list) => ({ list }),
+          (err: unknown) => ({ error: err instanceof Error ? err.message : "メールを読めませんでした。" }),
+        )
+      : Promise.resolve(null);
+    const [memories, events, weather, newsSettings, tasks, reminders, mail] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
       // ニュースをまとめるときだけ、興味のある分野を最新の設定で
       ctx.news && briefing ? within(readNewsSettings(), budget, ctx.news.settings, "news") : ctx.news?.settings,
+      ctx.memory.connected ? within<TasksOverview | null>(getTasksOverview(), budget, null, "tasks") : null,
+      ctx.memory.connected ? within<Reminder[] | null>(listReminders(), budget, null, "reminders") : null,
+      within<MailData>(mailTask, budget + 600, wantsMail ? { error: "メールの読み込みが間に合いませんでした。" } : null, "mail"),
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -100,6 +114,9 @@ export const chatAgent: Agent = {
         weather,
         search,
         news,
+        tasks,
+        reminders,
+        mail,
         voice: ctx.voice,
       }),
       contents,

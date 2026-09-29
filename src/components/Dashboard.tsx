@@ -7,7 +7,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { STATUS_CHANGED, useChat } from "@/hooks/useChat";
+import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
 import { useVoice } from "@/hooks/useVoice";
+import { chime, pickJapaneseVoice } from "@/lib/speech";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
 import { Header } from "./Header";
@@ -36,6 +38,19 @@ function useCalendarNotice() {
     window.history.replaceState(null, "", url.pathname + url.search + url.hash);
   }, []);
   return [notice, () => setNotice(null)] as const;
+}
+
+/** スマホ・タブレット幅（右パネルを出さず、HUB のカードの下に並べる） */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 999px)");
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return narrow;
 }
 
 function useAgentStatus() {
@@ -89,6 +104,7 @@ export function Dashboard() {
   const chat = useChat();
   const agent = useAgentStatus();
   const [calendarNotice, closeCalendarNotice] = useCalendarNotice();
+  const narrow = useNarrow();
   const [view, setView] = useState<View>("home");
   const composerRef = useRef<ComposerHandle>(null);
 
@@ -165,6 +181,47 @@ export function Dashboard() {
     if (voice.state === "listening" || voice.interim === "…") warm();
   }, [voice.state, voice.interim, warm]);
 
+  /* ---- リマインダー: 時間になったら音・声・通知で知らせる ---- */
+  const [reminder, setReminder] = useState<DueReminder | null>(null);
+  const cloudTts = agent.tts.provider === "elevenlabs";
+  const announce = useCallback(
+    (r: DueReminder, late: boolean) => {
+      setReminder(r);
+      chime("wake");
+      const text = late ? `${r.label.split(" ")[1]}のお知らせです。${r.text}` : `お知らせです。${r.text}`;
+      window.setTimeout(() => {
+        if (cloudTts) {
+          const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`);
+          audio.play().catch(() => {});
+        } else if ("speechSynthesis" in window) {
+          const u = new SpeechSynthesisUtterance(text);
+          u.lang = "ja-JP";
+          u.voice = pickJapaneseVoice(window.speechSynthesis.getVoices());
+          window.speechSynthesis.speak(u);
+        }
+      }, 450);
+      try {
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification("F.R.I.D.A.Y. リマインダー", { body: `${r.label} ${r.text}`, tag: r.id });
+        }
+      } catch {
+        /* 通知が使えない環境 */
+      }
+    },
+    [cloudTts],
+  );
+  useReminders(announce, agent.brain.configured);
+
+  // リマインダーを初めて設定したら、通知を許可してもらう（別のタブを見ていても気づけるように）
+  const [askNotify, setAskNotify] = useState(false);
+  useEffect(() => {
+    const onSet = () => {
+      if ("Notification" in window && Notification.permission === "default") setAskNotify(true);
+    };
+    window.addEventListener(REMINDERS_CHANGED, onSet);
+    return () => window.removeEventListener(REMINDERS_CHANGED, onSet);
+  }, []);
+
   const stopAll = useCallback(() => {
     chatStop();
     cancelSpeech();
@@ -219,7 +276,9 @@ export function Dashboard() {
             brain={agent.brain}
             calendar={!agent.calendar.configured ? "NOT SET" : agent.calendar.connected ? "LINKED" : "NOT LINKED"}
             news={!agent.news ? "—" : agent.news.time === "off" ? "OFF" : `DAILY ${agent.news.time}`}
-          />
+          >
+            {narrow && <RightPanel inline gmail={agent.calendar.connected ? agent.calendar.gmail : undefined} />}
+          </Orbit>
           <HomeDialog
             messages={chat.messages}
             phase={chat.phase}
@@ -247,6 +306,37 @@ export function Dashboard() {
             </span>
             <button type="button" className="ghost-btn" onClick={() => void agent.refresh()}>
               再確認
+            </button>
+          </div>
+        )}
+
+        {reminder && (
+          <div className="banner banner--reminder" role="alert">
+            <b>REMINDER</b>
+            <span>
+              {reminder.label}　{reminder.text}
+            </span>
+            <button type="button" className="ghost-btn" onClick={() => setReminder(null)}>
+              OK
+            </button>
+          </div>
+        )}
+
+        {askNotify && (
+          <div className="banner" role="status">
+            <b>NOTIFY</b>
+            <span>通知を許可すると、別のタブやアプリを見ていてもリマインダーに気づけます。</span>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => {
+                void Notification.requestPermission().finally(() => setAskNotify(false));
+              }}
+            >
+              許可する
+            </button>
+            <button type="button" className="ghost-btn" onClick={() => setAskNotify(false)}>
+              あとで
             </button>
           </div>
         )}
@@ -308,7 +398,7 @@ export function Dashboard() {
         />
       </main>
 
-      <RightPanel />
+      {!narrow && <RightPanel gmail={agent.calendar.connected ? agent.calendar.gmail : undefined} />}
     </div>
   );
 }
