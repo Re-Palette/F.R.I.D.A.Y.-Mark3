@@ -53,7 +53,7 @@ interface SpeechItem {
 const MIN_CHUNK = 12;
 
 /** 聞こえた言葉がこれ以上「読み上げ中の文章」と一致していたら自分の声とみなす */
-const ECHO_THRESHOLD = 0.5;
+const ECHO_THRESHOLD = 0.4;
 /** 読み上げ終了直後も、この間は自分の声の残響を無視する */
 const ECHO_TAIL_MS = 4000;
 /**
@@ -62,7 +62,7 @@ const ECHO_TAIL_MS = 4000;
  */
 const ECHO_WINDOW_MS = 45_000;
 /** 話している最中は、これくらい似ていれば自分の声とみなす（誤って割り込まないよう厳しめ） */
-const ECHO_THRESHOLD_SPEAKING = 0.35;
+const ECHO_THRESHOLD_SPEAKING = 0.3;
 /** 読み終えてしばらく後は、ほぼ同じ文章のときだけ自分の声とみなす（ユーザーの返事を消さないため） */
 const ECHO_THRESHOLD_LATE = 0.75;
 /** 自分の声でも必ず割り込みとして扱う言葉 */
@@ -147,8 +147,10 @@ export function useVoice({
     const spoken = `${sp.log.map((x) => x.text).join(" ")} ${sp.audible}`;
     if (!spoken.trim()) return false;
     // 「ストップ」「待って」などは、自分がその言葉を話していない限り割り込みとして通す
-    const stop = STOP_WORDS.exec(heard);
-    if (stop && !spoken.includes(stop[0])) return false;
+    const said = normalizeForEcho(spoken);
+    for (const m of heard.matchAll(new RegExp(STOP_WORDS.source, "gi"))) {
+      if (!said.includes(normalizeForEcho(m[0]))) return false;
+    }
     const since = now - sp.lastSpokeAt;
     const score = echoScore(heard, spoken);
     if (talking) return score >= ECHO_THRESHOLD_SPEAKING;
@@ -311,7 +313,9 @@ export function useVoice({
       if (mode === "speaking" || mode === "thinking") {
         const len = normalizeForEcho(heard).length;
         const stopWord = STOP_WORDS.test(heard);
-        if (isEcho() || (!stopWord && len < (finalText ? 3 : 4))) {
+        // 話している最中は、止める言葉以外は長めの発言だけを割り込みとみなす（自分の声の切れ端を拾わない）
+        const minLen = mode === "speaking" ? (finalText ? 6 : 8) : finalText ? 3 : 4;
+        if (isEcho() || (!stopWord && len < minLen)) {
           pendingRef.current = ""; // 自分の声・物音は無視
           return;
         }

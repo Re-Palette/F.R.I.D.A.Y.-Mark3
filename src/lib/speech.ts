@@ -162,9 +162,20 @@ export function chime(kind: "wake" | "end" = "wake"): void {
 
 const ECHO_STRIP = /[\s、。，．,.!！?？「」『』（）()・…ー〜\-]/g;
 
-/** 比較用に記号・空白を除く */
+/** 表記は違っても同じ音になる言葉（読み上げの文字 → 聞き取りで返ってくる形） */
+const SAME_SOUND: [RegExp, string][] = [
+  [/f\.?\s*r\.?\s*i\.?\s*d\.?\s*a\.?\s*y\.?|friday/gi, "ふらいでー"],
+  [/mark\s*3|mark\s*iii/gi, "まーくすりー"],
+];
+
+/** 比較用に記号・空白を除き、カタカナをひらがなにそろえる（聞き取りはどちらで返るか決まらないため） */
 export function normalizeForEcho(text: string): string {
-  return text.replace(ECHO_STRIP, "").toLowerCase();
+  let t = text;
+  for (const [re, to] of SAME_SOUND) t = t.replace(re, to);
+  return t
+    .replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(ECHO_STRIP, "")
+    .toLowerCase();
 }
 
 /**
