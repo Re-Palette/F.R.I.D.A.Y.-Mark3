@@ -1,6 +1,7 @@
 /**
  * ホログラムの見た目（three.js）。Hologram.tsx から、読み込んだ three を渡して使う。
- *   - 面：縁ほど明るく光り（フレネル）、横の走査線と上下に流れる光の帯、かすかなちらつき
+ *   - 面：縁ほど明るく光り（フレネル）、画面に固定した細い走査線と、ゆっくり上下に流れる光の帯
+ *     （走査線を立体に貼ると、回したときに細かい縞がちらつくので画面側に固定する）
  *   - 線：角ばった所の輪郭だけ（なめらかな面は面の光り方で形が分かる）
  *   - 点：表面にまいた光の粒
  */
@@ -34,10 +35,9 @@ varying float vHeight;
 void main() {
   float facing = abs(dot(normalize(vNormal), normalize(vView)));
   float rim = pow(1.0 - facing, 2.4);
-  float lines = 0.7 + 0.3 * sin(vHeight * 90.0 - uTime * 3.0);
-  float band = smoothstep(0.08, 0.0, abs(fract(vHeight * 0.35 - uTime * 0.22) - 0.5));
-  float flicker = 0.93 + 0.07 * sin(uTime * 41.0) * sin(uTime * 17.0);
-  float a = (0.025 + rim * 0.5 + band * 0.18) * lines * flicker * uOpacity;
+  float lines = 0.9 + 0.1 * sin(gl_FragCoord.y * 1.3);
+  float band = smoothstep(0.12, 0.0, abs(fract(vHeight * 0.3 - uTime * 0.12) - 0.5));
+  float a = (0.025 + rim * 0.5 + band * 0.12) * lines * uOpacity;
   gl_FragColor = vec4(uColor * (0.45 + rim * 0.9 + band * 0.6), a);
 }`;
 

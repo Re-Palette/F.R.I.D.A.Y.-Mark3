@@ -13,7 +13,7 @@ import type { ChatPhase } from "@/hooks/useChat";
 import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
 import { clearHologram, getHoloState, setHoloExpanded, subscribeHolo, useHoloState } from "@/lib/hologram-model";
 import type { HoloModel } from "@/lib/hologram-schema";
-import { buildModel, holoMaterial } from "./hologram-visuals";
+import { buildModel, dotTexture, holoMaterial } from "./hologram-visuals";
 import { toggleHand, useHandStatus } from "./HandControl";
 
 const ORANGE = 0xff8a1f;
@@ -134,8 +134,11 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       const dotGeo = new THREE.BufferGeometry();
       dotGeo.setAttribute("position", new THREE.BufferAttribute(pts, 3));
       dotGeo.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+      const dotTex = dotTexture(THREE);
       const dotMat = new THREE.PointsMaterial({
-        size: 0.04,
+        // 四角い点は動くとギラつくので、ぼかした丸い点にする
+        map: dotTex,
+        size: 0.06,
         vertexColors: true,
         transparent: true,
         opacity: 0.95,
@@ -340,6 +343,7 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       let returning = false;
       let energy = 0; // 考え中・話し中の勢い（0〜1、なめらかに変える）
       let slow = 0.016;
+      let voice = 0;
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
         const { phase: ph, speaking: talk, active: on } = live.current;
@@ -358,7 +362,8 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         const hstate = getHoloState();
         const busy = ph !== "idle" || hstate.status === "loading";
         energy += ((busy || talk ? 1 : 0) - energy) * Math.min(1, dt * 3);
-        const pace = (calm ? 0.4 : 1) * (1 + energy * 2.2);
+        // 考え中・作成中は少しだけ速く（速く回しすぎると細い線がちらついて見える）
+        const pace = (calm ? 0.4 : 1) * (1 + energy * 0.9);
 
         body.rotation.y += dt * 0.25 * pace;
         core.rotation.x += dt * 0.6 * pace;
@@ -399,7 +404,9 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
           for (const sp of shown.spinners) sp.obj.rotation[sp.axis] += dt * 2.2;
         }
 
-        const beat = talk ? 0.5 + 0.5 * Math.sin(t * 11) * Math.sin(t * 3.7 + 1) : 0;
+        // 話している間はゆっくり息づくように（速い明滅はチカチカして見えるので避ける）
+        voice += ((talk ? 1 : 0) - voice) * Math.min(1, dt * 2);
+        const beat = voice * (0.5 + 0.5 * Math.sin(t * 4));
         const scale = holo.zoom * (1 + beat * 0.035);
         root.scale.setScalar(root.scale.x + (scale - root.scale.x) * Math.min(1, dt * 8));
         if (modelOn) {
@@ -435,6 +442,7 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
           m.material?.dispose();
         });
         glowTex.dispose();
+        dotTex.dispose();
         composer.dispose();
         renderer.dispose();
         canvas.remove();

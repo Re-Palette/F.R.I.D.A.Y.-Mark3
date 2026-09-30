@@ -3619,7 +3619,7 @@ ol.settings__note {
 }
 
 .holo-chip[data-status="loading"] .holo-chip__name {
-  animation: glow 1.2s ease-in-out infinite;
+  animation: holo-breathe 2.6s ease-in-out infinite;
 }
 
 .holo-chip[data-status="error"] button {
@@ -3710,7 +3710,7 @@ ol.settings__note {
   font-family: var(--font-jp);
   font-size: 13px;
   color: var(--cyan);
-  animation: glow 1.2s ease-in-out infinite;
+  animation: holo-breathe 2.6s ease-in-out infinite;
 }
 
 .holo-stage__status--err {
@@ -3824,5 +3824,16 @@ body:has(.holo-stage[data-open]) .app * {
 @media (max-width: 1200px) {
   .holo-stage__ref {
     display: none;
+  }
+}
+
+/* 作成中の文字：ゆっくり息づく程度（点滅に見えないように） */
+@keyframes holo-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
   }
 }
