@@ -36,6 +36,8 @@ export interface AgentOutputChunk {
   sources?: { title: string; uri: string }[];
   /** 返答前の準備（記憶・予定・天気の取得）にかかった時間（最初の塊にだけ付く） */
   prepMs?: number;
+  /** いま何をしているか（画面の THINK / SEARCH / CONNECT 表示用）。本文の無い塊で先に知らせる */
+  stage?: "connect" | "think" | "search";
 }
 
 export interface Agent {

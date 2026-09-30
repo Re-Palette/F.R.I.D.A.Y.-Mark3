@@ -62,6 +62,8 @@ export interface SendOptions {
 }
 
 export type ChatPhase = "idle" | "waiting" | "streaming";
+/** F.R.I.D.A.Y. が今していること（HOME の THINK / SEARCH / CONNECT / CREATE 表示） */
+export type ChatStage = "connect" | "think" | "search" | null;
 
 export interface LastRunStats {
   ttftMs?: number;
@@ -114,6 +116,11 @@ function revealStep(backlog: number, dt: number, avgGap: number, sinceLast: numb
 export function useChat() {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [phase, setPhase] = useState<ChatPhase>("idle");
+  const [stage, setStage] = useState<ChatStage>(null);
+  // 返答が終わったら段階の表示も消す
+  useEffect(() => {
+    if (phase === "idle") setStage(null);
+  }, [phase]);
   const [lastRun, setLastRun] = useState<LastRunStats>({});
   const [lastErrorCode, setLastErrorCode] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -348,6 +355,9 @@ export function useChat() {
                 }
                 break;
               }
+              case "stage":
+                setStage(event.stage);
+                break;
               case "hologram":
                 if (event.subject) void requestHologram(event.subject);
                 else clearHologram();
@@ -491,5 +501,5 @@ export function useChat() {
     }
   }, [update]);
 
-  return { messages, phase, lastRun, lastErrorCode, send, retry, stop, clear };
+  return { messages, phase, stage, lastRun, lastErrorCode, send, retry, stop, clear };
 }

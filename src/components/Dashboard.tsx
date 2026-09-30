@@ -276,6 +276,24 @@ export function Dashboard() {
           <i />
           <i />
         </div>
+        {/* 奥行き：遠くの都市のシルエット・データライン・漂う光の粒・微細なノイズ */}
+        <svg className="bg__city" viewBox="0 0 1600 220" preserveAspectRatio="none">
+          <path d="M0 220V150h40v-30h26v48h30v-70h22v40h36V92h18v58h40v-36h30v60h24V70h20v86h34v-42h28v50h40V96h26v64h30v-48h22v70h36v-90h18v58h46v-30h24v52h30V84h22v72h40v-44h28v58h34V64h20v90h36v-40h26v62h30v-86h24v60h40v-26h22v48h30V100h24v58h34v-38h28v56h40V78h20v84h36v-44h24v58h30v-70h22v54h44v-30h26v46h30V92h24v66h36v-40h28v62h40V120h24v100z" />
+        </svg>
+        <div className="bg__data">
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="bg__particles">
+          {Array.from({ length: 14 }, (_, i) => (
+            <i key={i} style={{ left: `${(i * 37) % 100}%`, animationDelay: `${-(i * 1.9) % 18}s`, animationDuration: `${14 + (i % 5) * 3}s` }} />
+          ))}
+        </div>
+        <div className="bg__noise" />
       </div>
 
       <Header />
@@ -294,11 +312,14 @@ export function Dashboard() {
         <div className="stage" data-view={view} data-phase={chat.phase} data-voice={voice.state}>
           <HomeHud
             phase={chat.phase}
+            stage={chat.stage}
             chatStatus={agent.status}
             onOpenChat={openChat}
             hidden={view !== "home"}
             brain={agent.brain}
             calendar={agent.calendar}
+            automation={agent.automation}
+            news={agent.news}
             voiceState={voice.state}
             messages={chat.messages}
             lastRun={chat.lastRun}

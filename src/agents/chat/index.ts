@@ -61,6 +61,7 @@ export const chatAgent: Agent = {
     const latest = ctx.messages[ctx.messages.length - 1]?.content ?? "";
 
     // 長期記憶（Obsidian の脳）・予定（Google カレンダー）・天気を同時に集める。時間切れなら無しで返答
+    yield { text: "", stage: "connect" };
     const prepStart = Date.now();
     const budget = ctx.voice ? CONTEXT_BUDGET_MS.voice : CONTEXT_BUDGET_MS.text;
     const briefing = Boolean(ctx.news?.deliver);
@@ -102,6 +103,8 @@ export const chatAgent: Agent = {
     // ニュースをまとめるときは検索する（FRIDAY_SEARCH=off のときだけは検索しない）
     const sns = asksForSns(latest);
     const search = mode !== "off" && (mode === "always" || briefing || needsSearch(latest) || asksForTrend(latest));
+
+    yield { text: "", stage: search ? "search" : "think" };
 
     const contents: GeminiContent[] = ctx.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",

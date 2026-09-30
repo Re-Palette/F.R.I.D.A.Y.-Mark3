@@ -2,15 +2,17 @@
 
 /**
  * HOME の小さな部品（シンプル版）。数字はすべて実データ（無いものは「—」）。
- *   丸いメーター 4 つ／レーダーと現在地・時刻／システム状態／エージェント一覧／返事（RESPONSE）
+ *   丸いメーター／レーダーと現在地・時刻／システム状態／コア周りの処理ノード／エージェント一覧／INCOMING／返事（RESPONSE）
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { AGENT_CARDS } from "@/data/agents";
-import { TASKS_CHANGED, type LastRunStats, type UiMessage } from "@/hooks/useChat";
+import { CALENDAR_CHANGED, TASKS_CHANGED, type ChatPhase, type ChatStage, type LastRunStats, type UiMessage } from "@/hooks/useChat";
+import { REMINDERS_CHANGED } from "@/hooks/useReminders";
 import type { VoiceState } from "@/hooks/useVoice";
 import type { WeatherReport } from "@/integrations/weather";
 import { HudFrame } from "../HudFrame";
+import { Icon, type IconName } from "../icons";
 import { Markdown } from "../Markdown";
 
 export type ChatAgentStatus = "checking" | "online" | "offline";
@@ -123,71 +125,288 @@ export function RadarLocal() {
 
 /* ---------- システム状態 ---------- */
 
+type Lamp = "online" | "offline" | "processing" | "idle";
+
 export function SystemStatus({
   chatStatus,
+  phase,
   brain,
   calendar,
   lastRun,
 }: {
   chatStatus: ChatAgentStatus;
+  phase: ChatPhase;
   brain?: StatusResponse["brain"];
   calendar?: StatusResponse["calendar"];
   lastRun: LastRunStats;
 }) {
+  const busy = phase !== "idle";
   const ttft = lastRun.ttftMs;
-  const rows = [
-    { label: "CHAT LINK", value: chatStatus === "online" ? "ONLINE" : chatStatus === "checking" ? "…" : "OFFLINE", ratio: chatStatus === "online" ? 1 : 0 },
-    { label: "BRAIN LINK", value: !brain?.configured ? "—" : brain.connected ? "ONLINE" : "OFFLINE", ratio: brain?.connected ? 1 : 0 },
-    { label: "CALENDAR LINK", value: !calendar?.configured ? "—" : calendar.connected ? "ONLINE" : "OFFLINE", ratio: calendar?.connected ? 1 : 0 },
-    { label: "RESPONSE", value: ttft === undefined ? "—" : `${(ttft / 1000).toFixed(1)}s`, ratio: ttft === undefined ? 0 : Math.max(0.05, 1 - ttft / 6000) },
+  const link = (configured: boolean | undefined, connected: boolean | undefined): Lamp => (!configured ? "idle" : connected ? "online" : "offline");
+  const rows: { label: string; icon: IconName; lamp: Lamp; value: string; ratio: number }[] = [
+    {
+      label: "CHAT LINK",
+      icon: "chat",
+      lamp: chatStatus === "offline" ? "offline" : busy ? "processing" : chatStatus === "online" ? "online" : "idle",
+      value: chatStatus === "offline" ? "OFFLINE" : busy ? "PROCESSING" : chatStatus === "online" ? "ONLINE" : "LINKING",
+      ratio: chatStatus === "online" ? 1 : 0,
+    },
+    {
+      label: "BRAIN LINK",
+      icon: "brain",
+      lamp: link(brain?.configured, brain?.connected),
+      value: !brain?.configured ? "NOT SET" : brain.connected ? "ONLINE" : "OFFLINE",
+      ratio: brain?.connected ? 1 : 0,
+    },
+    {
+      label: "CALENDAR LINK",
+      icon: "calendar",
+      lamp: link(calendar?.configured, calendar?.connected),
+      value: !calendar?.configured ? "NOT SET" : calendar.connected ? "ONLINE" : "OFFLINE",
+      ratio: calendar?.connected ? 1 : 0,
+    },
   ];
   return (
     <section className="panel hud spanel">
       <HudFrame cut={10} small={4} ticks={false} />
       <header className="spanel__head">
-        SYSTEM STATUS <i>////</i>
+        <Icon name="pulse" size={14} /> SYSTEM STATUS <i className="spanel__bars" aria-hidden="true"><b /><b /><b /><b /></i>
       </header>
       <ul className="sstatus">
         {rows.map((r) => (
-          <li key={r.label}>
-            <span>{r.label}</span>
-            <b>{r.value}</b>
-            <i>
+          <li key={r.label} data-lamp={r.lamp}>
+            <span className="sstatus__name">
+              <Icon name={r.icon} size={13} />
+              {r.label}
+            </span>
+            <b className="sstatus__value">
+              <i className="sstatus__lamp" />
+              {r.value}
+            </b>
+            <i className="sstatus__bar">
               <em style={{ transform: `scaleX(${r.ratio})` }} />
             </i>
           </li>
         ))}
+        <li data-lamp={ttft === undefined ? "idle" : "online"}>
+          <span className="sstatus__name">
+            <Icon name="pulse" size={13} />
+            RESPONSE
+          </span>
+          <b className="sstatus__value sstatus__value--num">{ttft === undefined ? "—" : `${(ttft / 1000).toFixed(1)}s`}</b>
+          <i className="sstatus__bar sstatus__bar--flow">
+            <em style={{ transform: `scaleX(${ttft === undefined ? 0 : Math.max(0.05, 1 - ttft / 6000)})` }} />
+          </i>
+        </li>
       </ul>
     </section>
   );
 }
 
+/* ---------- コア周りの処理ノード（F.R.I.D.A.Y. が今していること） ---------- */
+
+export type ProcessKey = "think" | "search" | "connect" | "create";
+
+export const PROCESS_NODES: { key: ProcessKey; title: string; sub: string; icon: IconName }[] = [
+  { key: "think", title: "THINK", sub: "ANALYZE", icon: "brain" },
+  { key: "connect", title: "CONNECT", sub: "INTEGRATE", icon: "link" },
+  { key: "search", title: "SEARCH", sub: "COLLECT", icon: "search" },
+  { key: "create", title: "CREATE", sub: "GENERATE", icon: "doc" },
+];
+
+/** いま光らせる処理（答えを考え中 → THINK、検索中 → SEARCH、外部の情報を集め中 → CONNECT、文章を出している → CREATE） */
+export function activeProcess(phase: ChatPhase, stage: ChatStage): ProcessKey | null {
+  if (phase === "streaming") return "create";
+  if (phase === "waiting") return stage ?? "think";
+  return null;
+}
+
+export function ProcessNode({ node, active, side }: { node: (typeof PROCESS_NODES)[number]; active: boolean; side: "left" | "right" }) {
+  return (
+    <div className="pnode" data-key={node.key} data-side={side} data-active={active || undefined}>
+      <span className="pnode__icon">
+        <svg viewBox="0 0 36 36" aria-hidden="true">
+          <circle cx="18" cy="18" r="16" className="pnode__ring" pathLength="100" />
+        </svg>
+        <Icon name={node.icon} size={15} />
+      </span>
+      <span className="pnode__text">
+        <b>{node.title}</b>
+        <small>{active ? "ACTIVE" : node.sub}</small>
+      </span>
+      <i className="pnode__link" aria-hidden="true" />
+    </div>
+  );
+}
+
 /* ---------- エージェント一覧 ---------- */
 
-export function AgentRoster({ chatStatus, brain, onOpenChat }: { chatStatus: ChatAgentStatus; brain?: StatusResponse["brain"]; onOpenChat: () => void }) {
+type AgentLamp = "online" | "standby" | "processing" | "offline";
+
+const AGENT_ICON: Record<string, IconName> = {
+  chat: "chat",
+  search: "search",
+  writing: "doc",
+  vault: "vault",
+  automation: "automation",
+  analysis: "analysis",
+  sns: "share",
+  memai: "brain",
+};
+
+export function AgentRoster({
+  chatStatus,
+  phase,
+  stage,
+  brain,
+  automation,
+  onOpenChat,
+}: {
+  chatStatus: ChatAgentStatus;
+  phase: ChatPhase;
+  stage: ChatStage;
+  brain?: StatusResponse["brain"];
+  automation?: StatusResponse["automation"];
+  onOpenChat: () => void;
+}) {
+  const busy = phase !== "idle";
+  const lampOf = (key: string, live: boolean): AgentLamp => {
+    if (key === "vault" || key === "memai") {
+      if (!brain?.configured) return "standby";
+      if (!brain.connected) return "offline";
+      return busy && stage === "connect" ? "processing" : "online";
+    }
+    if (key === "automation" && !automation?.diary) return "standby";
+    if (!live) return "standby";
+    if (chatStatus === "offline") return "offline";
+    if (key === "chat" && busy) return "processing";
+    if (key === "search" && busy && stage === "search") return "processing";
+    if (key === "writing" && phase === "streaming") return "processing";
+    return chatStatus === "online" ? "online" : "standby";
+  };
+  const rows = AGENT_CARDS.map((a) => ({ a, lamp: lampOf(a.key, a.phase === "live") }));
+  const friday: AgentLamp = chatStatus === "offline" ? "offline" : busy ? "processing" : chatStatus === "online" ? "online" : "standby";
+  const all = [friday, ...rows.map((r) => r.lamp)];
+  const standby = all.filter((l) => l === "standby").length;
+  const offline = all.filter((l) => l === "offline").length;
   return (
     <section className="panel hud spanel">
       <HudFrame cut={10} small={4} ticks={false} />
       <header className="spanel__head">
-        AGENT ROSTER <i>////</i>
+        <Icon name="brain" size={14} /> AGENT ROSTER <i>////</i>
       </header>
       <ul className="roster">
-        <li data-on>
-          <span className="roster__dot" />
-          F.R.I.D.A.Y.
+        <li data-lamp={friday}>
+          <span className="roster__icon">
+            <Icon name="pulse" size={13} />
+          </span>
+          <span className="roster__name">F.R.I.D.A.Y.</span>
+          <span className="roster__state">
+            <i />
+            {friday.toUpperCase()}
+          </span>
         </li>
-        {AGENT_CARDS.map((a) => {
-          const on = agentOnline(a.key, a.phase, chatStatus, brain);
-          return (
-            <li key={a.key} data-on={on || undefined}>
-              <button type="button" onClick={a.phase === "live" ? onOpenChat : undefined} aria-disabled={a.phase !== "live"} title={a.engine}>
-                <span className="roster__dot" />
-                {a.title}
-              </button>
-            </li>
-          );
-        })}
+        {rows.map(({ a, lamp }) => (
+          <li key={a.key} data-lamp={lamp}>
+            <button type="button" onClick={a.phase === "live" ? onOpenChat : undefined} aria-disabled={a.phase !== "live"} title={a.engine}>
+              <span className="roster__icon">
+                <Icon name={AGENT_ICON[a.key] ?? "chat"} size={13} />
+              </span>
+              <span className="roster__name">{a.title}</span>
+              <span className="roster__state">
+                <i />
+                {lamp.toUpperCase()}
+              </span>
+            </button>
+          </li>
+        ))}
       </ul>
+      <p className="roster__summary">
+        {all.length} AGENTS / {standby} STANDBY{offline ? ` / ${offline} OFFLINE` : ""}
+      </p>
+    </section>
+  );
+}
+
+/* ---------- INCOMING（予定・リマインダー・期限の ToDo・ニュース） ---------- */
+
+interface Incoming {
+  key: string;
+  icon: IconName;
+  text: string;
+  /** 並べ替え用（近い順） */
+  at: number;
+  when: string;
+}
+
+const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+function relative(at: number, now: number): string {
+  const min = Math.round((at - now) / 60_000);
+  if (min <= 0 && min > -60) return "NOW";
+  if (min < 0) return "TODAY";
+  if (min < 60) return `${min}m`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)}h`;
+  return `${Math.floor(min / 1440)}d`;
+}
+
+export function IncomingPanel({ news }: { news?: StatusResponse["news"] }) {
+  const cal = useJson<{ connected?: boolean; events?: { id: string; title: string; start: string; allDay: boolean; timeLabel: string }[] }>(
+    "/api/calendar/events?days=1",
+    [CALENDAR_CHANGED],
+    5 * 60_000,
+  );
+  const rem = useJson<{ reminders?: { id: string; at: number; label: string; text: string }[] }>("/api/reminders", [REMINDERS_CHANGED], 60_000);
+  const tasks = useJson<{ configured: boolean; todos: { text: string; due?: string; project?: string }[] }>("/api/projects", [TASKS_CHANGED]);
+  const clock = useClock();
+  const now = clock?.getTime() ?? 0;
+  const today = clock ? `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, "0")}-${String(clock.getDate()).padStart(2, "0")}` : "";
+
+  const items: Incoming[] = [];
+  if (clock) {
+    for (const e of cal?.events ?? []) {
+      const at = Date.parse(e.start);
+      if (!e.allDay && at < now - 30 * 60_000) continue;
+      items.push({ key: `c${e.id}`, icon: "calendar", text: `予定：${e.title}`, at: e.allDay ? now : at, when: e.allDay ? "TODAY" : e.timeLabel || relative(at, now) });
+    }
+    for (const r of rem?.reminders ?? []) {
+      if (r.at < now - 60 * 60_000 || r.at > now + 24 * 3600_000) continue;
+      items.push({ key: `r${r.id}`, icon: "bell", text: `リマインダー：${r.text}`, at: r.at, when: relative(r.at, now) });
+    }
+    for (const t of tasks?.todos ?? []) {
+      if (!t.due || t.due > today) continue;
+      items.push({ key: `t${t.text}`, icon: "tasks", text: `タスク：${t.text}`, at: now - (t.due < today ? 1 : 0), when: t.due < today ? "OVERDUE" : "TODAY" });
+    }
+    if (news && news.time !== "off") {
+      const [h, m] = news.time.split(":").map(Number);
+      const at = new Date(clock);
+      at.setHours(h || 0, m || 0, 0, 0);
+      if (at.getTime() < now) at.setDate(at.getDate() + 1);
+      items.push({ key: "news", icon: "search", text: `ニュースのまとめ（${news.time}）`, at: at.getTime(), when: relative(at.getTime(), now) });
+    }
+  }
+  items.sort((a, b) => a.at - b.at);
+  return (
+    <section className="panel hud spanel incoming">
+      <HudFrame cut={10} small={4} ticks={false} />
+      <header className="spanel__head">
+        <Icon name="bell" size={14} /> INCOMING <i>////</i>
+      </header>
+      {items.length === 0 ? (
+        <p className="incoming__empty">{clock ? "新しいお知らせはありません" : ""}</p>
+      ) : (
+        <ul className="incoming__list">
+          {items.slice(0, 5).map((it) => (
+            <li key={it.key}>
+              <span className="incoming__icon">
+                <Icon name={it.icon} size={12} />
+              </span>
+              <span className="incoming__text">{it.text}</span>
+              <time>{it.when}</time>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -196,7 +415,19 @@ export function AgentRoster({ chatStatus, brain, onOpenChat }: { chatStatus: Cha
 
 const VOICE_TAG: Record<VoiceState, string> = { off: "TEXT", standby: "WAKE", listening: "LISTENING", thinking: "THINKING", speaking: "SPEAKING" };
 
-export function ResponsePanel({ messages, voiceState, onOpenChat }: { messages: UiMessage[]; voiceState: VoiceState; onOpenChat: () => void }) {
+export function ResponsePanel({
+  messages,
+  phase,
+  voiceState,
+  lastRun,
+  onOpenChat,
+}: {
+  messages: UiMessage[];
+  phase: ChatPhase;
+  voiceState: VoiceState;
+  lastRun: LastRunStats;
+  onOpenChat: () => void;
+}) {
   const question = [...messages].reverse().find((m) => m.role === "user");
   const last = messages[messages.length - 1];
   const reply = last?.role === "assistant" ? last : undefined;
@@ -206,14 +437,17 @@ export function ResponsePanel({ messages, voiceState, onOpenChat }: { messages: 
     if (el) el.scrollTop = el.scrollHeight;
   }, [reply?.content]);
   const waiting = question && (!reply || (reply.status === "streaming" && !reply.content));
+  const state = phase === "waiting" ? "PROCESSING" : phase === "streaming" ? "RESPONDING" : VOICE_TAG[voiceState];
+  const rt = reply?.meta?.ttftMs ?? lastRun.ttftMs;
   return (
-    <section className="panel hud rpanel" aria-live="polite">
-      <HudFrame cut={10} small={4} ticks={false} />
+    <section className="panel hud rpanel" aria-live="polite" data-busy={phase !== "idle" || undefined}>
+      <HudFrame cut={12} small={5} ticks={false} />
       <header className="spanel__head">
         RESPONSE
         <span className="rpanel__state" data-voice={voiceState}>
-          ● {VOICE_TAG[voiceState]}
+          ● {state}
         </span>
+        <span className="rpanel__rt">RT {rt === undefined ? "—" : `${(rt / 1000).toFixed(1)}s`}</span>
         <button type="button" className="rpanel__chat" onClick={onOpenChat}>
           CHAT →
         </button>

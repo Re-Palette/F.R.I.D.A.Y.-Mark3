@@ -96,6 +96,12 @@ export const Composer = memo(
         title="押して話す（呼びかけなしで 1 回聞き取り）"
         aria-label="音声で話す"
       >
+        {/* 聞き取り中・話し中に反応する波形の輪 */}
+        <span className="composer__wave" aria-hidden="true">
+          {Array.from({ length: 24 }, (_, i) => (
+            <i key={i} style={{ transform: `rotate(${i * 15}deg)`, animationDelay: `${((i * 0.13) % 1).toFixed(2)}s` }} />
+          ))}
+        </span>
         <svg className="composer__mic-ring" viewBox="0 0 64 64">
           <circle cx="32" cy="32" r="30" strokeDasharray="3 4.2" />
           <path d="M32 2 A30 30 0 0 1 60 22" className="composer__mic-arc" />

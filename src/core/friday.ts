@@ -120,6 +120,7 @@ export async function* handleConversation(
     })) {
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
       if (chunk.model && chunk.model !== meta.model) yield { ...meta, model: chunk.model };
+      if (chunk.stage) yield { type: "stage", stage: chunk.stage };
       if (chunk.text) {
         // <memory> / <calendar…> の隠しタグは画面にも読み上げにも出さない
         const text = tags.push(chunk.text);

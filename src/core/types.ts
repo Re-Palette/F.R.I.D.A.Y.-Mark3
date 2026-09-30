@@ -49,6 +49,8 @@ export type StreamEvent =
   | { type: "browser"; action: "close"; target: "last" | "all" }
   /** 3D ホログラムを作る（subject）・消す（null）。設計は画面が /api/hologram に頼む */
   | { type: "hologram"; subject: string | null }
+  /** いま何をしているか（外部の情報を集めている／検索している／考えている） */
+  | { type: "stage"; stage: "connect" | "think" | "search" }
   | { type: "done"; finishReason?: string; prepMs?: number }
   | { type: "error"; code: string; message: string; retryable: boolean };
 

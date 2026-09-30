@@ -912,3 +912,828 @@
 .reactor {
   width: min(88cqw, calc((100cqh - 34px) * 0.88));
 }
+
+/* ==========================================================================
+   F.R.I.D.A.Y. Personal AI Command Center — 情報量とメカニカル感の仕上げ
+   ========================================================================== */
+
+/* ---------- 背景：グリッド・線・回路・光点・データライン・ノイズ・遠景の都市 ---------- */
+
+.bg::before {
+  background-image:
+    linear-gradient(rgba(255, 140, 40, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 140, 40, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(255, 140, 40, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 140, 40, 0.02) 1px, transparent 1px);
+  background-size: 160px 160px, 160px 160px, 20px 20px, 20px 20px;
+  mask-image: radial-gradient(ellipse 85% 80% at 50% 50%, #000 30%, transparent 95%);
+}
+
+.bg__circuit {
+  display: block;
+  opacity: 0.06;
+}
+
+.bg__city {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 22%;
+  opacity: 0.08;
+}
+
+.bg__city path {
+  fill: #ff8a1f;
+  filter: blur(0.5px);
+}
+
+.bg__data i {
+  position: absolute;
+  height: 1px;
+  width: 22vw;
+  background: linear-gradient(90deg, transparent, rgba(255, 160, 70, 0.55), transparent);
+  opacity: 0.5;
+  animation: data-line 11s linear infinite;
+}
+
+.bg__data i:nth-child(1) { top: 18%; animation-delay: -1s; }
+.bg__data i:nth-child(2) { top: 34%; animation-delay: -5s; animation-duration: 14s; }
+.bg__data i:nth-child(3) { top: 61%; animation-delay: -8s; }
+.bg__data i:nth-child(4) { top: 76%; animation-delay: -3s; animation-duration: 16s; }
+.bg__data i:nth-child(5) { top: 88%; animation-delay: -10s; animation-duration: 13s; }
+.bg__data i:nth-child(6) { top: 9%; animation-delay: -6.5s; animation-duration: 18s; }
+
+@keyframes data-line {
+  from { transform: translateX(-25vw); }
+  to { transform: translateX(125vw); }
+}
+
+.bg__particles i {
+  position: absolute;
+  bottom: -2%;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #ffb458;
+  box-shadow: 0 0 6px 1px rgba(255, 130, 30, 0.8);
+  opacity: 0;
+  animation: rise linear infinite;
+}
+
+@keyframes rise {
+  0% { transform: translateY(0); opacity: 0; }
+  12% { opacity: 0.7; }
+  80% { opacity: 0.4; }
+  100% { transform: translateY(-92vh); opacity: 0; }
+}
+
+.bg__noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 0.6  0 0 0 0 0.3  0 0 0 0.7 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* ---------- 左のメニュー：ホバーでラインが伸び、アイコンが光る ---------- */
+
+.nav__item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  background: var(--orange);
+  box-shadow: 0 0 8px rgba(255, 130, 30, 0.9);
+  transform: scaleY(0);
+  transition: transform 0.25s var(--ease);
+}
+
+.nav__item::after {
+  content: "";
+  position: absolute;
+  left: 26px;
+  right: 40px;
+  bottom: 4px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--orange), transparent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s var(--ease);
+}
+
+.nav__item:hover:not([aria-disabled="true"]):not([data-active])::before {
+  transform: scaleY(1);
+}
+
+.nav__item:hover:not([aria-disabled="true"]):not([data-active])::after {
+  transform: scaleX(1);
+}
+
+.nav__item:hover:not([aria-disabled="true"]):not([data-active]) {
+  background: linear-gradient(90deg, rgba(255, 138, 31, 0.18), rgba(255, 138, 31, 0.03) 70%, transparent);
+}
+
+.nav__item:hover:not([aria-disabled="true"]):not([data-active]) svg {
+  color: var(--orange-hi);
+  filter: drop-shadow(0 0 5px rgba(255, 140, 40, 0.9));
+}
+
+.nav__item[data-active] {
+  box-shadow: 0 0 18px rgba(255, 120, 20, 0.45);
+}
+
+/* ---------- コア：細いリング・マーカー・回路・目盛り・粒子・スキャン・状態 ---------- */
+
+.home__core {
+  --rw: min(88cqw, calc((100cqh - 34px) * 0.88));
+}
+
+.core-rig {
+  position: relative;
+  width: var(--rw);
+  aspect-ratio: 1;
+}
+
+.core-rig .reactor {
+  width: 100%;
+}
+
+.reactor__thin {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.35);
+  stroke-width: 1;
+}
+
+.reactor__marker {
+  fill: #ff9a3c;
+  filter: drop-shadow(0 0 4px rgba(255, 120, 20, 0.9));
+}
+
+.reactor__arcmark {
+  fill: none;
+  stroke: #ffb458;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgba(255, 120, 20, 0.8));
+}
+
+.reactor__circuit path {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.45);
+  stroke-width: 1.1;
+}
+
+.reactor__circuit circle {
+  fill: #ffc27a;
+  animation: blink-soft 3.2s ease-in-out infinite;
+}
+
+.reactor__tick {
+  stroke: rgba(255, 160, 80, 0.35);
+  stroke-width: 0.8;
+}
+
+.reactor__tick--major {
+  stroke: rgba(255, 180, 100, 0.85);
+  stroke-width: 1.4;
+}
+
+.reactor__spin--ticks {
+  animation: spin 140s linear infinite reverse;
+  filter: none;
+}
+
+.reactor__blink {
+  animation: seg-blink 4s ease-in-out infinite;
+}
+
+@keyframes seg-blink {
+  0%, 60%, 100% { stroke: rgba(150, 95, 60, 0.3); }
+  75% { stroke: #ffa54f; }
+}
+
+.reactor__particle {
+  fill: #ffe0b8;
+  filter: drop-shadow(0 0 5px #ff8a1f);
+}
+
+.reactor__particle--dim {
+  fill: #ffc27a;
+  opacity: 0.8;
+}
+
+.reactor__spin--orbit {
+  animation: spin 18s linear infinite;
+  filter: none;
+}
+
+.reactor__spin--orbit2 {
+  animation: spin 26s linear infinite reverse;
+  filter: none;
+}
+
+.reactor__inner {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.18);
+  stroke-width: 1;
+  stroke-dasharray: 1 4;
+}
+
+.reactor__cross {
+  stroke: rgba(255, 170, 100, 0.55);
+  stroke-width: 1.4;
+}
+
+/* 状態の弧：待機中はゆっくり、処理中は速く流れ、声を聞いている間は脈打つ */
+.reactor__status {
+  transform-origin: 50% 50%;
+}
+
+.reactor__statusring {
+  fill: none;
+  stroke: #ffb458;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 14 86;
+  filter: drop-shadow(0 0 5px rgba(255, 130, 30, 0.9));
+  animation: status-run 9s linear infinite;
+  opacity: 0.6;
+}
+
+@keyframes status-run {
+  to { stroke-dashoffset: -100; }
+}
+
+.reactor:not([data-mode="idle"]) .reactor__statusring {
+  opacity: 1;
+  stroke-dasharray: 26 24;
+  animation-duration: 2.4s;
+}
+
+.reactor[data-mode="listening"] .reactor__status {
+  animation: listen-pulse 1.1s ease-in-out infinite;
+}
+
+.reactor[data-mode="listening"] .reactor__statusring {
+  stroke: #7ff0ff;
+  filter: drop-shadow(0 0 6px rgba(46, 230, 255, 0.9));
+}
+
+@keyframes listen-pulse {
+  50% { transform: scale(1.035); }
+}
+
+/* 考え中・返答中は発光が強まる */
+.reactor:not([data-mode="idle"]):not([data-mode="listening"])::before {
+  background: radial-gradient(circle, transparent 26%, rgba(255, 130, 30, 0.6) 28.4%, rgba(255, 110, 10, 0.18) 34%, transparent 44%);
+}
+
+.reactor::before {
+  transition: background 0.4s;
+}
+
+/* 円の中を上下に走るスキャンライン */
+.reactor__scan {
+  position: absolute;
+  inset: calc(50% - 28.33%);
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.reactor__scan i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18%;
+  background: linear-gradient(180deg, transparent, rgba(255, 160, 70, 0.1) 80%, rgba(255, 190, 120, 0.35) 98%, transparent);
+  animation: scan-y 5.5s ease-in-out infinite;
+}
+
+@keyframes scan-y {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(560%); }
+}
+
+.reactor__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: clamp(9px, 1.6cqw, 13px);
+  letter-spacing: 0.22em;
+  color: var(--green);
+}
+
+.reactor__state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: blink-soft 1.8s ease-in-out infinite;
+}
+
+.reactor:not([data-mode="idle"]) .reactor__state {
+  color: #ffb458;
+}
+
+.reactor[data-mode="listening"] .reactor__state {
+  color: #7ff0ff;
+}
+
+.reactor[data-model] .reactor__scan {
+  opacity: 0;
+}
+
+/* ---------- コア周りの処理ノード ---------- */
+
+.core-rig__nodes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pnode {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px 7px 9px;
+  min-width: 132px;
+  border: 1px solid rgba(255, 140, 40, 0.3);
+  background: linear-gradient(90deg, rgba(40, 16, 4, 0.72), rgba(20, 8, 2, 0.55));
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+}
+
+/* THINK 左上／CONNECT 右上／SEARCH 左／CREATE 右 */
+.pnode[data-key="think"] { top: 6%; right: calc(100% - 22%); }
+.pnode[data-key="connect"] { top: 6%; left: calc(100% - 22%); }
+.pnode[data-key="search"] { top: 50%; right: calc(100% + 4px); transform: translateY(-50%); }
+.pnode[data-key="create"] { top: 50%; left: calc(100% + 4px); transform: translateY(-50%); }
+
+.pnode__icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: rgba(255, 180, 110, 0.8);
+}
+
+.pnode__icon svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.pnode__ring {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.45);
+  stroke-width: 1.4;
+  stroke-dasharray: 30 8 14 8;
+  transform-origin: 18px 18px;
+}
+
+.pnode__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.pnode__text b {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: rgba(255, 200, 150, 0.8);
+}
+
+.pnode__text small {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: rgba(255, 170, 100, 0.55);
+}
+
+/* コアへ伸びる細い線 */
+.pnode__link {
+  position: absolute;
+  top: 50%;
+  width: 26px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 150, 60, 0.6), transparent);
+}
+
+.pnode[data-side="left"] .pnode__link {
+  left: 100%;
+}
+
+.pnode[data-side="right"] .pnode__link {
+  right: 100%;
+  transform: scaleX(-1);
+}
+
+.pnode[data-active] {
+  border-color: #ffa54f;
+  background: linear-gradient(90deg, rgba(90, 36, 6, 0.85), rgba(40, 16, 4, 0.65));
+  box-shadow: 0 0 18px rgba(255, 120, 20, 0.45);
+}
+
+.pnode[data-active] .pnode__icon {
+  color: #ffe0b8;
+  filter: drop-shadow(0 0 5px rgba(255, 140, 40, 0.9));
+}
+
+.pnode[data-active] .pnode__ring {
+  stroke: #ffb458;
+  animation: spin 1.6s linear infinite;
+}
+
+.pnode[data-active] .pnode__text b {
+  color: #fff4e8;
+  text-shadow: 0 0 8px rgba(255, 140, 40, 0.8);
+}
+
+.pnode[data-active] .pnode__text small {
+  color: #ffb458;
+  animation: blink-soft 1s ease-in-out infinite;
+}
+
+/* ---------- システム状態：アイコン・ランプ・状態・流れるバー ---------- */
+
+.spanel__head {
+  gap: 8px;
+}
+
+.spanel__head > svg {
+  color: var(--orange);
+}
+
+.spanel__bars {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.spanel__bars b {
+  width: 3px;
+  background: var(--orange);
+  animation: bars 1.4s ease-in-out infinite;
+}
+
+.spanel__bars b:nth-child(1) { height: 40%; animation-delay: -0.2s; }
+.spanel__bars b:nth-child(2) { height: 70%; animation-delay: -0.6s; }
+.spanel__bars b:nth-child(3) { height: 55%; animation-delay: -0.9s; }
+.spanel__bars b:nth-child(4) { height: 100%; animation-delay: -0.4s; }
+
+@keyframes bars {
+  50% { transform: scaleY(0.5); }
+}
+
+.sstatus__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sstatus__name svg {
+  color: rgba(255, 170, 100, 0.75);
+}
+
+.sstatus__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px !important;
+  letter-spacing: 0.08em;
+}
+
+.sstatus__lamp {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+li[data-lamp="online"] .sstatus__lamp { background: var(--green); box-shadow: 0 0 6px var(--green); }
+li[data-lamp="offline"] .sstatus__lamp { background: var(--red); box-shadow: 0 0 6px var(--red); }
+li[data-lamp="processing"] .sstatus__lamp { background: #ffb458; box-shadow: 0 0 6px #ff8a1f; animation: blink-soft 0.8s ease-in-out infinite; }
+li[data-lamp="offline"] .sstatus__value { color: var(--red); }
+li[data-lamp="processing"] .sstatus__value { color: #ffb458; }
+
+.sstatus__value--num {
+  font-family: var(--font-display) !important;
+  font-size: 13px !important;
+}
+
+.sstatus__bar {
+  position: relative;
+  overflow: hidden;
+}
+
+/* バーの上を光が流れる */
+.sstatus__bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 230, 190, 0.7), transparent);
+  animation: sweep-x 2.8s linear infinite;
+}
+
+li[data-lamp="idle"] .sstatus__bar::after,
+li[data-lamp="offline"] .sstatus__bar::after {
+  display: none;
+}
+
+@keyframes sweep-x {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+
+/* ---------- エージェント一覧：アイコン・状態・サマリー ---------- */
+
+.roster li,
+.roster button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  font-size: 11.5px;
+}
+
+.roster li:has(> button) {
+  display: block;
+}
+
+.roster__icon {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 170, 100, 0.8);
+}
+
+.roster__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.roster__state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+li[data-lamp="online"] .roster__state { color: var(--green); }
+li[data-lamp="standby"] .roster__state { color: #ffb458; }
+li[data-lamp="offline"] .roster__state { color: var(--red); }
+li[data-lamp="processing"] .roster__state { color: #7ff0ff; }
+li[data-lamp="processing"] .roster__state i { box-shadow: 0 0 6px currentColor; animation: blink-soft 0.8s ease-in-out infinite; }
+li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
+
+.roster li[data-lamp="online"],
+.roster li[data-lamp="online"] button,
+.roster li[data-lamp="processing"],
+.roster li[data-lamp="processing"] button {
+  color: #ffd2a6;
+}
+
+.roster__summary {
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 140, 40, 0.18);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(255, 170, 100, 0.7);
+}
+
+/* ---------- INCOMING ---------- */
+
+.incoming__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.incoming__list li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.incoming__icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 140, 40, 0.5);
+  color: #ffb458;
+}
+
+.incoming__text {
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+  color: #ffe9d6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.incoming__list time {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: rgba(255, 170, 100, 0.8);
+}
+
+.incoming__empty {
+  margin: 0;
+  font-family: var(--font-jp);
+  font-size: 12.5px;
+  color: rgba(255, 190, 130, 0.7);
+}
+
+/* 右の列：天気・一覧・INCOMING を縦に収める */
+.home__right {
+  gap: 12px;
+}
+
+.home__right .roster {
+  gap: 0;
+}
+
+.home__right .roster li,
+.home__right .roster button {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* ---------- RESPONSE：処理状態・応答時間・細い発光ライン ---------- */
+
+.rpanel__rt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: rgba(255, 190, 130, 0.8);
+  margin-left: auto;
+}
+
+.rpanel__chat {
+  margin-left: 14px;
+}
+
+.rpanel {
+  position: relative;
+}
+
+.rpanel::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 6px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 160, 70, 0.7), transparent);
+  opacity: 0.5;
+}
+
+.rpanel[data-busy]::after {
+  opacity: 1;
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: busy-line 1.4s linear infinite;
+}
+
+@keyframes busy-line {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+
+.rpanel[data-busy] .rpanel__state {
+  color: #ffb458;
+}
+
+/* ---------- 入力欄：マイクの周りの波形の輪 ---------- */
+
+.composer__mic {
+  overflow: visible;
+}
+
+.composer__wave {
+  position: absolute;
+  inset: -9px;
+  pointer-events: none;
+}
+
+.composer__wave i {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 7px;
+  margin-left: -1px;
+  transform-origin: 50% 40px;
+  background: rgba(255, 150, 60, 0.35);
+  border-radius: 1px;
+}
+
+.composer[data-voice="listening"] .composer__wave i {
+  background: #7ff0ff;
+  box-shadow: 0 0 4px rgba(46, 230, 255, 0.9);
+  animation: wave-bar 0.7s ease-in-out infinite;
+}
+
+.composer[data-voice="speaking"] .composer__wave i {
+  background: #ffb458;
+  box-shadow: 0 0 4px rgba(255, 130, 30, 0.9);
+  animation: wave-bar 0.9s ease-in-out infinite;
+}
+
+.composer[data-voice="standby"] .composer__wave i {
+  background: rgba(255, 170, 90, 0.55);
+}
+
+@keyframes wave-bar {
+  0%, 100% { height: 4px; }
+  50% { height: 11px; }
+}
+
+/* ---------- タブレット・スマホ：ノードはコアの下に並べる ---------- */
+
+@media (max-width: 999px) {
+  .home__core {
+    --rw: min(80vw, 380px);
+    height: auto;
+    padding-bottom: 8px;
+  }
+
+  .core-rig__nodes {
+    position: static;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .pnode {
+    position: static;
+    transform: none !important;
+    min-width: 0;
+  }
+
+  .pnode__link {
+    display: none;
+  }
+}
+
+/* 遠景の都市はごく薄く、上に向かって消える */
+.bg__city {
+  opacity: 0.045;
+  mask-image: linear-gradient(180deg, transparent, #000 70%);
+}
+
+.bg__city path {
+  filter: blur(1.5px);
+}
+
+@media (max-width: 999px) {
+  /* 縦並びでは高さが中身で決まるので、高さを測る設定は使わない */
+  .home__core {
+    container-type: inline-size;
+    height: auto;
+  }
+}
+
+@media (max-width: 999px) {
+  .radar svg {
+    width: 170px;
+    height: 170px;
+  }
+}
