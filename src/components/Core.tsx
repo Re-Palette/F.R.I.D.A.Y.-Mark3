@@ -3,6 +3,7 @@
  * 回転は transform のみ（GPU 合成）。発光は静的レイヤーで表現し、毎フレームのフィルタ計算を避ける。
  */
 import type { ChatPhase } from "@/hooks/useChat";
+import { Hologram } from "./Hologram";
 
 const C = 200;
 const polar = (r: number, deg: number) => {
@@ -45,9 +46,21 @@ const LedGrad = () => (
  * 構造: 静止した土台 SVG + 回転する独立レイヤー（SVG 要素ごと回す）。
  * 回転レイヤーは GPU 上の合成レイヤーとして回るだけなので、毎フレームの再描画が起きない。
  */
-export function Core({ phase, compact = false }: { phase: ChatPhase; compact?: boolean }) {
+export function Core({
+  phase,
+  compact = false,
+  speaking = false,
+  active = true,
+}: {
+  phase: ChatPhase;
+  compact?: boolean;
+  /** F.R.I.D.A.Y. が話している（ホログラムが声に合わせて脈打つ） */
+  speaking?: boolean;
+  /** 画面に出ている（隠れている間は 3D の描画を止める） */
+  active?: boolean;
+}) {
   return (
-    <div className={`core${compact ? " core--compact" : ""}`} data-phase={phase} aria-hidden="true">
+    <div className={`core${compact ? " core--compact" : ""}`} data-phase={phase} data-holo={!compact || undefined} aria-hidden="true">
       <div className="core__bloom" />
 
       {/* 土台（静止） */}
@@ -143,6 +156,8 @@ export function Core({ phase, compact = false }: { phase: ChatPhase; compact?: b
         <path d={arc(148, 20, 95)} className="core__hi" strokeWidth="1.6" />
         <path d={arc(148, 200, 250)} className="core__hi" strokeWidth="1.6" />
       </svg>
+
+      {!compact && <Hologram phase={phase} speaking={speaking} active={active} />}
 
       <div className="core__rimglow" />
       {!compact && <div className="core__sweep" />}

@@ -19,3 +19,5 @@ npm-debug.log*
 
 # 拡張機能の ZIP は build 時に作る
 public/friday-extension.zip
+# 手の認識の wasm は build 時に node_modules からコピーする
+public/mediapipe/

@@ -11,6 +11,7 @@ import type { ChatPhase } from "@/hooks/useChat";
 import { Core } from "./Core";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
+import { HandControl } from "./HandControl";
 
 /** Gemini が動いていれば動く Agent（Chat / Search）の数 */
 const LIVE_CARDS = AGENT_CARDS.filter((c) => c.phase === "live").length;
@@ -251,6 +252,7 @@ export const Orbit = memo(function Orbit({
   brain,
   calendar = "NOT SET",
   news = "—",
+  speaking = false,
   children,
 }: {
   phase: ChatPhase;
@@ -263,6 +265,8 @@ export const Orbit = memo(function Orbit({
   brain?: StatusResponse["brain"];
   calendar?: string;
   news?: string;
+  /** F.R.I.D.A.Y. が話している（中央のホログラムが脈打つ） */
+  speaking?: boolean;
   /** スマホ・タブレットで、カードの下に並べるもの（天気・予定・プロジェクト） */
   children?: React.ReactNode;
 }) {
@@ -292,8 +296,9 @@ export const Orbit = memo(function Orbit({
         calendar={calendar}
         news={news}
       />
+      <HandControl hidden={hidden} />
       <div className="orbit__core">
-        <Core phase={phase} />
+        <Core phase={phase} speaking={speaking} active={!hidden} />
       </div>
       {AGENT_CARDS.map((c, i) => (
         <AgentCard key={c.key} def={c} index={i} chatStatus={chatStatus} onOpenChat={onOpenChat} brain={brain} />

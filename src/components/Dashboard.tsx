@@ -297,6 +297,7 @@ export function Dashboard() {
             brain={agent.brain}
             calendar={!agent.calendar.configured ? "NOT SET" : agent.calendar.connected ? "LINKED" : "NOT LINKED"}
             news={!agent.news ? "—" : agent.news.time === "off" ? "OFF" : `DAILY ${agent.news.time}`}
+            speaking={voice.state === "speaking"}
           >
             {narrow && <RightPanel inline gmail={agent.calendar.connected ? agent.calendar.gmail : undefined} />}
           </Orbit>

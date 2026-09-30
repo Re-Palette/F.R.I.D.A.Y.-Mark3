@@ -3439,3 +3439,149 @@ ol.settings__note {
   display: grid;
   gap: 2px;
 }
+
+/* ---------- 3D ホログラム（中央リアクターの内側） ---------- */
+
+.core__holo {
+  position: absolute;
+  inset: 17%;
+  z-index: 2;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  -webkit-mask-image: radial-gradient(circle, #000 88%, transparent 100%);
+  mask-image: radial-gradient(circle, #000 88%, transparent 100%);
+}
+
+.core__holo:active {
+  cursor: grabbing;
+}
+
+.core__holo canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ホログラムがあるときは、名前を下に寄せて地球儀を見せる */
+.core[data-holo] .core__sweep {
+  opacity: 0.35;
+}
+
+.core[data-holo] .core__label {
+  z-index: 3;
+  justify-content: flex-end;
+  padding-bottom: 20cqi;
+}
+
+.core[data-holo] .core__title {
+  font-size: 4.4cqi;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.9), 0 0 16px rgba(255, 138, 31, 0.5);
+}
+
+.core[data-holo] .core__model {
+  font-size: 3.2cqi;
+  margin-top: 0.6cqi;
+}
+
+.core[data-holo] .core__tagline {
+  display: none;
+}
+
+/* ---------- 手で操作（HAND） ---------- */
+
+.hand {
+  position: absolute;
+  right: 4px;
+  bottom: 52px;
+  z-index: 3;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.hand__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  background: rgba(8, 8, 10, 0.7);
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+.hand__btn:hover,
+.hand__btn[aria-pressed="true"] {
+  color: var(--cyan);
+  border-color: rgba(46, 230, 255, 0.6);
+}
+
+.hand-slot {
+  padding: 0 12px 0 14px;
+}
+
+.hand-slot:empty {
+  display: none;
+}
+
+.hand__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hand .hand__panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  width: 178px;
+}
+
+.hand__view {
+  position: relative;
+  align-self: flex-start;
+  border: 1px solid rgba(46, 230, 255, 0.5);
+  box-shadow: 0 0 14px rgba(46, 230, 255, 0.25);
+  background: #050608;
+  line-height: 0;
+}
+
+.hand__view canvas {
+  width: 136px;
+  height: 102px;
+}
+
+.hand__tag {
+  position: absolute;
+  left: 6px;
+  top: 5px;
+  line-height: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--cyan);
+}
+
+.hand__help,
+.hand__msg {
+  margin: 0;
+  line-height: 1.45;
+  font-family: var(--font-jp);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+
+.hand__msg {
+  color: var(--orange);
+}
+
+@media (max-width: 999px) {
+  .hand,
+  .hand-slot {
+    display: none;
+  }
+}

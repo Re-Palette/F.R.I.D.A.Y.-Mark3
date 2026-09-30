@@ -74,6 +74,8 @@ export const Sidebar = memo(function Sidebar({
           );
         })}
       </nav>
+      {/* 手で操作（HAND）をオンにしたときのカメラ映像の置き場所（HandControl が描く） */}
+      <div id="hand-slot" className="hand-slot" />
 
       <section className="panel sys-status hud">
         <HudFrame cut={16} leds />
