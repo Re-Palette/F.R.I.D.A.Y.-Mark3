@@ -8,19 +8,94 @@
  * - 画面に見えていない間は描画を止める。WebGL が使えない環境では何も出さない（元の円盤が見える）
  */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ChatPhase } from "@/hooks/useChat";
 import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
+import { clearHologram, getHoloState, setHoloExpanded, subscribeHolo, useHoloState } from "@/lib/hologram-model";
+import type { HoloModel } from "@/lib/hologram-schema";
+import { toggleHand, useHandStatus } from "./HandControl";
 
 const ORANGE = 0xff8a1f;
 const AMBER = 0xffb45a;
 const CYAN = 0x2ee6ff;
 const R = 1.5;
+const PART_COLORS = { orange: ORANGE, cyan: CYAN, amber: AMBER, white: 0xfff1dd } as const;
+
+type Three = typeof import("three");
+
+/** 設計図（部品のリスト）から、ホログラム風の線と薄い面でできた立体を組み立てる */
+function buildModel(THREE: Three, model: HoloModel) {
+  const group = new THREE.Group();
+  const spinners: { obj: InstanceType<Three["Object3D"]>; axis: "x" | "y" | "z" }[] = [];
+  const lineMats = new Map<string, InstanceType<Three["LineBasicMaterial"]>>();
+  const fillMats = new Map<string, InstanceType<Three["MeshBasicMaterial"]>>();
+  const deg = Math.PI / 180;
+  for (const p of model.parts) {
+    const [a, b = a, c = b] = p.size;
+    let geo: import("three").BufferGeometry<import("three").NormalBufferAttributes>;
+    let smooth = false;
+    switch (p.shape) {
+      case "box":
+        geo = new THREE.BoxGeometry(a, b, c);
+        break;
+      case "sphere":
+        geo = new THREE.SphereGeometry(a, 14, 10);
+        smooth = true;
+        break;
+      case "cylinder":
+        geo = new THREE.CylinderGeometry(a, b, p.size[2] ?? a * 2, 16);
+        break;
+      case "cone":
+        geo = new THREE.ConeGeometry(a, b, 16);
+        break;
+      case "torus":
+        geo = new THREE.TorusGeometry(a, Math.min(b, a), 8, 28);
+        geo.rotateX(Math.PI / 2); // 寝かせた輪を基本にする
+        smooth = true;
+        break;
+      default:
+        geo = new THREE.CapsuleGeometry(a, b, 4, 10);
+        smooth = true;
+    }
+    const color = PART_COLORS[p.color];
+    if (!lineMats.has(p.color)) {
+      lineMats.set(p.color, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+      fillMats.set(
+        p.color,
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+      );
+    }
+    const holder = new THREE.Group();
+    holder.position.set(...p.position);
+    holder.rotation.set(p.rotation[0] * deg, p.rotation[1] * deg, p.rotation[2] * deg);
+    const edges = smooth ? new THREE.WireframeGeometry(geo) : new THREE.EdgesGeometry(geo, 12);
+    holder.add(new THREE.LineSegments(edges, lineMats.get(p.color)));
+    holder.add(new THREE.Mesh(geo, fillMats.get(p.color)));
+    if (p.spin) spinners.push({ obj: holder, axis: p.spin });
+    group.add(holder);
+  }
+  // 大きさと位置をそろえる（地球儀と同じくらいの大きさで、中心に）
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const fit = (R * 1.9) / Math.max(size.x, size.y, size.z, 0.001);
+  const pivot = new THREE.Group();
+  group.position.set(-center.x, -center.y, -center.z);
+  pivot.add(group);
+  pivot.scale.setScalar(fit);
+  pivot.userData.fit = fit;
+  return { pivot, spinners };
+}
 
 export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaking: boolean; active: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const live = useRef({ phase, speaking, active });
   live.current = { phase, speaking, active };
   const [failed, setFailed] = useState(false);
+  const hs = useHoloState();
+  // 拡大表示の枠は body に出す。サーバーの HTML と食い違わないよう、表示後に出す
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const el = box.current;
@@ -80,7 +155,8 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       const gridGeo = new THREE.BufferGeometry();
       gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(grid, 3));
       const gridMat = glow(ORANGE, 0.28);
-      body.add(new THREE.LineSegments(gridGeo, gridMat));
+      const globe = new THREE.LineSegments(gridGeo, gridMat);
+      body.add(globe);
 
       // 表面の点の雲（明るさをばらつかせる）
       const N = 1100;
@@ -107,7 +183,8 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
-      body.add(new THREE.Points(dotGeo, dotMat));
+      const dots = new THREE.Points(dotGeo, dotMat);
+      body.add(dots);
 
       // 中心のコア（多面体 + 光）
       const coreGeo = new THREE.IcosahedronGeometry(0.42, 1);
@@ -174,10 +251,11 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       const scan = new THREE.Line(scanGeo, scanMat);
       body.add(scan);
 
-      // 大きさ
+      // 大きさ（拡大表示のときは、画面いっぱいの枠の大きさ）
       const resize = () => {
-        const w = el.clientWidth;
-        const h = el.clientHeight;
+        const host = renderer.domElement.parentElement ?? el;
+        const w = host.clientWidth;
+        const h = host.clientHeight;
         if (!w || !h) return;
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
@@ -212,6 +290,42 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       canvas.addEventListener("wheel", wheel, { passive: false });
       canvas.addEventListener("dblclick", dbl);
 
+      // 作った「〇〇のホログラム」を入れ替える・拡大表示の枠へ移す
+      let shown: { pivot: InstanceType<Three["Group"]>; spinners: ReturnType<typeof buildModel>["spinners"] } | null = null;
+      let shownModel: HoloModel | undefined;
+      let appear = 1;
+      const disposeModel = () => {
+        if (!shown) return;
+        root.remove(shown.pivot);
+        shown.pivot.traverse((o) => {
+          const m = o as unknown as { geometry?: { dispose(): void }; material?: { dispose(): void } };
+          m.geometry?.dispose();
+          m.material?.dispose();
+        });
+        shown = null;
+      };
+      const sync = () => {
+        const st = getHoloState();
+        if (st.model !== shownModel) {
+          shownModel = st.model;
+          disposeModel();
+          if (st.model && st.status === "ready") {
+            shown = buildModel(THREE, st.model);
+            root.add(shown.pivot);
+            appear = 0;
+          }
+        }
+        const target = st.expanded ? document.querySelector<HTMLElement>(".holo-stage__canvas") : el;
+        if (target && canvas.parentElement !== target) {
+          target.appendChild(canvas);
+          ro.disconnect();
+          ro.observe(target);
+          resize();
+        }
+      };
+      const unsubscribe = subscribeHolo(sync);
+      sync();
+
       // 見えている間だけ描く
       let onScreen = true;
       const io = new IntersectionObserver(([entry]) => (onScreen = entry.isIntersecting));
@@ -234,7 +348,8 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
         t += dt;
-        const busy = ph !== "idle";
+        const hstate = getHoloState();
+        const busy = ph !== "idle" || hstate.status === "loading";
         energy += ((busy || talk ? 1 : 0) - energy) * Math.min(1, dt * 3);
         const pace = (calm ? 0.4 : 1) * (1 + energy * 2.2);
 
@@ -263,6 +378,18 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         holo.spinY *= decay;
 
         // 話している間は声に合わせて脈打つ
+        // 作ったホログラムがあるときは、地球儀とコアを隠してそれを見せる
+        const modelOn = Boolean(shown);
+        globe.visible = dots.visible = core.visible = !modelOn;
+        halo.visible = !modelOn || hstate.status === "loading";
+        if (shown) {
+          appear = Math.min(1, appear + dt * 1.6);
+          shown.pivot.rotation.y += dt * 0.3 * (calm ? 0.4 : 1);
+          const k = 1 - Math.pow(1 - appear, 3);
+          shown.pivot.scale.setScalar((shown.pivot.userData.fit as number) * (0.2 + 0.8 * k));
+          for (const sp of shown.spinners) sp.obj.rotation[sp.axis] += dt * 2.2;
+        }
+
         const beat = talk ? 0.5 + 0.5 * Math.sin(t * 11) * Math.sin(t * 3.7 + 1) : 0;
         const scale = holo.zoom * (1 + beat * 0.035);
         root.scale.setScalar(root.scale.x + (scale - root.scale.x) * Math.min(1, dt * 8));
@@ -277,6 +404,8 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
 
       cleanup = () => {
         cancelAnimationFrame(raf);
+        unsubscribe();
+        disposeModel();
         ro.disconnect();
         io.disconnect();
         canvas.removeEventListener("pointerdown", down);
@@ -303,5 +432,59 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
   }, []);
 
   if (failed) return null;
-  return <div ref={box} className="core__holo" title="ドラッグで回す・ホイールで拡大・ダブルクリックで元に戻す" />;
+  return (
+    <>
+      <div ref={box} className="core__holo" title="ドラッグで回す・ホイールで拡大・ダブルクリックで元に戻す" />
+      {hs.status !== "idle" && (
+        <div className="holo-chip" data-status={hs.status}>
+          <button type="button" className="holo-chip__name" onClick={() => setHoloExpanded(true)} title="大きく表示">
+            {hs.status === "loading" ? "GENERATING…" : hs.status === "error" ? "FAILED" : (hs.model?.title ?? hs.subject)}
+          </button>
+          <button type="button" className="holo-chip__x" onClick={clearHologram} aria-label="ホログラムを消す">
+            ×
+          </button>
+        </div>
+      )}
+      {mounted && createPortal(<HoloStage open={hs.expanded && active} />, document.body)}
+    </>
+  );
+}
+
+/** 作ったホログラムを画面いっぱいに大きく見せる枠（中身の canvas は Hologram が移してくる） */
+function HoloStage({ open }: { open: boolean }) {
+  const hs = useHoloState();
+  const hand = useHandStatus();
+  const handOn = hand === "loading" || hand === "ready";
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setHoloExpanded(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <div className="holo-stage" data-open={open || undefined} aria-hidden={!open}>
+      <div className="holo-stage__frame">
+        <div className="holo-stage__canvas" />
+        <div className="holo-stage__head">
+          <span className="holo-stage__label">HOLOGRAM</span>
+          <b>{hs.model?.title ?? hs.subject ?? ""}</b>
+          {hs.status === "loading" && <span className="holo-stage__status">設計しています…</span>}
+          {hs.status === "error" && <span className="holo-stage__status holo-stage__status--err">{hs.error}</span>}
+        </div>
+        <p className="holo-stage__help">ドラッグ・つまんで回す ／ ホイール・両手で拡大 ／ ダブルクリック・グーで元の向き</p>
+        <div className="holo-stage__hand" />
+        <div className="holo-stage__actions">
+          <button type="button" className="ghost-btn" aria-pressed={handOn} onClick={toggleHand}>
+            HAND {handOn ? "ON" : "OFF"}
+          </button>
+          <button type="button" className="ghost-btn" onClick={() => setHoloExpanded(false)}>
+            小さくする
+          </button>
+          <button type="button" className="ghost-btn" onClick={clearHologram}>
+            消す
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

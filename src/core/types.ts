@@ -47,6 +47,8 @@ export type StreamEvent =
   /** Web ページを開く・F.R.I.D.A.Y. が開いたタブを閉じる（実行は画面側） */
   | { type: "browser"; action: "open"; ok: boolean; url?: string; label: string; error?: string }
   | { type: "browser"; action: "close"; target: "last" | "all" }
+  /** 3D ホログラムを作る（subject）・消す（null）。設計は画面が /api/hologram に頼む */
+  | { type: "hologram"; subject: string | null }
   | { type: "done"; finishReason?: string; prepMs?: number }
   | { type: "error"; code: string; message: string; retryable: boolean };
 

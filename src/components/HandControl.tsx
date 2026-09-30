@@ -6,10 +6,11 @@
  * 手の認識（MediaPipe Hand Landmarker）はブラウザの中だけで動き、カメラの映像はどこにも送らない。
  * 認識の部品（wasm・自分のサイトから）とモデル（Google から）は、オンにしたときだけ読み込む。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { GestureTracker, type Point } from "@/lib/hand-gestures";
 import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
+import { useHoloState } from "@/lib/hologram-model";
 
 /** wasm は build 時に public/mediapipe/ へコピーしたもの（scripts/copy-mediapipe.mjs） */
 const WASM = "/mediapipe";
@@ -21,6 +22,25 @@ const BONES = [
 ];
 
 type Status = "off" | "loading" | "ready" | "error";
+
+/* 拡大表示の画面からもオン・オフできるよう、状態を外に出しておく */
+const TOGGLE = "friday:hand-toggle";
+let shared: Status = "off";
+const watchers = new Set<() => void>();
+const publish = (s: Status) => {
+  shared = s;
+  watchers.forEach((w) => w());
+};
+export function useHandStatus(): Status {
+  return useSyncExternalStore(
+    (fn) => (watchers.add(fn), () => watchers.delete(fn)),
+    () => shared,
+    () => "off",
+  );
+}
+export function toggleHand(): void {
+  window.dispatchEvent(new Event(TOGGLE));
+}
 
 export function HandControl({ hidden }: { hidden: boolean }) {
   const [status, setStatus] = useState<Status>("off");
@@ -111,15 +131,27 @@ export function HandControl({ hidden }: { hidden: boolean }) {
     }
   }, []);
 
+  useEffect(() => publish(status), [status]);
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  useEffect(() => {
+    const onToggle = () => (statusRef.current === "loading" || statusRef.current === "ready" ? stop() : void start());
+    window.addEventListener(TOGGLE, onToggle);
+    return () => window.removeEventListener(TOGGLE, onToggle);
+  }, [start, stop]);
+
   // HOME を離れたらカメラを止める
   useEffect(() => {
     if (hidden && status !== "off") stop();
   }, [hidden, status, stop]);
   useEffect(() => () => stopRef.current(), []);
 
-  // カメラ映像は左のメニューの空きに出す（中央のカードに重ならないように）。無ければボタンの上に出す
+  // カメラ映像は左のメニューの空き（拡大表示中はその画面の中）に出す。どちらも無ければボタンの上に出す
+  const expanded = useHoloState().expanded;
   const [slot, setSlot] = useState<HTMLElement | null>(null);
-  useEffect(() => setSlot(document.getElementById("hand-slot")), []);
+  useEffect(() => {
+    setSlot(document.querySelector<HTMLElement>(expanded ? ".holo-stage__hand" : "#hand-slot") ?? document.getElementById("hand-slot"));
+  }, [expanded]);
 
   const on = status === "loading" || status === "ready";
   const panel = (on || message) && (

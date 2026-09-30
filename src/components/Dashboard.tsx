@@ -21,6 +21,7 @@ import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
 import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
+import { useHoloState } from "@/lib/hologram-model";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -120,9 +121,14 @@ export function Dashboard() {
     return () => window.removeEventListener(TAB_BLOCKED, onBlocked);
   }, []);
   const [bargeIn] = useBargeIn();
+  // 「〇〇のホログラムを作って」と頼まれたら、見える HOME に戻る
+  const holoStatus = useHoloState().status;
   const narrow = useNarrow();
   const [view, setView] = useState<View>("home");
   const composerRef = useRef<ComposerHandle>(null);
+  useEffect(() => {
+    if (holoStatus === "loading") setView("home");
+  }, [holoStatus]);
 
   // API キー関連のエラーが出たらステータスを更新
   useEffect(() => {

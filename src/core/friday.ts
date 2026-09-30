@@ -87,18 +87,24 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram"] as const, {
       document: 30_000,
     });
     const sources: { title: string; uri: string }[] = [];
     // ページを開く・閉じるは待たせたくないので、タグが閉じた時点ですぐ画面に送る
-    const browserSent = { "open-url": 0, "close-tab": 0 };
-    const browserEvents = function* () {
+    const browserSent = { "open-url": 0, "close-tab": 0, hologram: 0 };
+    const browserEvents = function* (): Generator<StreamEvent> {
       for (const tag of BROWSER_TAGS) {
         const list = tags.captures[tag];
         for (; browserSent[tag] < list.length; browserSent[tag]++) {
           yield toBrowserEvent(tag, list[browserSent[tag]], tags.attrs[tag][browserSent[tag]]);
         }
+      }
+      // 3D ホログラムを作る・消す（設計は画面から /api/hologram に頼む）
+      const holos = tags.captures.hologram;
+      for (; browserSent.hologram < holos.length; browserSent.hologram++) {
+        const subject = holos[browserSent.hologram].replace(/\s+/g, " ").trim().slice(0, 60);
+        yield { type: "hologram", subject: /^(clear|消す|off|none)$/i.test(subject) ? null : subject };
       }
     };
     for await (const chunk of agent.run({

@@ -3585,3 +3585,175 @@ ol.settings__note {
     display: none;
   }
 }
+
+/* ---------- 作ったホログラム（名前の札・拡大表示） ---------- */
+
+.holo-chip {
+  position: absolute;
+  left: 50%;
+  top: 21%;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  font-family: var(--font-mono);
+  font-size: max(9px, 2.6cqi);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.holo-chip button {
+  border: 1px solid rgba(46, 230, 255, 0.55);
+  background: rgba(4, 10, 14, 0.8);
+  color: var(--cyan);
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 8px;
+}
+
+.holo-chip__x {
+  border-left: none !important;
+  padding: 2px 6px !important;
+}
+
+.holo-chip[data-status="loading"] .holo-chip__name {
+  animation: glow 1.2s ease-in-out infinite;
+}
+
+.holo-chip[data-status="error"] button {
+  color: var(--orange);
+  border-color: rgba(255, 138, 31, 0.6);
+}
+
+.holo-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  place-items: center;
+  background: radial-gradient(circle at 50% 50%, rgba(10, 30, 40, 0.55), rgba(2, 3, 5, 0.88) 70%);
+  backdrop-filter: blur(3px);
+}
+
+.holo-stage[data-open] {
+  display: grid;
+}
+
+.holo-stage__frame {
+  position: relative;
+  width: min(88vw, 82vh);
+  aspect-ratio: 1;
+}
+
+.holo-stage__canvas {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.holo-stage__canvas:active {
+  cursor: grabbing;
+}
+
+.holo-stage__canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* 四隅の HUD の枠 */
+.holo-stage__frame::before,
+.holo-stage__frame::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+  border: 1px solid rgba(46, 230, 255, 0.45);
+  clip-path: polygon(0 0, 14% 0, 14% 1px, 1px 1px, 1px 14%, 0 14%, 0 86%, 1px 86%, 1px calc(100% - 1px), 14% calc(100% - 1px), 14% 100%, 0 100%, 100% 100%, 86% 100%, 86% calc(100% - 1px), calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) 86%, 100% 86%, 100% 14%, calc(100% - 1px) 14%, calc(100% - 1px) 1px, 86% 1px, 86% 0, 100% 0);
+}
+
+.holo-stage__frame::after {
+  inset: -14px;
+  border-color: rgba(255, 138, 31, 0.35);
+}
+
+.holo-stage__head {
+  position: absolute;
+  left: 0;
+  top: -4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.holo-stage__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: var(--cyan);
+}
+
+.holo-stage__head b {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  color: #fff;
+  text-shadow: 0 0 14px rgba(46, 230, 255, 0.6);
+}
+
+.holo-stage__status {
+  font-family: var(--font-jp);
+  font-size: 13px;
+  color: var(--cyan);
+  animation: glow 1.2s ease-in-out infinite;
+}
+
+.holo-stage__status--err {
+  color: var(--orange);
+  animation: none;
+}
+
+.holo-stage__help {
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  margin: 0;
+  font-family: var(--font-jp);
+  font-size: 12px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+.holo-stage__actions {
+  position: absolute;
+  right: 0;
+  top: -4px;
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .holo-stage__help {
+    display: none;
+  }
+}
+
+.holo-stage__hand {
+  position: absolute;
+  right: calc(100% + 28px);
+  bottom: 0;
+  width: 150px;
+}
+
+.holo-stage__hand:empty {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .holo-stage__hand {
+    right: 0;
+    bottom: 26px;
+  }
+}

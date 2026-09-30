@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, StreamEvent } from "@/core/types";
+import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
 
@@ -347,6 +348,10 @@ export function useChat() {
                 }
                 break;
               }
+              case "hologram":
+                if (event.subject) void requestHologram(event.subject);
+                else clearHologram();
+                break;
               case "sources": {
                 const { sources } = event;
                 patch(assistantId, (m) => ({ ...m, sources }));
