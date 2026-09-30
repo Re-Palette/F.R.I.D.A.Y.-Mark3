@@ -3,7 +3,7 @@
  * サーバー（作る側）と画面（描く側）の両方で使うので、ここには型と検証だけを置く。
  */
 
-export const HOLO_SHAPES = ["box", "sphere", "cylinder", "cone", "torus", "capsule"] as const;
+export const HOLO_SHAPES = ["box", "sphere", "ellipsoid", "cylinder", "cone", "torus", "capsule", "lathe", "tube", "extrude"] as const;
 export const HOLO_COLORS = ["orange", "cyan", "amber", "white"] as const;
 export type HoloShape = (typeof HOLO_SHAPES)[number];
 export type HoloColor = (typeof HOLO_COLORS)[number];
@@ -16,10 +16,22 @@ export interface HoloPart {
   rotation: [number, number, number];
   /**
    * 大きさ。形ごとに意味が違う
-   *   box [幅, 高さ, 奥行き] ／ sphere [半径] ／ cylinder [上の半径, 下の半径, 高さ]
-   *   cone [半径, 高さ] ／ torus [半径, 太さ] ／ capsule [半径, 長さ]
+   *   box [幅, 高さ, 奥行き] ／ sphere [半径] ／ ellipsoid [x 半径, y 半径, z 半径]
+   *   cylinder [上の半径, 下の半径, 高さ] ／ cone [半径, 高さ] ／ torus [半径, 太さ] ／ capsule [半径, 長さ]
+   *   lathe（なし） ／ tube [太さ] ／ extrude [厚み]
    */
   size: number[];
+  /**
+   * 形を点で描くもの
+   *   lathe:   [[半径, 高さ], …] 縦の断面の輪郭。y 軸まわりに回した形（瓶・胴体・花瓶・鐘など）
+   *   tube:    [[x, y, z], …] この点を通るなめらかな管（ケーブル・らせん・取っ手・しっぽなど）
+   *   extrude: [[x, y], …] 平らな輪郭を厚み分だけ押し出した板（翼・ひれ・葉・看板など）
+   */
+  points?: number[][];
+  /** 形全体を軸ごとに伸び縮みさせる [x, y, z] */
+  scale?: [number, number, number];
+  /** tube を輪にする */
+  closed?: boolean;
   color: HoloColor;
   /** この部品だけ回し続ける軸（プロペラ・惑星の輪など） */
   spin?: "x" | "y" | "z";
@@ -30,7 +42,8 @@ export interface HoloModel {
   parts: HoloPart[];
 }
 
-export const MAX_PARTS = 80;
+export const MAX_PARTS = 160;
+const MAX_POINTS = 48;
 
 const num = (v: unknown, fallback: number, min: number, max: number) => {
   const n = typeof v === "number" ? v : Number(v);
@@ -50,8 +63,21 @@ export function sanitizeModel(raw: unknown, fallbackTitle: string): HoloModel | 
     const q = (p ?? {}) as Record<string, unknown>;
     const shape = String(q.shape ?? "").toLowerCase() as HoloShape;
     if (!HOLO_SHAPES.includes(shape)) continue;
-    const size = (Array.isArray(q.size) ? q.size : [q.size]).slice(0, 3).map((s) => num(s, 0.3, 0.005, 50));
-    if (!size.length) continue;
+    const size = (Array.isArray(q.size) ? q.size : q.size === undefined ? [] : [q.size]).slice(0, 3).map((s) => num(s, 0.3, 0.002, 50));
+    const dims = shape === "lathe" ? 2 : shape === "tube" ? 3 : shape === "extrude" ? 2 : 0;
+    const points = dims
+      ? (Array.isArray(q.points) ? q.points : [])
+          .slice(0, MAX_POINTS)
+          .filter((pt): pt is unknown[] => Array.isArray(pt))
+          .map((pt) => Array.from({ length: dims }, (_, i) => num(pt[i], 0, -100, 100)))
+      : undefined;
+    if (dims && (points?.length ?? 0) < (shape === "extrude" ? 3 : 2)) continue;
+    if (shape === "lathe" && points) points.forEach((pt) => (pt[0] = Math.abs(pt[0])));
+    if (!dims && !size.length) continue;
+    if (shape === "tube" && !size.length) size.push(0.05);
+    if (shape === "extrude" && !size.length) size.push(0.05);
+    const sc = Array.isArray(q.scale) ? q.scale : null;
+    const scale = sc ? ([0, 1, 2].map((i) => num(sc[i], 1, 0.01, 20)) as [number, number, number]) : undefined;
     const color = String(q.color ?? "").toLowerCase() as HoloColor;
     const spin = String(q.spin ?? "").toLowerCase();
     parts.push({
@@ -60,6 +86,9 @@ export function sanitizeModel(raw: unknown, fallbackTitle: string): HoloModel | 
       rotation: vec3(q.rotation, -720, 720),
       size,
       color: HOLO_COLORS.includes(color) ? color : "orange",
+      ...(points ? { points } : {}),
+      ...(scale ? { scale } : {}),
+      ...(q.closed === true ? { closed: true } : {}),
       ...(spin === "x" || spin === "y" || spin === "z" ? { spin } : {}),
     });
   }

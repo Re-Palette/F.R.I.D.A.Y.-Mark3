@@ -13,80 +13,15 @@ import type { ChatPhase } from "@/hooks/useChat";
 import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
 import { clearHologram, getHoloState, setHoloExpanded, subscribeHolo, useHoloState } from "@/lib/hologram-model";
 import type { HoloModel } from "@/lib/hologram-schema";
+import { buildModel, holoMaterial } from "./hologram-visuals";
 import { toggleHand, useHandStatus } from "./HandControl";
 
 const ORANGE = 0xff8a1f;
 const AMBER = 0xffb45a;
 const CYAN = 0x2ee6ff;
 const R = 1.5;
-const PART_COLORS = { orange: ORANGE, cyan: CYAN, amber: AMBER, white: 0xfff1dd } as const;
 
 type Three = typeof import("three");
-
-/** 設計図（部品のリスト）から、ホログラム風の線と薄い面でできた立体を組み立てる */
-function buildModel(THREE: Three, model: HoloModel) {
-  const group = new THREE.Group();
-  const spinners: { obj: InstanceType<Three["Object3D"]>; axis: "x" | "y" | "z" }[] = [];
-  const lineMats = new Map<string, InstanceType<Three["LineBasicMaterial"]>>();
-  const fillMats = new Map<string, InstanceType<Three["MeshBasicMaterial"]>>();
-  const deg = Math.PI / 180;
-  for (const p of model.parts) {
-    const [a, b = a, c = b] = p.size;
-    let geo: import("three").BufferGeometry<import("three").NormalBufferAttributes>;
-    let smooth = false;
-    switch (p.shape) {
-      case "box":
-        geo = new THREE.BoxGeometry(a, b, c);
-        break;
-      case "sphere":
-        geo = new THREE.SphereGeometry(a, 14, 10);
-        smooth = true;
-        break;
-      case "cylinder":
-        geo = new THREE.CylinderGeometry(a, b, p.size[2] ?? a * 2, 16);
-        break;
-      case "cone":
-        geo = new THREE.ConeGeometry(a, b, 16);
-        break;
-      case "torus":
-        geo = new THREE.TorusGeometry(a, Math.min(b, a), 8, 28);
-        geo.rotateX(Math.PI / 2); // 寝かせた輪を基本にする
-        smooth = true;
-        break;
-      default:
-        geo = new THREE.CapsuleGeometry(a, b, 4, 10);
-        smooth = true;
-    }
-    const color = PART_COLORS[p.color];
-    if (!lineMats.has(p.color)) {
-      lineMats.set(p.color, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
-      fillMats.set(
-        p.color,
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-      );
-    }
-    const holder = new THREE.Group();
-    holder.position.set(...p.position);
-    holder.rotation.set(p.rotation[0] * deg, p.rotation[1] * deg, p.rotation[2] * deg);
-    const edges = smooth ? new THREE.WireframeGeometry(geo) : new THREE.EdgesGeometry(geo, 12);
-    holder.add(new THREE.LineSegments(edges, lineMats.get(p.color)));
-    holder.add(new THREE.Mesh(geo, fillMats.get(p.color)));
-    if (p.spin) spinners.push({ obj: holder, axis: p.spin });
-    group.add(holder);
-  }
-  // 大きさと位置をそろえる（地球儀と同じくらいの大きさで、中心に）
-  const box = new THREE.Box3().setFromObject(group);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const fit = (R * 1.9) / Math.max(size.x, size.y, size.z, 0.001);
-  const pivot = new THREE.Group();
-  group.position.set(-center.x, -center.y, -center.z);
-  pivot.add(group);
-  pivot.scale.setScalar(fit);
-  pivot.userData.fit = fit;
-  return { pivot, spinners };
-}
-
 export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaking: boolean; active: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const live = useRef({ phase, speaking, active });
@@ -103,7 +38,13 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
     let disposed = false;
     let cleanup = () => {};
 
-    void import("three").then((THREE) => {
+    void Promise.all([
+      import("three"),
+      import("three/examples/jsm/postprocessing/EffectComposer.js"),
+      import("three/examples/jsm/postprocessing/RenderPass.js"),
+      import("three/examples/jsm/postprocessing/UnrealBloomPass.js"),
+      import("three/examples/jsm/postprocessing/OutputPass.js"),
+    ]).then(([THREE, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }]) => {
       if (disposed) return;
       let renderer: InstanceType<typeof THREE.WebGLRenderer>;
       try {
@@ -115,12 +56,24 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       // 高解像度の画面でも描く点の数を抑える（拡大表示は面積が大きいのでさらに控えめに）
       const pixelRatio = () => Math.min(window.devicePixelRatio || 1, getHoloState().expanded ? 1.25 : 1.5);
       renderer.setPixelRatio(pixelRatio());
-      renderer.setClearColor(0x000000, 0);
+      // 光のにじみ（ブルーム）を掛けるため背景は黒で描き、CSS の screen 合成で黒を透かす
+      renderer.setClearColor(0x000000, 1);
+      // 明るい所が真っ白に飛ばないよう、映画のような階調で丸める
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.95;
       el.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
       camera.position.set(0, 0, 6.8);
+      const time = { value: 0 }; // 面の走査線・ちらつき用（全部の材質で共有）
+
+      const composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.4, 0.22);
+      composer.addPass(bloom);
+      composer.addPass(new OutputPass());
+      let bloomOn = true;
 
       const glow = (color: number, opacity: number) =>
         new THREE.LineBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -159,6 +112,10 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       const gridMat = glow(ORANGE, 0.28);
       const globe = new THREE.LineSegments(gridGeo, gridMat);
       body.add(globe);
+      // 地球儀の表面（縁ほど光る膜）
+      const shellMat = holoMaterial(THREE, ORANGE, time, 0.28);
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(R * 0.995, 48, 32), shellMat);
+      body.add(shell);
 
       // 表面の点の雲（明るさをばらつかせる）
       const N = 1100;
@@ -238,7 +195,7 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         spin.add(sat);
         holder.add(spin);
         root.add(holder);
-        return { spin, speed: d.speed };
+        return { spin, holder, speed: d.speed };
       });
 
       // 上下に走るスキャン線
@@ -251,6 +208,39 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       scanGeo.setAttribute("position", new THREE.Float32BufferAttribute(scanPts, 3));
       const scanMat = glow(CYAN, 0.8);
       const scan = new THREE.Line(scanGeo, scanMat);
+
+      // 作ったホログラムの下に置く投影台（光の輪と、上に広がる光の筒）。傾けずに水平のまま
+      const pedestal = new THREE.Group();
+      pedestal.visible = false;
+      const pedestalMat = glow(CYAN, 0.55);
+      for (const [r, dash] of [[0.55, false], [1.0, true], [1.35, false]] as const) {
+        const pts: number[] = [];
+        for (let i = 0; i <= 96; i++) {
+          const a = (i / 96) * Math.PI * 2;
+          pts.push(Math.cos(a) * r, 0, Math.sin(a) * r);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+        const line = dash
+          ? new THREE.Line(g, new THREE.LineDashedMaterial({ color: CYAN, dashSize: 0.08, gapSize: 0.06, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }))
+          : new THREE.Line(g, pedestalMat);
+        if (dash) line.computeLineDistances();
+        pedestal.add(line);
+      }
+      const ticks: number[] = [];
+      for (let i = 0; i < 48; i++) {
+        const a = (i / 48) * Math.PI * 2;
+        const r1 = i % 4 === 0 ? 1.12 : 1.22;
+        ticks.push(Math.cos(a) * r1, 0, Math.sin(a) * r1, Math.cos(a) * 1.3, 0, Math.sin(a) * 1.3);
+      }
+      const tickGeo = new THREE.BufferGeometry();
+      tickGeo.setAttribute("position", new THREE.Float32BufferAttribute(ticks, 3));
+      pedestal.add(new THREE.LineSegments(tickGeo, pedestalMat));
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 0.5, 3.1, 48, 1, true), holoMaterial(THREE, CYAN, time, 0.1));
+      beam.position.y = 1.55;
+      pedestal.add(beam);
+      pedestal.position.y = -1.6;
+      scene.add(pedestal);
       body.add(scan);
 
       // 大きさ（拡大表示のときは、画面いっぱいの枠の大きさ）
@@ -260,6 +250,9 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         const h = host.clientHeight;
         if (!w || !h) return;
         renderer.setSize(w, h, false);
+        composer.setPixelRatio(renderer.getPixelRatio());
+        composer.setSize(w, h);
+        bloom.resolution.set(w / 2, h / 2);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
       };
@@ -293,12 +286,13 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       canvas.addEventListener("dblclick", dbl);
 
       // 作った「〇〇のホログラム」を入れ替える・拡大表示の枠へ移す
-      let shown: { pivot: InstanceType<Three["Group"]>; spinners: ReturnType<typeof buildModel>["spinners"] } | null = null;
+      let shown: Awaited<ReturnType<typeof buildModel>> | null = null;
       let shownModel: HoloModel | undefined;
       let appear = 1;
       const disposeModel = () => {
         if (!shown) return;
         root.remove(shown.pivot);
+        shown.dispose();
         shown.pivot.traverse((o) => {
           const m = o as unknown as { geometry?: { dispose(): void }; material?: { dispose(): void } };
           m.geometry?.dispose();
@@ -311,10 +305,14 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         if (st.model !== shownModel) {
           shownModel = st.model;
           disposeModel();
-          if (st.model && st.status === "ready") {
-            shown = buildModel(THREE, st.model);
-            root.add(shown.pivot);
-            appear = 0;
+          const wanted = st.model;
+          if (wanted && st.status === "ready") {
+            void buildModel(THREE, wanted, time).then((built) => {
+              if (disposed || shownModel !== wanted) return built.dispose();
+              shown = built;
+              root.add(built.pivot);
+              appear = 0;
+            });
           }
         }
         const target = st.expanded ? document.querySelector<HTMLElement>(".holo-stage__canvas") : el;
@@ -341,6 +339,7 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       let seenResets = holo.resets;
       let returning = false;
       let energy = 0; // 考え中・話し中の勢い（0〜1、なめらかに変える）
+      let slow = 0.016;
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
         const { phase: ph, speaking: talk, active: on } = live.current;
@@ -348,9 +347,14 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
           last = now;
           return;
         }
-        const dt = Math.min(0.05, (now - last) / 1000);
+        const raw = (now - last) / 1000;
+        const dt = Math.min(0.05, raw);
         last = now;
         t += dt;
+        time.value = t;
+        // 重いパソコンでは光のにじみを自動で切る（平均が 1 コマ 45ms を超えたら）
+        slow = slow * 0.97 + raw * 0.03;
+        if (bloomOn && slow > 0.045 && t > 3) bloomOn = false;
         const hstate = getHoloState();
         const busy = ph !== "idle" || hstate.status === "loading";
         energy += ((busy || talk ? 1 : 0) - energy) * Math.min(1, dt * 3);
@@ -383,7 +387,9 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         // 話している間は声に合わせて脈打つ
         // 作ったホログラムがあるときは、地球儀とコアを隠してそれを見せる
         const modelOn = Boolean(shown);
-        globe.visible = dots.visible = core.visible = !modelOn;
+        globe.visible = dots.visible = core.visible = shell.visible = !modelOn;
+        pedestal.visible = modelOn;
+        for (const r of rings) r.holder.visible = !modelOn;
         halo.visible = !modelOn || hstate.status === "loading";
         if (shown) {
           appear = Math.min(1, appear + dt * 1.6);
@@ -396,12 +402,18 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         const beat = talk ? 0.5 + 0.5 * Math.sin(t * 11) * Math.sin(t * 3.7 + 1) : 0;
         const scale = holo.zoom * (1 + beat * 0.035);
         root.scale.setScalar(root.scale.x + (scale - root.scale.x) * Math.min(1, dt * 8));
-        halo.scale.setScalar(1.6 + energy * 0.5 + beat * 0.6);
-        glowMat.opacity = 0.65 + energy * 0.25 + beat * 0.2;
+        if (modelOn) {
+          pedestal.scale.setScalar(root.scale.x);
+          pedestal.position.y = -1.6 * root.scale.x;
+          pedestal.rotation.y -= dt * 0.4;
+        }
+        halo.scale.setScalar(1.2 + energy * 0.4 + beat * 0.5);
+        glowMat.opacity = (bloomOn ? 0.35 : 0.65) + energy * 0.2 + beat * 0.2;
         gridMat.opacity = 0.22 + energy * 0.14;
         coreMat.opacity = 0.45 + beat * 0.4;
 
-        renderer.render(scene, camera);
+        if (bloomOn) composer.render();
+        else renderer.render(scene, camera);
       };
       raf = requestAnimationFrame(frame);
 
@@ -423,6 +435,7 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
           m.material?.dispose();
         });
         glowTex.dispose();
+        composer.dispose();
         renderer.dispose();
         canvas.remove();
       };

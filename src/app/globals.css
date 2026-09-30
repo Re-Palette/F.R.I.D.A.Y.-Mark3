@@ -3446,6 +3446,8 @@ ol.settings__note {
   position: absolute;
   inset: 17%;
   z-index: 2;
+  /* ホログラムは黒い背景に描いているので、明るさだけを重ねる */
+  mix-blend-mode: screen;
   border-radius: 50%;
   overflow: hidden;
   cursor: grab;
@@ -3648,6 +3650,7 @@ ol.settings__note {
 .holo-stage__canvas {
   position: absolute;
   inset: 0;
+  mix-blend-mode: screen;
   cursor: grab;
   touch-action: none;
 }
