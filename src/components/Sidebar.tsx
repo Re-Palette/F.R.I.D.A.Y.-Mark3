@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { LastRunStats } from "@/hooks/useChat";
-import type { ChatAgentStatus } from "./Orbit";
+import type { ChatAgentStatus } from "./home/panels";
 import { HudFrame } from "./HudFrame";
 import { Icon, type IconName } from "./icons";
 

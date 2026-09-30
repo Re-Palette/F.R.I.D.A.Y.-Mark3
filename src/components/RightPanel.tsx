@@ -7,7 +7,7 @@ import type { WeatherKind, WeatherReport } from "@/integrations/weather";
 import { HudFrame } from "./HudFrame";
 import { Icon, type IconName } from "./icons";
 
-function PanelHead({ title, accent, extra, idx }: { title: string; accent?: string; extra?: ReactNode; idx: string }) {
+export function PanelHead({ title, accent, extra, idx }: { title: string; accent?: string; extra?: ReactNode; idx: string }) {
   return (
     <div className="panel__head">
       <span className="panel__idx">{idx}</span>
@@ -23,7 +23,7 @@ function PanelHead({ title, accent, extra, idx }: { title: string; accent?: stri
 /** Phase 1 の右パネルはサンプル表示（未接続） */
 const SAMPLE_TITLE = "サンプルデータ（連携は今後のアップデートで対応）";
 
-const WEATHER_ICON: Record<WeatherKind, IconName> = {
+export const WEATHER_ICON: Record<WeatherKind, IconName> = {
   clear: "sun",
   partly: "weather",
   cloudy: "cloud",
@@ -124,7 +124,7 @@ function useNow(): number {
 const endOf = (e: CalendarEventView) => Date.parse(e.end || e.start);
 
 /** TODAY'S SCHEDULE: Google カレンダーに接続していれば今日の予定、未接続ならサンプル */
-function SchedulePanel({ gmail }: { gmail?: boolean }) {
+export function SchedulePanel({ gmail }: { gmail?: boolean }) {
   const cal = useCalendar();
   const now = useNow();
 
@@ -215,7 +215,7 @@ interface ProjectView {
 }
 
 /** CURRENT PROJECTS: 脳の「プロジェクト/」のノートから。脳が無ければサンプル */
-function ProjectsPanel() {
+export function ProjectsPanel({ title = "CURRENT", accent = "PROJECTS", idx = "03" }: { title?: string; accent?: string; idx?: string } = {}) {
   const [data, setData] = useState<{ configured: boolean; projects: ProjectView[]; todos: unknown[] } | null>(null);
   useEffect(() => {
     let alive = true;
@@ -239,7 +239,7 @@ function ProjectsPanel() {
   return (
     <section className="panel hud" title={real ? undefined : SAMPLE_TITLE}>
       <HudFrame cut={14} />
-      <PanelHead title="CURRENT" accent="PROJECTS" extra={real ? `TODO ${data.todos.length}` : "SAMPLE"} idx="03" />
+      <PanelHead title={title} accent={accent} extra={real ? `TODO ${data.todos.length}` : "SAMPLE"} idx={idx} />
       {real && projects.length === 0 ? (
         <p className="schedule-empty">脳の「プロジェクト」フォルダにノートを作ると、ここに表示されます。</p>
       ) : (

@@ -1,0 +1,1146 @@
+/* ==========================================================================
+   F.R.I.D.A.Y. Mark3 — AI OS / 戦術司令システム
+   HOME（AI コア + 高密度 HUD パネル）と、画面全体の背景・HUD 枠の質感。
+   アニメーションは transform / opacity / stroke-dashoffset のみ。
+   ========================================================================== */
+
+/* ---------- 画面全体の背景：カーボン × 金属 × 回路、流れる光 ---------- */
+
+.bg {
+  background:
+    radial-gradient(ellipse 55% 60% at 50% 52%, rgba(255, 110, 20, 0.16), transparent 70%),
+    radial-gradient(ellipse 120% 80% at 50% 110%, rgba(120, 40, 0, 0.28), transparent 60%),
+    /* カーボンの綾織り */
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.016) 0 2px, transparent 2px 4px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.35) 0 2px, transparent 2px 4px),
+    /* ブラッシュドメタル */
+    linear-gradient(180deg, #0b0c0f 0%, #07080a 45%, #040405 100%);
+}
+
+.bg__circuit {
+  opacity: 0.16;
+  mask-image: radial-gradient(ellipse 80% 75% at 50% 50%, transparent 12%, #000 60%);
+}
+
+.bg__scan {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, transparent 0%, rgba(255, 140, 40, 0.05) 50%, transparent 100%);
+  background-size: auto, 100% 38%;
+  background-repeat: repeat, no-repeat;
+  animation: bg-scan 9s linear infinite;
+}
+
+@keyframes bg-scan {
+  from {
+    background-position: 0 0, 0 -40%;
+  }
+  to {
+    background-position: 0 0, 0 140%;
+  }
+}
+
+/* 流れる光（回路を走るエネルギー） */
+.bg__streaks i {
+  opacity: 0.55;
+  background: linear-gradient(90deg, transparent, rgba(255, 170, 80, 0.95) 50%, transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: streak 7s linear infinite;
+}
+
+.bg__streaks i:nth-child(2) {
+  animation-delay: -2.4s;
+  animation-duration: 9s;
+}
+.bg__streaks i:nth-child(3) {
+  animation-delay: -4.8s;
+  animation-duration: 8s;
+}
+.bg__streaks i:nth-child(4) {
+  animation-delay: -1.2s;
+  animation-duration: 11s;
+}
+
+@keyframes streak {
+  from {
+    background-position: -60% 0;
+  }
+  to {
+    background-position: 160% 0;
+  }
+}
+
+/* ---------- HUD 枠：半透明ガラス・二重線・発光 ---------- */
+
+.hud-frame__fill {
+  fill: rgba(5, 6, 8, 0.78);
+}
+
+.hud-frame__glass-top {
+  stop-color: rgba(255, 150, 60, 0.1);
+}
+.hud-frame__glass-mid {
+  stop-color: rgba(255, 150, 60, 0.02);
+}
+.hud-frame__glass-bottom {
+  stop-color: rgba(0, 0, 0, 0);
+}
+
+.hud-frame__line {
+  stroke: var(--hud-line);
+  filter: drop-shadow(0 0 2px rgba(255, 138, 31, 0.45));
+}
+
+.hud-frame__inner {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.16);
+  stroke-width: 1;
+}
+
+/* ---------- アプリ全体：HOME では右パネルを畳んで全幅を使う ---------- */
+
+@media (min-width: 1000px) {
+  .app[data-view="home"] {
+    grid-template-areas:
+      "top top top"
+      "side center center";
+  }
+
+  .app[data-view="home"] .center {
+    padding-right: 20px;
+  }
+
+  /* HOME ではシステム状態をサイドバーの幅に収める（左のパネルに重ならないように） */
+  .app[data-view="home"] .sys-status {
+    width: auto;
+  }
+}
+
+/* 見出しの文字（Eurostile 系 = Michroma、字間広め） */
+.panel__head {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+}
+
+/* ---------- HOME レイアウト ---------- */
+
+.home {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(380px, 0.9fr) minmax(300px, 1fr) minmax(500px, 1.2fr);
+  gap: 14px;
+  padding: 2px 0 6px;
+  font-family: var(--font-ui);
+}
+
+.stage:not([data-view="home"]) .home {
+  display: none;
+}
+
+.stage:not([data-view="home"]) .home * {
+  animation-play-state: paused !important;
+}
+
+.home__left,
+.home__right {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.home__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 10px;
+  min-height: 0;
+}
+
+.home__right .home__row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.home__grow {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+}
+
+/* 左列：エージェント一覧は行の高さで決め、残りを最近の活動に */
+.home__left > [data-link="activity"] {
+  flex: 1;
+  min-height: 96px;
+  display: grid;
+}
+
+.home__left > .home__grow {
+  flex: none;
+}
+
+.home__row > .panel,
+.home__grow > .panel,
+.home__left > div > .panel,
+.home__right > div > .panel {
+  min-height: 0;
+  height: 100%;
+}
+
+.home__core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  container-type: size;
+}
+
+/* 接続線（コア → 各パネル） */
+.home__links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.home__link {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.22);
+  stroke-width: 1;
+}
+
+.home__flow {
+  fill: none;
+  stroke: rgba(255, 190, 110, 0.9);
+  stroke-width: 1.4;
+  stroke-dasharray: 3 26;
+  /* 動く線に発光（filter）を付けると毎フレームの描き直しが重いので付けない */
+  animation: flow 2.6s linear infinite;
+}
+
+.home__links g:nth-child(2n) .home__flow {
+  animation-duration: 3.4s;
+  animation-direction: reverse;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -29;
+  }
+}
+
+/* ---------- HOME のパネル共通 ---------- */
+
+.hpanel {
+  padding: 10px 13px 11px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hpanel .panel__head {
+  margin-bottom: 8px;
+}
+
+.hbadge {
+  padding: 1px 6px;
+  border: 1px solid rgba(255, 150, 60, 0.45);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--orange-hi);
+}
+
+.hlink {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--orange);
+}
+
+.hlink:hover {
+  color: #fff;
+}
+
+.hempty {
+  margin: 2px 0 0;
+  font-family: var(--font-jp);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.hstats {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0 0;
+}
+
+.hstats div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px dashed rgba(255, 140, 40, 0.14);
+  padding-bottom: 2px;
+}
+
+.hstats dt {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.hstats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #fff;
+}
+
+.hstats--tight {
+  margin-top: 4px;
+}
+
+/* 予定パネルを HOME の密度に */
+.home .schedule li {
+  grid-template-columns: 8px 40px 1fr auto;
+  gap: 8px;
+  padding: 1px 0;
+  font-size: 13px;
+}
+
+/* ---------- 天気（小） ---------- */
+
+.hpanel--weather {
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+}
+
+.hweather__icon {
+  color: var(--orange-hi);
+  filter: drop-shadow(0 0 6px rgba(255, 150, 60, 0.6));
+}
+
+.hweather__temp b {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.hweather__temp span {
+  margin-left: 4px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.hweather__city {
+  font-family: var(--font-brand);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--orange);
+}
+
+.hweather__label {
+  font-family: var(--font-jp);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* ---------- AI エージェント ---------- */
+
+.hagents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-auto-rows: 29px;
+}
+
+.hagent {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1.2fr) 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 140, 40, 0.08);
+  transition: background 0.2s;
+}
+
+.hagent:not([aria-disabled="true"]):hover {
+  background: linear-gradient(90deg, rgba(255, 138, 31, 0.14), transparent);
+}
+
+.hagent__emblem {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  color: var(--orange-hi);
+}
+
+.hagent__emblem svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hagent__hex {
+  fill: rgba(255, 138, 31, 0.08);
+  stroke: rgba(255, 150, 60, 0.5);
+  stroke-width: 1.2;
+}
+
+/* ステータスリング：稼働中は回る */
+.hagent__ring {
+  fill: none;
+  stroke: var(--orange);
+  stroke-width: 1.6;
+  stroke-dasharray: 22 8 10 8;
+  transform-origin: 20px 20px;
+  opacity: 0.25;
+}
+
+.hagent[data-state="online"] .hagent__ring {
+  opacity: 0.95;
+  stroke: #ffb458;
+  animation: spin 6s linear infinite;
+}
+
+.hagent[data-state="checking"] .hagent__ring {
+  opacity: 0.6;
+  animation: spin 2s linear infinite;
+}
+
+.hagent[data-state="offline"] .hagent__ring {
+  stroke: var(--red);
+  opacity: 0.7;
+}
+
+.hagent__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+.hagent__name b {
+  font-family: var(--font-brand);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hagent__name small {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+.hagent__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.hagent__status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.hagent[data-state="online"] .hagent__status {
+  color: var(--green);
+}
+
+.hagent[data-state="online"] .hagent__status i {
+  box-shadow: 0 0 6px var(--green);
+  animation: blink-soft 2.4s ease-in-out infinite;
+}
+
+.hagent[data-state="checking"] .hagent__status {
+  color: var(--orange-hi);
+}
+
+.hagent[data-state="offline"] .hagent__status {
+  color: var(--red);
+}
+
+.hagent__role {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+@keyframes blink-soft {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---------- 最近の活動 ---------- */
+
+.hactivity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.hactivity li {
+  display: grid;
+  grid-template-columns: 10px 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.hactivity__dot {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--orange);
+  border-radius: 50%;
+  box-shadow: 0 0 5px rgba(255, 138, 31, 0.6);
+}
+
+.hactivity__dot[data-voice] {
+  border-color: var(--cyan);
+  box-shadow: 0 0 5px rgba(46, 230, 255, 0.6);
+}
+
+.hactivity time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--orange-hi);
+  white-space: nowrap;
+}
+
+.hactivity__text {
+  font-family: var(--font-jp);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- パフォーマンス（戦術モニター） ---------- */
+
+.hmonitor {
+  position: relative;
+  height: 54px;
+  flex: none;
+  border: 1px solid rgba(255, 140, 40, 0.18);
+  background: linear-gradient(180deg, rgba(255, 138, 31, 0.06), transparent);
+  overflow: hidden;
+}
+
+.hmonitor svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hmonitor__grid {
+  stroke: rgba(255, 140, 40, 0.1);
+  stroke-width: 0.6;
+}
+
+.hmonitor__line {
+  fill: none;
+  stroke: #ffb458;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 3px rgba(255, 150, 60, 0.9));
+}
+
+.hmonitor__fill {
+  fill: rgba(255, 138, 31, 0.12);
+  stroke: none;
+}
+
+.hmonitor__idle {
+  fill: none;
+  stroke: rgba(255, 170, 90, 0.55);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 4 3;
+  animation: flow 1.6s linear infinite;
+}
+
+.hmonitor__sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 150, 60, 0.14), transparent);
+  animation: sweep-x 3.2s linear infinite;
+}
+
+@keyframes sweep-x {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+/* ---------- ネットワーク（衛星） ---------- */
+
+.hnet {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.hnet__globe {
+  width: 100%;
+  height: 100%;
+  max-height: 150px;
+  overflow: visible;
+}
+
+.hnet__sphere {
+  fill: rgba(255, 138, 31, 0.05);
+  stroke: rgba(255, 150, 60, 0.55);
+  stroke-width: 0.8;
+}
+
+.hnet__grid {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.2);
+  stroke-width: 0.45;
+}
+
+.hnet__orbit {
+  fill: none;
+  stroke: rgba(46, 230, 255, 0.35);
+  stroke-width: 0.5;
+  stroke-dasharray: 1 3;
+  transform-origin: 70px 70px;
+  animation: spin 40s linear infinite;
+}
+
+.hnet__link path {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.25);
+  stroke-width: 0.7;
+}
+
+.hnet__link circle {
+  fill: var(--muted);
+}
+
+.hnet__link[data-on] path {
+  stroke: rgba(255, 190, 110, 0.9);
+  stroke-dasharray: 2 5;
+  animation: flow 1.8s linear infinite;
+}
+
+.hnet__link[data-on] circle {
+  fill: #ffd9a0;
+  filter: drop-shadow(0 0 2px #ff8a1f);
+}
+
+.hnet__home {
+  fill: var(--cyan);
+  filter: drop-shadow(0 0 3px var(--cyan));
+}
+
+.hnet__ping {
+  fill: none;
+  stroke: var(--cyan);
+  stroke-width: 0.8;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ping 2.4s ease-out infinite;
+}
+
+@keyframes ping {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.hnet__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.hnet__list li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hnet__list i {
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.hnet__list li[data-on] {
+  color: var(--text);
+}
+
+.hnet__list li[data-on] i {
+  background: var(--orange);
+  box-shadow: 0 0 5px var(--orange);
+}
+
+/* ---------- ニューラルメモリ ---------- */
+
+.hneural {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: visible;
+}
+
+.hneural__syn {
+  stroke: rgba(255, 150, 60, 0.12);
+  stroke-width: 0.5;
+}
+
+.hneural__syn[data-on] {
+  stroke: rgba(255, 180, 90, 0.55);
+  animation: synapse 3.6s ease-in-out infinite;
+}
+
+.hneural__node {
+  fill: rgba(255, 150, 60, 0.35);
+}
+
+.hneural__node[data-on] {
+  fill: #ffd9a0;
+  animation: synapse 2.8s ease-in-out infinite;
+}
+
+@keyframes synapse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.hquote {
+  margin: 6px 0 0;
+  font-family: var(--font-jp);
+  font-size: 11px;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+
+/* ---------- クイックアクション ---------- */
+
+.hquick {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.hquick__main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 4px 8px;
+  border: 1px solid rgba(255, 140, 40, 0.28);
+  background: linear-gradient(180deg, rgba(255, 138, 31, 0.1), rgba(255, 138, 31, 0.02));
+  color: var(--orange-hi);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.hquick__main span {
+  font-family: var(--font-brand);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #fff;
+}
+
+.hquick__main:hover {
+  color: #fff;
+  border-color: var(--orange);
+  background: linear-gradient(180deg, rgba(255, 138, 31, 0.28), rgba(255, 138, 31, 0.06));
+}
+
+.hquick__links {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(255, 140, 40, 0.16);
+}
+
+.hquick__links a,
+.hquick__links span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  color: var(--text-2);
+}
+
+.hquick__links a:hover {
+  color: var(--orange-hi);
+}
+
+.hquick__links .is-disabled {
+  opacity: 0.35;
+}
+
+/* ---------- AI コア ---------- */
+
+.aicore {
+  --size: min(100cqw, 100cqh * 0.9);
+  position: relative;
+  width: var(--size);
+  aspect-ratio: 1;
+  margin-bottom: 6%;
+}
+
+.aicore__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.aicore__line {
+  fill: none;
+  stroke: #ff9a3c;
+}
+
+.aicore__hi {
+  fill: none;
+  stroke: #ffc27a;
+  filter: drop-shadow(0 0 3px rgba(255, 150, 60, 0.9));
+}
+
+.aicore__seg {
+  fill: none;
+  stroke: #ff8a1f;
+}
+
+.aicore__node {
+  fill: #ffd9a0;
+  filter: drop-shadow(0 0 4px #ff8a1f);
+}
+
+.aicore__node--cyan {
+  fill: var(--cyan);
+  filter: drop-shadow(0 0 4px var(--cyan));
+}
+
+.aicore__deg {
+  fill: rgba(255, 190, 120, 0.8);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.aicore__spin {
+  will-change: transform;
+}
+
+.aicore__spin--ticks {
+  animation: spin 90s linear infinite;
+}
+
+.aicore__spin--segments {
+  animation: spin 48s linear infinite reverse;
+}
+
+.aicore__spin--orbit {
+  animation: spin 26s linear infinite;
+}
+
+.aicore[data-phase="waiting"] .aicore__spin--segments,
+.aicore[data-phase="streaming"] .aicore__spin--segments {
+  animation-duration: 16s;
+}
+
+.aicore__reactor {
+  position: absolute;
+  inset: 13%;
+}
+
+/* 外へ伸びるエネルギー線 */
+.aicore__beams i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: calc(var(--size) * 0.07);
+  margin-left: -1px;
+  transform-origin: 50% 0;
+  translate: 0 -1px;
+}
+
+.aicore__beams i::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  top: calc(var(--size) * 0.385);
+  background: linear-gradient(180deg, rgba(255, 200, 130, 0.95), transparent);
+  filter: drop-shadow(0 0 3px #ff8a1f);
+  animation: beam 3.6s ease-in-out infinite;
+  animation-delay: inherit;
+}
+
+@keyframes beam {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translateY(0) scaleY(0.6);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateY(6%) scaleY(1);
+  }
+}
+
+.aicore[data-speaking] .aicore__beams i::after {
+  animation-duration: 1.4s;
+}
+
+/* 周りを回る光の粒 */
+.aicore__particles span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  animation: spin linear infinite;
+}
+
+.aicore__particles span::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--size) * var(--r) / 100);
+  top: 0;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: #ffd9a0;
+  box-shadow: 0 0 6px 1px rgba(255, 150, 60, 0.9);
+}
+
+.aicore__particles span:nth-child(4n)::after {
+  background: #bff6ff;
+  box-shadow: 0 0 6px 1px rgba(46, 230, 255, 0.8);
+}
+
+.aicore__tag {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.aicore__tag--top {
+  top: 8.5%;
+}
+
+.aicore__tag b {
+  font-family: var(--font-brand);
+  font-size: max(9px, calc(var(--size) * 0.022));
+  font-weight: 400;
+  letter-spacing: 0.4em;
+  padding-left: 0.4em;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(255, 150, 60, 0.9);
+}
+
+.aicore__tag span {
+  font-family: var(--font-mono);
+  font-size: max(8px, calc(var(--size) * 0.017));
+  letter-spacing: 0.24em;
+  color: var(--green);
+}
+
+.aicore[data-phase="waiting"] .aicore__tag span,
+.aicore[data-phase="streaming"] .aicore__tag span {
+  color: var(--orange-hi);
+}
+
+/* 足元の投影台 */
+.aicore__platform {
+  position: absolute;
+  left: 50%;
+  top: 96%;
+  width: 92%;
+  aspect-ratio: 5 / 1;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.aicore__platform i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 150, 60, 0.45);
+  box-shadow: 0 0 12px rgba(255, 120, 20, 0.35), inset 0 0 12px rgba(255, 120, 20, 0.25);
+}
+
+.aicore__platform i:nth-child(1) {
+  width: 100%;
+  height: 100%;
+  border-style: dashed;
+  opacity: 0.6;
+  animation: platform 6s ease-in-out infinite;
+}
+
+.aicore__platform i:nth-child(2) {
+  width: 72%;
+  height: 72%;
+  border-width: 2px;
+}
+
+.aicore__platform i:nth-child(3) {
+  width: 42%;
+  height: 42%;
+  background: radial-gradient(ellipse, rgba(255, 170, 80, 0.35), transparent 70%);
+}
+
+@keyframes platform {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* HAND ボタンはコアの右下に */
+.home__core .hand {
+  right: 0;
+  bottom: 0;
+}
+
+/* HOME での会話の吹き出しは、コアの下に収める */
+.stage[data-view="home"] .home-dialog {
+  width: min(620px, 46%);
+}
+
+/* ---------- タブレット・スマホ：縦に並べる ---------- */
+
+@media (max-width: 999px) {
+  .home {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    overflow-y: auto;
+    padding-bottom: 12px;
+  }
+
+  .home__links {
+    display: none;
+  }
+
+  .home__core {
+    order: -1;
+    flex: none;
+    height: min(78vw, 360px);
+  }
+
+  .home__left,
+  .home__right {
+    flex: none;
+  }
+
+  .home__grow {
+    flex: none;
+  }
+
+  .home__right .home__row {
+    grid-template-columns: 1fr;
+  }
+
+  .hagents {
+    grid-auto-rows: 34px;
+  }
+}
+
+/* 狭いパネルの見出し：右の札は必ず見せ、見出しの方を省略する */
+.home .panel__head {
+  min-width: 0;
+  letter-spacing: 0.14em;
+}
+
+.home .panel__head > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home .panel__extra,
+.home .panel__head .hbadge {
+  flex: none;
+}
+
+.home .panel__rule {
+  min-width: 6px;
+}

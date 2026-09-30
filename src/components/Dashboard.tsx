@@ -15,7 +15,8 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
 import { Header } from "./Header";
 import { HomeDialog } from "./HomeDialog";
-import { Orbit, type ChatAgentStatus } from "./Orbit";
+import { HomeHud } from "./home/HomeHud";
+import type { ChatAgentStatus, QuickKind } from "./home/panels";
 import { RightPanel } from "./RightPanel";
 import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./Pages";
 import { SettingsView } from "./SettingsView";
@@ -261,11 +262,21 @@ export function Dashboard() {
 
   const navigate = useCallback((v: View) => (v === "chat" ? openChat() : setView(v)), [openChat]);
   const backToHub = useCallback(() => setView("home"), []);
+  // HOME のクイックアクション
+  const quick = useCallback(
+    (kind: QuickKind) => {
+      if (kind === "chat") openChat();
+      else if (kind === "project") setView("projects");
+      else if (kind === "task") setView("tasks");
+      else composerRef.current?.insert("について調べて");
+    },
+    [openChat],
+  );
 
   const inChat = view === "chat";
 
   return (
-    <div className="app">
+    <div className="app" data-view={view}>
       <div className="bg" aria-hidden="true">
         <div className="bg__circuit" />
         <div className="bg__scan" />
@@ -292,21 +303,19 @@ export function Dashboard() {
 
       <main className="center">
         <div className="stage" data-view={view} data-phase={chat.phase} data-voice={voice.state}>
-          <Orbit
+          <HomeHud
             phase={chat.phase}
             chatStatus={agent.status}
             onOpenChat={openChat}
+            onQuick={quick}
             hidden={view !== "home"}
-            model={agent.model}
-            context={`${chat.lastRun.contextMessages ?? 0} / ${agent.maxContext} MSG`}
-            voice={agent.tts.provider === "elevenlabs" ? "ELEVENLABS" : "BROWSER"}
+            narrow={narrow}
             brain={agent.brain}
-            calendar={!agent.calendar.configured ? "NOT SET" : agent.calendar.connected ? "LINKED" : "NOT LINKED"}
-            news={!agent.news ? "—" : agent.news.time === "off" ? "OFF" : `DAILY ${agent.news.time}`}
+            calendar={agent.calendar}
+            tts={agent.tts}
             speaking={voice.state === "speaking"}
-          >
-            {narrow && <RightPanel inline gmail={agent.calendar.connected ? agent.calendar.gmail : undefined} />}
-          </Orbit>
+            messages={chat.messages}
+          />
           <HomeDialog
             messages={chat.messages}
             phase={chat.phase}
@@ -480,7 +489,7 @@ export function Dashboard() {
         />
       </main>
 
-      {!narrow && <RightPanel gmail={agent.calendar.connected ? agent.calendar.gmail : undefined} />}
+      {!narrow && view !== "home" && <RightPanel gmail={agent.calendar.connected ? agent.calendar.gmail : undefined} />}
     </div>
   );
 }

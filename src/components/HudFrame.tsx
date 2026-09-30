@@ -5,7 +5,7 @@
  * 親要素の実寸に合わせて SVG をピクセル単位で描くので、線が常にシャープ（歪まない）。
  * 親要素は position: relative / isolation: isolate であること（.hud クラスで付与）。
  */
-import { useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 
 interface Props {
   /** 左上・右下の大きな切り欠き */
@@ -30,6 +30,7 @@ const O = 0.5; // 1px 線をピクセルグリッドに合わせる
 export function HudFrame({ cut = 14, small = 5, ticks = true, leds = false, notch = false }: Props) {
   const ref = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState<Size | null>(null);
+  const gid = `hudg${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
 
   useLayoutEffect(() => {
     const el = ref.current?.parentElement;
@@ -68,13 +69,35 @@ export function HudFrame({ cut = 14, small = 5, ticks = true, leds = false, notc
       "Z",
     ].join(" ");
 
+    // 内側の細い二重線（3px 内側）
+    const i = 3.5;
+    const inner = [
+      `M${cut + i * 0.6} ${i}`,
+      `H${r - s - i * 0.4}`,
+      `L${r - i} ${s + i * 0.4}`,
+      `V${b - cut - i * 0.6}`,
+      `L${r - cut - i * 0.6} ${b - i}`,
+      `H${s + i * 0.4}`,
+      `L${i} ${b - s - i * 0.4}`,
+      `V${cut + i * 0.6}`,
+      "Z",
+    ].join(" ");
     const accentTL = `M${O} ${O + cut + 22} V${O + cut} L${cut} ${O} H${cut + 56}`;
     const accentBR = `M${r - cut - 48} ${b} H${r - cut} L${r} ${b - cut} V${b - cut - 22}`;
 
     body = (
       <>
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" className="hud-frame__glass-top" />
+            <stop offset="0.35" className="hud-frame__glass-mid" />
+            <stop offset="1" className="hud-frame__glass-bottom" />
+          </linearGradient>
+        </defs>
         <path className="hud-frame__fill" d={outline} />
+        <path className="hud-frame__glass" d={outline} fill={`url(#${gid})`} />
         <path className="hud-frame__line" d={outline} />
+        <path className="hud-frame__inner" d={inner} />
         <path className="hud-frame__accent" d={accentTL} />
         <path className="hud-frame__accent" d={accentBR} />
         {ticks && (
