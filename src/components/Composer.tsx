@@ -14,8 +14,6 @@ import { Icon } from "./icons";
 
 export interface ComposerHandle {
   focus: () => void;
-  /** 入力欄に言葉を入れて、続きを書けるようにする（クイックアクションの SEARCH など） */
-  insert: (text: string) => void;
 }
 
 interface Props {
@@ -55,22 +53,7 @@ export const Composer = memo(
   const taRef = useRef<HTMLTextAreaElement>(null);
   const busy = phase !== "idle";
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      focus: () => taRef.current?.focus(),
-      insert: (text: string) => {
-        setValue(text);
-        requestAnimationFrame(() => {
-          const ta = taRef.current;
-          if (!ta) return;
-          ta.focus();
-          ta.setSelectionRange(0, 0); // 先頭（調べたいことを書く所）にカーソル
-        });
-      },
-    }),
-    [],
-  );
+  useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }), []);
 
   const resize = () => {
     const ta = taRef.current;

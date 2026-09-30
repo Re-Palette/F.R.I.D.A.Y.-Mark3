@@ -53,8 +53,6 @@ export interface UiMessage {
 export const CALENDAR_CHANGED = "friday:calendar-changed";
 /** 設定が変わったので状態を読み直してほしいときのイベント名 */
 export const STATUS_CHANGED = "friday:status-changed";
-/** 会話ログが増えたとき（HOME の「最近の活動」を読み直す） */
-export const ACTIVITY_CHANGED = "friday:activity";
 /** ToDo・進捗が変わったとき（右パネルを読み直す） */
 export const TASKS_CHANGED = "friday:tasks-changed";
 
@@ -364,8 +362,6 @@ export function useChat() {
                 break;
               case "done": {
                 const totalMs = Math.round(performance.now() - startedAt);
-                // 会話ログは返答のあとに脳へ書かれるので、少し待ってから HOME の「最近の活動」を読み直してもらう
-                setTimeout(() => window.dispatchEvent(new Event(ACTIVITY_CHANGED)), 4000);
                 if (!received.trim()) {
                   fail({
                     code: "EMPTY",

@@ -14,9 +14,8 @@ import { chime, pickJapaneseVoice } from "@/lib/speech";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
 import { Header } from "./Header";
-import { HomeDialog } from "./HomeDialog";
 import { HomeHud } from "./home/HomeHud";
-import type { ChatAgentStatus, QuickKind } from "./home/panels";
+import type { ChatAgentStatus } from "./home/panels";
 import { RightPanel } from "./RightPanel";
 import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./Pages";
 import { SettingsView } from "./SettingsView";
@@ -262,16 +261,6 @@ export function Dashboard() {
 
   const navigate = useCallback((v: View) => (v === "chat" ? openChat() : setView(v)), [openChat]);
   const backToHub = useCallback(() => setView("home"), []);
-  // HOME のクイックアクション
-  const quick = useCallback(
-    (kind: QuickKind) => {
-      if (kind === "chat") openChat();
-      else if (kind === "project") setView("projects");
-      else if (kind === "task") setView("tasks");
-      else composerRef.current?.insert("について調べて");
-    },
-    [openChat],
-  );
 
   const inChat = view === "chat";
 
@@ -307,21 +296,13 @@ export function Dashboard() {
             phase={chat.phase}
             chatStatus={agent.status}
             onOpenChat={openChat}
-            onQuick={quick}
             hidden={view !== "home"}
-            narrow={narrow}
             brain={agent.brain}
             calendar={agent.calendar}
-            tts={agent.tts}
-            speaking={voice.state === "speaking"}
-            messages={chat.messages}
-          />
-          <HomeDialog
-            messages={chat.messages}
-            phase={chat.phase}
             voiceState={voice.state}
-            hidden={view !== "home"}
-            onOpenChat={openChat}
+            messages={chat.messages}
+            lastRun={chat.lastRun}
+            maxContext={agent.maxContext}
           />
           <ProjectsPage hidden={view !== "projects"} />
           <TasksPage hidden={view !== "tasks"} />

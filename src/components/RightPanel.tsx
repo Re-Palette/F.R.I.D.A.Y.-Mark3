@@ -37,7 +37,7 @@ const DAY_EN = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const dayEn = (date: string) => DAY_EN[new Date(`${date}T12:00:00Z`).getUTCDay()];
 
 /** 天気（Open-Meteo）。取れなければサンプル表示 */
-function WeatherPanel() {
+export function WeatherPanel() {
   const [weather, setWeather] = useState<WeatherReport | null>(null);
   useEffect(() => {
     let alive = true;

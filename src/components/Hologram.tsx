@@ -22,10 +22,21 @@ const CYAN = 0x2ee6ff;
 const R = 1.5;
 
 type Three = typeof import("three");
-export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaking: boolean; active: boolean }) {
+export function Hologram({
+  phase,
+  speaking,
+  active,
+  modelOnly = false,
+}: {
+  phase: ChatPhase;
+  speaking: boolean;
+  active: boolean;
+  /** 地球儀は出さず、「〇〇のホログラム」を作ったときだけ描く */
+  modelOnly?: boolean;
+}) {
   const box = useRef<HTMLDivElement>(null);
-  const live = useRef({ phase, speaking, active });
-  live.current = { phase, speaking, active };
+  const live = useRef({ phase, speaking, active, modelOnly });
+  live.current = { phase, speaking, active, modelOnly };
   const [failed, setFailed] = useState(false);
   const hs = useHoloState();
   // 拡大表示の枠は body に出す。サーバーの HTML と食い違わないよう、表示後に出す
@@ -344,9 +355,20 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
       let energy = 0; // 考え中・話し中の勢い（0〜1、なめらかに変える）
       let slow = 0.016;
       let voice = 0;
+      let blank = false;
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
         const { phase: ph, speaking: talk, active: on } = live.current;
+        // 地球儀なしの表示で、作ったホログラムも無いときは何も描かない（一度だけ消して止める）
+        if (live.current.modelOnly && !shown && canvas.parentElement === el) {
+          if (!blank) {
+            renderer.clear();
+            blank = true;
+          }
+          last = now;
+          return;
+        }
+        blank = false;
         if (!on || !onScreen || document.hidden) {
           last = now;
           return;
@@ -392,10 +414,13 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         // 話している間は声に合わせて脈打つ
         // 作ったホログラムがあるときは、地球儀とコアを隠してそれを見せる
         const modelOn = Boolean(shown);
-        globe.visible = dots.visible = core.visible = shell.visible = !modelOn;
+        // 地球儀なしの表示（拡大表示の枠の中では、作成中の演出として地球儀も出す）
+        const bare = live.current.modelOnly && canvas.parentElement === el;
+        globe.visible = dots.visible = core.visible = shell.visible = !modelOn && !bare;
+        scan.visible = !bare || modelOn;
         pedestal.visible = modelOn;
-        for (const r of rings) r.holder.visible = !modelOn;
-        halo.visible = !modelOn || hstate.status === "loading";
+        for (const r of rings) r.holder.visible = !modelOn && !bare;
+        halo.visible = !bare && (!modelOn || hstate.status === "loading");
         if (shown) {
           appear = Math.min(1, appear + dt * 1.6);
           shown.pivot.rotation.y += dt * 0.3 * (calm ? 0.4 : 1);
