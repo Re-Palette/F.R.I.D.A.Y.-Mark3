@@ -746,3 +746,239 @@
   font-weight: 600;
   letter-spacing: 0.12em;
 }
+
+/* ==========================================================================
+   メカニカル仕上げ：金属・ボルト・歯車・目盛り・LED
+   ========================================================================== */
+
+/* ---------- パネルの枠：ボルトと通気口 ---------- */
+
+.hud-frame__bolts circle {
+  fill: #2a2d33;
+  stroke: rgba(255, 170, 90, 0.35);
+  stroke-width: 0.8;
+}
+
+.hud-frame__bolts path {
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 0.9;
+}
+
+.hud-frame__vents path {
+  stroke: rgba(255, 150, 60, 0.35);
+  stroke-width: 1.4;
+}
+
+/* ---------- コア ---------- */
+
+.rx-bracket {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.4);
+  stroke-width: 1.6;
+}
+
+.rx-housing {
+  fill: none;
+  stroke: url(#rx-metal);
+  stroke-width: 20;
+}
+
+.rx-edge {
+  fill: none;
+  stroke: rgba(255, 170, 90, 0.35);
+  stroke-width: 1;
+}
+
+.rx-edge--in {
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 2;
+}
+
+.rx-clamp {
+  stroke: rgba(255, 170, 90, 0.45);
+  stroke-width: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.8));
+}
+
+.rx-groove {
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 1.4;
+}
+
+.rx-bolt {
+  stroke: rgba(0, 0, 0, 0.9);
+  stroke-width: 0.8;
+}
+
+.rx-bolt__slot {
+  stroke: rgba(0, 0, 0, 0.9);
+  stroke-width: 1.1;
+}
+
+.rx-gear {
+  stroke: rgba(255, 160, 80, 0.28);
+  stroke-width: 0.8;
+}
+
+.rx-dial {
+  fill: #08090b;
+  stroke: rgba(255, 150, 60, 0.3);
+  stroke-width: 1;
+}
+
+.rx-tick {
+  stroke: rgba(255, 170, 100, 0.35);
+  stroke-width: 0.8;
+}
+
+.rx-tick--major {
+  stroke: #ffb458;
+  stroke-width: 1.6;
+}
+
+.rx-num {
+  fill: rgba(255, 190, 130, 0.75);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.rx-plate {
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 0.8;
+}
+
+.rx-plate--hot {
+  filter: drop-shadow(0 0 4px rgba(255, 120, 20, 0.7));
+}
+
+.rx-bevel {
+  fill: rgba(255, 255, 255, 0.1);
+}
+
+.rx-bevel--hot {
+  fill: rgba(255, 235, 200, 0.55);
+}
+
+.rx-seam {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.3);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.rx-bezel {
+  stroke: rgba(0, 0, 0, 0.9);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.9));
+}
+
+.rx-knurl {
+  stroke: rgba(255, 170, 100, 0.3);
+  stroke-width: 1.2;
+}
+
+.rx-inner {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.22);
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+
+.rx-cross {
+  stroke: rgba(255, 170, 100, 0.55);
+  stroke-width: 1.4;
+}
+
+.reactor__spin {
+  filter: none;
+}
+
+.reactor__spin--gear {
+  animation: spin 160s linear infinite;
+}
+
+.reactor__spin--dial {
+  animation: spin 240s linear infinite reverse;
+}
+
+/* 中心の円が小さくなった分、くさびとホログラムの枠を合わせる（半径 148 / 300） */
+.reactor__sweep,
+.reactor__holo {
+  inset: calc(50% - 24.67%);
+}
+
+.reactor__name {
+  font-size: 5.6cqw;
+}
+
+.reactor__kicker,
+.reactor__tag {
+  font-size: 1.5cqw;
+}
+
+/* ---------- メーター：目盛り付きの金属の縁 ---------- */
+
+.gauge__bezel {
+  fill: #0c0d10;
+  stroke: rgba(255, 160, 80, 0.3);
+  stroke-width: 1;
+}
+
+.gauge__tick {
+  stroke: rgba(255, 170, 100, 0.45);
+  stroke-width: 0.7;
+}
+
+/* ---------- レーダー：目盛りと方位の縁 ---------- */
+
+.radar svg {
+  width: 200px;
+  height: 200px;
+  margin-left: 0;
+}
+
+.radar__sweep {
+  animation: none;
+  transform-origin: 0 0;
+}
+
+.radar__bezel {
+  fill: #0a0b0d;
+  stroke: rgba(255, 160, 80, 0.35);
+  stroke-width: 1;
+}
+
+.radar__tick {
+  stroke: rgba(255, 170, 100, 0.4);
+  stroke-width: 0.8;
+}
+
+.radar__deg {
+  fill: rgba(255, 190, 130, 0.7);
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+
+/* ---------- 状態のバー：LED の並び ---------- */
+
+.sstatus__leds {
+  display: grid !important;
+  grid-template-columns: repeat(20, 1fr);
+  gap: 2px;
+  height: 7px !important;
+  background: none !important;
+}
+
+.sstatus__leds em {
+  display: block;
+  height: 100%;
+  background: rgba(255, 140, 40, 0.12);
+  box-shadow: none;
+  transform: skewX(-20deg);
+}
+
+.sstatus__leds em[data-on] {
+  background: linear-gradient(180deg, #ffc07a, #ff8a1f 60%, #c05200);
+  box-shadow: 0 0 4px rgba(255, 138, 31, 0.6);
+}

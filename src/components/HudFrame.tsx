@@ -108,6 +108,29 @@ export function HudFrame({ cut = 14, small = 5, ticks = true, leds = false, notc
             })}
           </g>
         )}
+        {/* 四隅のボルトと、右上の通気口（メカニカルな部品らしさ） */}
+        {w > 90 && h > 50 && (
+          <g className="hud-frame__bolts">
+            {[
+              [cut * 0.55 + 7, 7],
+              [r - 8, s + 8],
+              [r - cut * 0.55 - 7, b - 7],
+              [8, b - s - 8],
+            ].map(([x, y], k) => (
+              <g key={k}>
+                <circle cx={x} cy={y} r="2.4" />
+                <path d={`M${x - 1.4} ${y}H${x + 1.4}`} />
+              </g>
+            ))}
+          </g>
+        )}
+        {w > 160 && (
+          <g className="hud-frame__vents">
+            {[0, 1, 2, 3].map((k) => (
+              <path key={k} d={`M${r - s - 30 + k * 5} ${b - 3} l4 -6`} />
+            ))}
+          </g>
+        )}
         {leds && (
           <g className="hud-frame__leds">
             {[0, 1, 2].map((i) => (

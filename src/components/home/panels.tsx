@@ -63,6 +63,12 @@ function Gauge({ value, ratio, label, title }: { value: string; ratio: number; l
   return (
     <div className="gauge" title={title}>
       <svg viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="23" className="gauge__bezel" />
+        {Array.from({ length: 24 }, (_, i) => {
+          const a = (i / 24) * Math.PI * 2;
+          const r1 = i % 6 === 0 ? 20.6 : 21.6;
+          return <line key={i} x1={24 + Math.cos(a) * r1} y1={24 + Math.sin(a) * r1} x2={24 + Math.cos(a) * 23} y2={24 + Math.sin(a) * 23} className="gauge__tick" />;
+        })}
         <circle cx="24" cy="24" r={r} className="gauge__track" />
         <circle cx="24" cy="24" r={r} className="gauge__fill" strokeDasharray={`${Math.max(0.02, Math.min(1, ratio)) * len} ${len}`} />
       </svg>
@@ -99,13 +105,28 @@ export function RadarLocal() {
     : "";
   return (
     <div className="radar">
-      <svg viewBox="0 0 180 180" aria-hidden="true">
+      <svg viewBox="-18 -18 216 216" aria-hidden="true">
+        <circle cx="90" cy="90" r="98" className="radar__bezel" />
+        {Array.from({ length: 72 }, (_, i) => {
+          const a = ((i * 5 - 90) * Math.PI) / 180;
+          const r1 = i % 6 === 0 ? 90 : 94;
+          return <line key={i} x1={90 + Math.cos(a) * r1} y1={90 + Math.sin(a) * r1} x2={90 + Math.cos(a) * 98} y2={90 + Math.sin(a) * 98} className="radar__tick" />;
+        })}
+        {[0, 90, 180, 270].map((d) => {
+          const a = ((d - 90) * Math.PI) / 180;
+          return (
+            <text key={d} x={90 + Math.cos(a) * 105} y={90 + Math.sin(a) * 105} className="radar__deg" textAnchor="middle" dominantBaseline="middle">
+              {String(d).padStart(3, "0")}
+            </text>
+          );
+        })}
         {[86, 64, 42, 20].map((r) => (
           <circle key={r} cx="90" cy="90" r={r} className="radar__ring" />
         ))}
         <path d="M90 4V176M4 90H176" className="radar__ring" />
         <g className="radar__sweep">
           <path d="M90 90 L90 4 A86 86 0 0 1 150.8 29.2 Z" />
+          <animateTransform attributeName="transform" type="rotate" from="0 90 90" to="360 90 90" dur="5s" repeatCount="indefinite" />
         </g>
         <circle cx="118" cy="62" r="2.4" className="radar__blip" />
         <circle cx="70" cy="112" r="1.8" className="radar__blip radar__blip--b" />
@@ -152,8 +173,10 @@ export function SystemStatus({
           <li key={r.label}>
             <span>{r.label}</span>
             <b>{r.value}</b>
-            <i>
-              <em style={{ transform: `scaleX(${r.ratio})` }} />
+            <i className="sstatus__leds">
+              {Array.from({ length: 20 }, (_, k) => (
+                <em key={k} data-on={k < Math.round(r.ratio * 20) || undefined} />
+              ))}
             </i>
           </li>
         ))}
