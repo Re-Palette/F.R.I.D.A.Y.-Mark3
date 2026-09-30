@@ -4,7 +4,7 @@
  * HOME 中央の F.R.I.D.A.Y. CORE（平面の HUD ＋ ほんの少しの奥行き）。
  *   外周：細い HUD リング・角度マーカー・回路ライン／回る目盛り
  *   区切りリング 3 層（一部のセグメントが周期的に点灯）／周回する光の粒
- *   中心：ガラスの円・スキャンライン・状態を示す弧・F.R.I.D.A.Y. と状態の文字
+ *   中心：ガラスの円・光る粒の球（状態で動きが変わる）・状態を示す弧・F.R.I.D.A.Y. と状態の文字
  * 考え中・返答中は発光が強まり、声を聞いている間は内側のリングが脈打つ。
  * 「〇〇のホログラム」を作ったときだけ、中心に 3D ホログラムが浮かぶ。
  */
@@ -12,6 +12,8 @@ import type { ChatPhase, ChatStage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import { useHoloState } from "@/lib/hologram-model";
 import { Hologram } from "../Hologram";
+import { ParticleCore, type CoreMode } from "./ParticleCore";
+import { MODE_LABEL } from "./readouts";
 
 const C = 300;
 const polar = (r: number, deg: number) => {
@@ -62,15 +64,14 @@ const CIRCUITS = [32, 58, 122, 148, 212, 238, 302, 328].map((d, k) => {
   return { d: `M${f(x1)} ${f(y1)}L${f(x2)} ${f(y2)}L${f(x3)} ${f(y3)}`, dot: [x3, y3] as const };
 });
 
-const STATUS: Record<string, string> = {
-  idle: "STANDBY",
-  listening: "LISTENING",
-  connect: "LINKING",
-  think: "THINKING",
-  search: "SEARCHING",
-  create: "GENERATING",
-  speaking: "SPEAKING",
-};
+/** いまの状態（待機・聞き取り・接続・考え中・検索・返事の作成・読み上げ） */
+export function coreMode(phase: ChatPhase, stage: ChatStage, voiceState: VoiceState): CoreMode {
+  if (phase === "streaming") return "create";
+  if (phase === "waiting") return stage ?? "think";
+  if (voiceState === "speaking") return "speaking";
+  if (voiceState === "listening") return "listening";
+  return "idle";
+}
 
 export function Reactor({
   phase,
@@ -86,7 +87,7 @@ export function Reactor({
   const holo = useHoloState();
   const modelShown = holo.status === "ready" || holo.status === "loading";
   const speaking = voiceState === "speaking";
-  const mode = phase === "streaming" ? "create" : phase === "waiting" ? (stage ?? "think") : speaking ? "speaking" : voiceState === "listening" ? "listening" : "idle";
+  const mode = coreMode(phase, stage, voiceState);
   return (
     <div className="reactor" data-phase={phase} data-mode={mode} data-speaking={speaking || undefined} data-model={modelShown || undefined}>
       {/* 静止の外周：四隅の枠・細い HUD リング・角度マーカー・回路ライン */}
@@ -168,13 +169,16 @@ export function Reactor({
         <Hologram phase={phase} speaking={speaking} active={active} modelOnly />
       </div>
 
+      {/* 中心の光る粒（作ったホログラムを出している間は隠す） */}
+      <div className="reactor__core">
+        <ParticleCore mode={mode} active={active && !modelShown} />
+      </div>
+
       <div className="reactor__label">
-        <span className="reactor__kicker">AI ASSISTANT</span>
         <b className="reactor__name">F.R.I.D.A.Y.</b>
-        <span className="reactor__tag">FOR A BETTER TOMORROW</span>
         <span className="reactor__state">
           <i />
-          {STATUS[mode]}
+          {MODE_LABEL[mode]}
         </span>
       </div>
     </div>

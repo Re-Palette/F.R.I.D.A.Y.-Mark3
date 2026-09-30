@@ -295,6 +295,10 @@ export function Dashboard() {
         </div>
         <div className="bg__noise" />
       </div>
+      {/* 画面全体を囲む HUD の枠（HOME のときだけ見せる） */}
+      <svg className="screen-frame" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 40V8L8 0H300M700 0H992L1000 8V40M1000 960V992L992 1000H700M300 1000H8L0 992V960" />
+      </svg>
 
       <Header />
 
@@ -315,6 +319,7 @@ export function Dashboard() {
             stage={chat.stage}
             chatStatus={agent.status}
             onOpenChat={openChat}
+            onNavigate={navigate}
             hidden={view !== "home"}
             brain={agent.brain}
             calendar={agent.calendar}

@@ -227,19 +227,18 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   認識はブラウザの中だけで行い、カメラの映像はどこにも送りません。HOME を離れるとカメラを止めます。
   認識用の wasm は `npm run build` の前に `scripts/copy-mediapipe.mjs` が `public/mediapipe/` にコピーし、モデルは Google から読み込みます。
 
-### HOME（Personal AI Command Center）
+### HOME（ミニマル HUD）
 
-- 中央：F.R.I.D.A.Y. CORE。細い HUD リング・角度マーカー・回路ライン・回る目盛り・区切りリング 3 層（一部が周期的に点灯）・
-  周回する光の粒・円の中のスキャンライン・状態を示す弧と文字（STANDBY / THINKING / SEARCHING / LINKING / GENERATING / LISTENING / SPEAKING）。
-  処理中は発光が強まり、声を聞いている間は内側の弧が脈打ちます。作ったホログラムはコアの中心に浮かびます。
-- コアの周りの処理ノード：THINK / CONNECT / SEARCH / CREATE。チャットの処理段階（`stage` イベント）に合わせて光ります
-  （外部の情報を集め中 → CONNECT、検索中 → SEARCH、考え中 → THINK、返答を書いている → CREATE）。
-- 左：メーター（エージェント・ノート・ToDo・文脈）／レーダーと現在地・時刻／SYSTEM STATUS（ランプ・状態・流れるバー・応答時間）。
-- 右：天気／AGENT ROSTER（ONLINE / STANDBY / PROCESSING / OFFLINE とサマリー）／INCOMING（今日の予定・24 時間以内のリマインダー・
-  期限の ToDo・ニュースの時間。すべて既存のデータから）。
-- 下：RESPONSE（処理状態・応答時間 RT・CHAT →）と入力欄（マイクの周りの輪が聞き取り中・話し中に反応）。
-- 背景：細かいグリッド・回路・データライン・漂う光の粒・微細なノイズ・ごく薄い遠景の都市（CSS / SVG のみ）。
-- スマホ・タブレットでは、コア → 処理ノード → RESPONSE → 左 → 右 の順に縦に並べます。
+- 主役は中央の F.R.I.D.A.Y. CORE。HUD リングの中心で光る粒の球（canvas 2D、30fps、裏のタブでは止まる）が状態で動きを変えます：
+  STANDBY（ゆっくり呼吸）／LISTENING（表面が波打つ）／THINKING（渦を巻く）／SEARCHING（光の帯が走査）／
+  PROCESSING（縮んで広がる）／RESPONDING（中心から光の波）。作ったホログラムはコアの中心に浮かびます。
+- 画面全体をオレンジの HUD 枠で囲み、メニューは HOME ではアイコンだけの細いレールになります（ほかの画面では今まで通り）。
+- 上：タブ AGENTS / NOTES / TASKS / CONTEXT（数字つき）。AGENTS はエージェント一覧を小窓で開き、ほかは MEMORY / TASKS / CHAT へ。
+- 左：SYSTEM STATUS（この端末の CPU＝画面の処理の重さ・メモリ・保存領域・通信）／CURRENT MODE／接続の短いバー（AI・脳・カレンダー・応答時間）／左下に現在地。
+- 右：レーダー／VOICE ACTIVITY（直近 1 分のうち聞く・考える・話すをしていた割合と波形）／NOTIFICATIONS（予定・リマインダー・期限の ToDo・ニュースを近い順に 3 件）。
+- 下：ACTIVITY LIVE（直近 2 時間の会話の量を 5 分ごとの棒で）。話しかけると、ここが RESPONSE パネルに変わり、
+  ① 要約（返事の本文）→ ② 関連 Web ページ（SOURCES）の順に表示します。× で閉じ、次に話しかけるとまた開きます。
+- 数字はすべて実データ（取れないものは「—」）。スマホ・タブレットでは タブ → コア → 返事 → 左 → 右 の順に縦に並べます。
 
 ### 「〇〇の 3D ホログラムを作って」
 
