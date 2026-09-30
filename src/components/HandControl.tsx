@@ -23,6 +23,47 @@ const BONES = [
 
 type Status = "off" | "loading" | "ready" | "error";
 
+/** 手の認識の間隔（ミリ秒）。約 15 回/秒で手の操作には十分。描画はホログラム側でなめらかに補う */
+const FRAME_MS = 66;
+
+/** 認識用の Worker（public/hand-worker.mjs）を起動して、準備ができたら返す */
+function startWorker(): Promise<Worker> {
+  return new Promise((resolve, reject) => {
+    let worker: Worker;
+    try {
+      worker = new Worker("/hand-worker.mjs", { type: "module" });
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    const fail = (why: unknown) => {
+      clearTimeout(limit);
+      worker.terminate();
+      reject(why);
+    };
+    const limit = setTimeout(() => fail(new Error("timeout")), 30_000);
+    worker.onerror = (e) => fail(e);
+    worker.onmessage = (e: MessageEvent<{ type: string; message?: string }>) => {
+      if (e.data.type === "ready") {
+        clearTimeout(limit);
+        worker.onerror = null;
+        resolve(worker);
+      } else if (e.data.type === "error") fail(new Error(e.data.message));
+    };
+    worker.postMessage({ type: "init", model: MODEL });
+  });
+}
+
+/** 1 コマ送って、手の 21 点を受け取る */
+function askWorker(worker: Worker, bitmap: ImageBitmap, time: number): Promise<Point[][]> {
+  return new Promise((resolve) => {
+    worker.onmessage = (e: MessageEvent<{ type: string; landmarks?: Point[][] }>) => {
+      if (e.data.type === "result") resolve(e.data.landmarks ?? []);
+    };
+    worker.postMessage({ type: "frame", bitmap, time }, [bitmap]);
+  });
+}
+
 /* 拡大表示の画面からもオン・オフできるよう、状態を外に出しておく */
 const TOGGLE = "friday:hand-toggle";
 let shared: Status = "off";
@@ -62,13 +103,15 @@ export function HandControl({ hidden }: { hidden: boolean }) {
     setStatus("loading");
     setMessage("カメラと手の認識を準備しています…");
     let stream: MediaStream | null = null;
-    let raf = 0;
+    let timer = 0;
+    let worker: Worker | null = null;
     let landmarker: { close(): void; detectForVideo(v: HTMLVideoElement, t: number): { landmarks: Point[][] } } | null = null;
     let stopped = false;
     stopRef.current = () => {
       stopped = true;
-      cancelAnimationFrame(raf);
+      clearTimeout(timer);
       stream?.getTracks().forEach((t) => t.stop());
+      worker?.postMessage({ type: "close" });
       landmarker?.close();
     };
     try {
@@ -79,44 +122,58 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       video.srcObject = stream;
       await video.play();
 
-      const { FilesetResolver, HandLandmarker } = await import("@mediapipe/tasks-vision");
-      const files = await FilesetResolver.forVisionTasks(WASM);
-      const make = (delegate: "GPU" | "CPU") =>
-        HandLandmarker.createFromOptions(files, {
-          baseOptions: { modelAssetPath: MODEL, delegate },
-          runningMode: "VIDEO",
-          numHands: 2,
-        });
-      landmarker = await make("GPU").catch(() => make("CPU"));
+      // 認識は別の作業場所（Worker）で。使えない環境では画面側で（回数を絞って）動かす
+      worker = await startWorker().catch(() => null);
+      if (!worker) {
+        const { FilesetResolver, HandLandmarker } = await import("@mediapipe/tasks-vision");
+        const files = await FilesetResolver.forVisionTasks(WASM);
+        const make = (delegate: "GPU" | "CPU") =>
+          HandLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO", numHands: 2 });
+        landmarker = await make("GPU").catch(() => make("CPU"));
+      }
       if (stopped) {
-        landmarker.close();
+        stopRef.current();
         return;
       }
       setStatus("ready");
       setMessage("");
 
       const tracker = new GestureTracker();
-      let lastVideoTime = -1;
       let lastCount = 0;
-      const loop = () => {
-        raf = requestAnimationFrame(loop);
-        if (video.readyState < 2 || video.currentTime === lastVideoTime || !landmarker) return;
-        lastVideoTime = video.currentTime;
+      const apply = (landmarks: Point[][]) => {
         const now = performance.now();
-        const result = landmarker.detectForVideo(video, now);
-        for (const ev of tracker.update(result.landmarks, now)) {
+        for (const ev of tracker.update(landmarks, now)) {
           if (ev.type === "rotate") rotateBy(ev.dx, ev.dy);
           else if (ev.type === "zoom") zoomBy(ev.factor);
           else resetView();
         }
         holo.cursors = tracker.cursors;
-        if (result.landmarks.length !== lastCount) {
-          lastCount = result.landmarks.length;
+        if (landmarks.length !== lastCount) {
+          lastCount = landmarks.length;
           setHands(lastCount);
         }
-        draw(canvasRef.current, video, result.landmarks, tracker.cursors.map((c) => c.pinching));
+        draw(canvasRef.current, video, landmarks, tracker.cursors.map((c) => c.pinching));
       };
-      loop();
+
+      // 1 秒に約 15 回。前の認識が終わってから次のコマを送る（重なって溜まらないように）
+      const next = (wait: number) => {
+        if (!stopped) timer = window.setTimeout(tick, wait);
+      };
+      const tick = async () => {
+        const began = performance.now();
+        if (video.readyState < 2) return next(FRAME_MS);
+        if (worker) {
+          const bitmap = await createImageBitmap(video, { resizeWidth: 256, resizeHeight: 192 }).catch(() => null);
+          if (!bitmap || stopped) return next(FRAME_MS);
+          const landmarks = await askWorker(worker, bitmap, began);
+          if (stopped) return;
+          apply(landmarks);
+        } else if (landmarker) {
+          apply(landmarker.detectForVideo(video, began).landmarks);
+        }
+        next(Math.max(0, FRAME_MS - (performance.now() - began)));
+      };
+      next(0);
     } catch (err) {
       stopRef.current();
       const name = (err as { name?: string }).name;
@@ -191,10 +248,9 @@ function draw(canvas: HTMLCanvasElement | null, video: HTMLVideoElement, hands: 
   g.clearRect(0, 0, w, h);
   g.translate(w, 0);
   g.scale(-1, 1);
-  g.globalAlpha = 0.35;
-  g.filter = "grayscale(1) contrast(1.2)";
+  // 映像は薄く重ねるだけ（色を変える加工は重いので使わない）
+  g.globalAlpha = 0.3;
   g.drawImage(video, 0, 0, w, h);
-  g.filter = "none";
   g.globalAlpha = 1;
   g.fillStyle = "rgba(255,120,20,0.18)";
   g.fillRect(0, 0, w, h);

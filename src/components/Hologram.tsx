@@ -112,7 +112,9 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         setFailed(true);
         return;
       }
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+      // 高解像度の画面でも描く点の数を抑える（拡大表示は面積が大きいのでさらに控えめに）
+      const pixelRatio = () => Math.min(window.devicePixelRatio || 1, getHoloState().expanded ? 1.25 : 1.5);
+      renderer.setPixelRatio(pixelRatio());
       renderer.setClearColor(0x000000, 0);
       el.appendChild(renderer.domElement);
 
@@ -317,6 +319,7 @@ export function Hologram({ phase, speaking, active }: { phase: ChatPhase; speaki
         }
         const target = st.expanded ? document.querySelector<HTMLElement>(".holo-stage__canvas") : el;
         if (target && canvas.parentElement !== target) {
+          renderer.setPixelRatio(pixelRatio());
           target.appendChild(canvas);
           ro.disconnect();
           ro.observe(target);

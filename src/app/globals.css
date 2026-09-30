@@ -3631,8 +3631,8 @@ ol.settings__note {
   z-index: 60;
   display: none;
   place-items: center;
-  background: radial-gradient(circle at 50% 50%, rgba(10, 30, 40, 0.55), rgba(2, 3, 5, 0.88) 70%);
-  backdrop-filter: blur(3px);
+  /* 後ろをぼかす加工は毎フレーム計算し直して重いので使わず、濃いめの色で隠す */
+  background: radial-gradient(circle at 50% 50%, rgba(8, 24, 32, 0.9), rgba(2, 3, 5, 0.96) 70%);
 }
 
 .holo-stage[data-open] {
@@ -3756,4 +3756,9 @@ ol.settings__note {
     right: 0;
     bottom: 26px;
   }
+}
+
+/* 拡大表示の間は、後ろに隠れた画面のアニメーションを止めて軽くする */
+body:has(.holo-stage[data-open]) .app * {
+  animation-play-state: paused !important;
 }
