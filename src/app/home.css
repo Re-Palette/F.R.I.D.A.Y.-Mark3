@@ -907,3 +907,8 @@
 .rpanel__q {
   color: #ffae5e;
 }
+
+/* コアを少しだけ小さく（今の 9 割ほど） */
+.reactor {
+  width: min(88cqw, calc((100cqh - 34px) * 0.88));
+}
