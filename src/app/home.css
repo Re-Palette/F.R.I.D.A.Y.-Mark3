@@ -748,237 +748,162 @@
 }
 
 /* ==========================================================================
-   メカニカル仕上げ：金属・ボルト・歯車・目盛り・LED
+   光るオレンジの未来的な仕上げ（金属は使わず、発光と半透明のオレンジで）
    ========================================================================== */
 
-/* ---------- パネルの枠：ボルトと通気口 ---------- */
-
-.hud-frame__bolts circle {
-  fill: #2a2d33;
-  stroke: rgba(255, 170, 90, 0.35);
-  stroke-width: 0.8;
+/* 背景：ほぼ黒に細いグリッド、コアの後ろにだけ大きなオレンジの光 */
+.bg {
+  background:
+    radial-gradient(circle at 50% 46%, rgba(255, 110, 20, 0.16), rgba(255, 90, 0, 0.04) 32%, transparent 55%),
+    linear-gradient(180deg, #070707 0%, #050505 60%, #030303 100%);
 }
 
-.hud-frame__bolts path {
-  stroke: rgba(0, 0, 0, 0.8);
-  stroke-width: 0.9;
+.bg__circuit,
+.bg__streaks {
+  display: none;
 }
 
-.hud-frame__vents path {
-  stroke: rgba(255, 150, 60, 0.35);
-  stroke-width: 1.4;
+/* パネル：オレンジがかった半透明の板に、細いオレンジの線 */
+.hud-frame__fill {
+  fill: rgba(42, 17, 4, 0.62);
 }
 
-/* ---------- コア ---------- */
-
-.rx-bracket {
-  fill: none;
-  stroke: rgba(255, 150, 60, 0.4);
-  stroke-width: 1.6;
+.hud-frame__glass-top {
+  stop-color: rgba(255, 130, 40, 0.14);
 }
 
-.rx-housing {
-  fill: none;
-  stroke: url(#rx-metal);
-  stroke-width: 20;
+.hud-frame__glass-mid {
+  stop-color: rgba(255, 130, 40, 0.04);
 }
 
-.rx-edge {
-  fill: none;
-  stroke: rgba(255, 170, 90, 0.35);
-  stroke-width: 1;
+.hud-frame__line {
+  stroke: rgba(255, 140, 40, 0.75);
+  filter: drop-shadow(0 0 3px rgba(255, 120, 20, 0.55));
 }
 
-.rx-edge--in {
-  stroke: rgba(0, 0, 0, 0.8);
-  stroke-width: 2;
+.hud-frame__inner {
+  stroke: rgba(255, 150, 60, 0.12);
 }
 
-.rx-clamp {
-  stroke: rgba(255, 170, 90, 0.45);
-  stroke-width: 1;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.8));
+.spanel__head {
+  border-bottom-color: rgba(255, 140, 40, 0.3);
+  text-shadow: 0 0 6px rgba(255, 120, 20, 0.6);
 }
 
-.rx-groove {
-  stroke: rgba(0, 0, 0, 0.7);
-  stroke-width: 1.4;
+.roster li,
+.roster button {
+  color: rgba(255, 200, 150, 0.45);
 }
 
-.rx-bolt {
-  stroke: rgba(0, 0, 0, 0.9);
-  stroke-width: 0.8;
+.roster li[data-on],
+.roster li[data-on] button {
+  color: #ffd2a6;
 }
 
-.rx-bolt__slot {
-  stroke: rgba(0, 0, 0, 0.9);
-  stroke-width: 1.1;
+.sstatus span {
+  color: rgba(255, 190, 130, 0.85);
 }
 
-.rx-gear {
-  stroke: rgba(255, 160, 80, 0.28);
-  stroke-width: 0.8;
+.sstatus i {
+  height: 3px;
+  background: rgba(255, 140, 40, 0.16);
 }
 
-.rx-dial {
-  fill: #08090b;
-  stroke: rgba(255, 150, 60, 0.3);
-  stroke-width: 1;
+.sstatus em {
+  background: linear-gradient(90deg, #ff6a00, #ffa54f);
+  box-shadow: 0 0 8px rgba(255, 120, 20, 0.9);
 }
 
-.rx-tick {
-  stroke: rgba(255, 170, 100, 0.35);
-  stroke-width: 0.8;
+.gauge__track {
+  stroke: rgba(255, 140, 40, 0.18);
 }
 
-.rx-tick--major {
-  stroke: #ffb458;
-  stroke-width: 1.6;
+.gauge__fill {
+  filter: drop-shadow(0 0 5px rgba(255, 120, 20, 0.95));
 }
 
-.rx-num {
-  fill: rgba(255, 190, 130, 0.75);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+.gauge b {
+  color: #ffe2c4;
+  text-shadow: 0 0 6px rgba(255, 130, 40, 0.8);
 }
 
-.rx-plate {
-  stroke: rgba(0, 0, 0, 0.85);
-  stroke-width: 0.8;
+.gauge span,
+.radar__local span {
+  color: rgba(255, 190, 130, 0.8);
 }
 
-.rx-plate--hot {
-  filter: drop-shadow(0 0 4px rgba(255, 120, 20, 0.7));
+.radar__ring {
+  stroke: rgba(255, 140, 40, 0.35);
 }
 
-.rx-bevel {
-  fill: rgba(255, 255, 255, 0.1);
+.radar__sweep path {
+  fill: rgba(255, 150, 60, 0.3);
 }
 
-.rx-bevel--hot {
-  fill: rgba(255, 235, 200, 0.55);
+/* コア：発光するオレンジの区切りと、中心の周りの光の輪 */
+.reactor::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 26%, rgba(255, 120, 20, 0.42) 28.4%, rgba(255, 100, 10, 0.12) 33%, transparent 42%);
+  pointer-events: none;
 }
 
-.rx-seam {
-  fill: none;
-  stroke: rgba(255, 150, 60, 0.3);
-  stroke-width: 1;
-  stroke-dasharray: 2 4;
+.reactor__hot {
+  stroke: #ff8a1f;
 }
 
-.rx-bezel {
-  stroke: rgba(0, 0, 0, 0.9);
-  stroke-width: 2;
-  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.9));
-}
-
-.rx-knurl {
-  stroke: rgba(255, 170, 100, 0.3);
-  stroke-width: 1.2;
-}
-
-.rx-inner {
-  fill: none;
-  stroke: rgba(255, 150, 60, 0.22);
-  stroke-width: 1;
-  stroke-dasharray: 1 3;
-}
-
-.rx-cross {
-  stroke: rgba(255, 170, 100, 0.55);
-  stroke-width: 1.4;
+.reactor__cold {
+  stroke: rgba(150, 95, 60, 0.3);
 }
 
 .reactor__spin {
-  filter: none;
+  filter: drop-shadow(0 0 7px rgba(255, 110, 10, 0.85));
 }
 
-.reactor__spin--gear {
-  animation: spin 160s linear infinite;
+.reactor__dots {
+  stroke: rgba(255, 140, 40, 0.7);
 }
 
-.reactor__spin--dial {
-  animation: spin 240s linear infinite reverse;
+.reactor__bracket {
+  stroke: rgba(255, 140, 40, 0.22);
 }
 
-/* 中心の円が小さくなった分、くさびとホログラムの枠を合わせる（半径 148 / 300） */
-.reactor__sweep,
-.reactor__holo {
-  inset: calc(50% - 24.67%);
+.reactor__disc {
+  fill: #050403;
 }
 
-.reactor__name {
-  font-size: 5.6cqw;
+.reactor__rim {
+  stroke: #ffc27a;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 10px rgba(255, 120, 20, 1)) drop-shadow(0 0 22px rgba(255, 100, 0, 0.6));
+}
+
+.reactor__sweep {
+  background: conic-gradient(from 0deg, rgba(255, 150, 60, 0.14), transparent 55deg, transparent 360deg);
 }
 
 .reactor__kicker,
 .reactor__tag {
-  font-size: 1.5cqw;
+  color: rgba(255, 180, 110, 0.9);
+  text-shadow: 0 0 8px rgba(255, 120, 20, 0.6);
 }
 
-/* ---------- メーター：目盛り付きの金属の縁 ---------- */
-
-.gauge__bezel {
-  fill: #0c0d10;
-  stroke: rgba(255, 160, 80, 0.3);
-  stroke-width: 1;
+.reactor__name {
+  color: #fff4e8;
+  text-shadow: 0 0 14px rgba(255, 150, 60, 0.75), 0 0 34px rgba(255, 110, 20, 0.45);
 }
 
-.gauge__tick {
-  stroke: rgba(255, 170, 100, 0.45);
-  stroke-width: 0.7;
+.home__hint {
+  color: rgba(255, 190, 130, 0.9);
 }
 
-/* ---------- レーダー：目盛りと方位の縁 ---------- */
-
-.radar svg {
-  width: 200px;
-  height: 200px;
-  margin-left: 0;
+/* 返事の欄もオレンジの半透明で */
+.rpanel__a {
+  color: #fff1e2;
 }
 
-.radar__sweep {
-  animation: none;
-  transform-origin: 0 0;
-}
-
-.radar__bezel {
-  fill: #0a0b0d;
-  stroke: rgba(255, 160, 80, 0.35);
-  stroke-width: 1;
-}
-
-.radar__tick {
-  stroke: rgba(255, 170, 100, 0.4);
-  stroke-width: 0.8;
-}
-
-.radar__deg {
-  fill: rgba(255, 190, 130, 0.7);
-  font-family: var(--font-mono);
-  font-size: 8px;
-}
-
-/* ---------- 状態のバー：LED の並び ---------- */
-
-.sstatus__leds {
-  display: grid !important;
-  grid-template-columns: repeat(20, 1fr);
-  gap: 2px;
-  height: 7px !important;
-  background: none !important;
-}
-
-.sstatus__leds em {
-  display: block;
-  height: 100%;
-  background: rgba(255, 140, 40, 0.12);
-  box-shadow: none;
-  transform: skewX(-20deg);
-}
-
-.sstatus__leds em[data-on] {
-  background: linear-gradient(180deg, #ffc07a, #ff8a1f 60%, #c05200);
-  box-shadow: 0 0 4px rgba(255, 138, 31, 0.6);
+.rpanel__q {
+  color: #ffae5e;
 }
