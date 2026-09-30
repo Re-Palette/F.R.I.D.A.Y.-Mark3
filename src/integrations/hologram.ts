@@ -1,5 +1,6 @@
 /**
  * 「〇〇の 3D ホログラム」を Gemini に設計させる（箱・球・円柱などの部品の組み合わせ）。
+ * 先に Google 検索で見た目を調べ（researchHologram）、その設計メモをもとに組み立てる（generateHologram）。
  * 同じものを何度も頼まれたときのために、しばらく覚えておく。
  */
 import { getGeminiConfig } from "@/lib/config";
@@ -38,14 +39,63 @@ const SYSTEM = `あなたは映画の 3D ホログラムを作るモデラー。
 {"title":"ロケット","parts":[{"shape":"lathe","position":[0,-1,0],"rotation":[0,0,0],"points":[[0,0],[0.28,0.05],[0.32,0.3],[0.32,1.5],[0.3,1.75],[0.22,2.1],[0.1,2.35],[0,2.45]],"color":"orange"},{"shape":"extrude","position":[0.3,-0.95,0],"rotation":[0,0,0],"points":[[0,0],[0.45,-0.15],[0.45,0.1],[0,0.6]],"size":[0.03],"color":"amber"},{"shape":"torus","position":[0,0.2,0],"rotation":[0,0,0],"size":[0.325,0.015],"color":"white"},{"shape":"cylinder","position":[0,0.9,0.3],"rotation":[90,0,0],"size":[0.09,0.09,0.04],"color":"cyan"},{"shape":"tube","position":[0,0,0],"rotation":[0,0,0],"points":[[0.33,-0.6,0],[0.33,0.9,0]],"size":[0.012],"color":"amber"}]}`;
 
 const cache = new Map<string, HoloModel>();
+const briefs = new Map<string, HoloBrief>();
 
-async function design(subject: string, thinkingLevel: "low" | "medium"): Promise<HoloModel | null> {
+export interface HoloBrief {
+  /** 見た目の要点（箇条書き） */
+  notes: string;
+  sources: { title: string; uri: string }[];
+}
+
+const RESEARCH = `あなたは 3D モデラーのための資料係。頼まれた対象の「見た目」を Google 検索で調べ、立体に組み立てるための設計メモを書く。
+- 書くこと：全体の比率（幅：高さ：奥行き）、主な部品とその位置関係、特徴的な形（曲線・角・凹凸）、数（車輪・窓・脚・指などの数）、左右対称かどうか、目立つ色や光る部分。
+- 具体的な型番・有名な実例があれば、それを代表として 1 つ選んで書く。
+- 「・」で始まる箇条書き 8〜16 行、各 60 字以内。前置き・出典・URL は書かない。分からないことは書かない。`;
+
+/** 〇〇の見た目を検索で調べて、設計メモを作る（検索できないときは null） */
+export async function researchHologram(subject: string): Promise<HoloBrief | null> {
+  const key = subject.trim().toLowerCase();
+  const hit = briefs.get(key);
+  if (hit) return hit;
   const config = getGeminiConfig();
   let text = "";
+  const sources: HoloBrief["sources"] = [];
+  try {
+    for await (const chunk of streamGemini({
+      config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500, temperature: 0.3 },
+      systemInstruction: RESEARCH,
+      contents: [{ role: "user", parts: [{ text: `対象：${subject}` }] }],
+      googleSearch: true,
+    })) {
+      text += chunk.text;
+      for (const src of chunk.sources ?? []) if (!sources.some((x) => x.uri === src.uri)) sources.push(src);
+    }
+  } catch {
+    return null;
+  }
+  const notes = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("・"))
+    .slice(0, 16)
+    .join("\n");
+  if (!notes) return null;
+  const brief = { notes, sources: sources.slice(0, 5) };
+  if (briefs.size >= 30) briefs.delete(briefs.keys().next().value!);
+  briefs.set(key, brief);
+  return brief;
+}
+
+async function design(subject: string, thinkingLevel: "low" | "medium", notes?: string): Promise<HoloModel | null> {
+  const config = getGeminiConfig();
+  let text = "";
+  const ask = notes
+    ? `対象：${subject}\n\n# 調べた見た目（これに忠実に、比率・部品の数・特徴的な形を再現する）\n${notes}`
+    : `対象：${subject}`;
   for await (const chunk of streamGemini({
     config: { ...config, thinkingLevel, maxOutputTokens: 20000, temperature: 0.5 },
     systemInstruction: SYSTEM,
-    contents: [{ role: "user", parts: [{ text: `対象：${subject}` }] }],
+    contents: [{ role: "user", parts: [{ text: ask }] }],
   })) {
     text += chunk.text;
   }
@@ -57,14 +107,15 @@ async function design(subject: string, thinkingLevel: "low" | "medium"): Promise
   }
 }
 
-export async function generateHologram(subject: string): Promise<HoloModel> {
+/** 設計図を作る。notes（調べた見た目）があれば、それをもとにする */
+export async function generateHologram(subject: string, notes?: string): Promise<HoloModel> {
   const key = subject.trim().toLowerCase();
   const hit = cache.get(key);
   if (hit) return hit;
 
   // じっくり考えて細かく作る。途中で切れて読めなかったときは、考えるのを軽くしてもう一度
-  let model = await design(subject, "medium");
-  if (!model) model = await design(subject, "low");
+  let model = await design(subject, "medium", notes);
+  if (!model) model = await design(subject, "low", notes);
   if (!model) throw new Error("ホログラムの設計図を作れませんでした。もう一度頼んでみてください。");
   if (cache.size >= 30) cache.delete(cache.keys().next().value!);
   cache.set(key, model);

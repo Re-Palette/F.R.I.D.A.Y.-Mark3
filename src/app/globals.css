@@ -3765,3 +3765,64 @@ ol.settings__note {
 body:has(.holo-stage[data-open]) .app * {
   animation-play-state: paused !important;
 }
+
+/* 検索で調べた見た目（拡大表示の右側） */
+.holo-stage__ref {
+  position: absolute;
+  left: calc(100% + 28px);
+  top: 36px;
+  width: min(280px, calc((100vw - 100%) / 2 - 44px));
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-left: 2px solid rgba(46, 230, 255, 0.5);
+  background: rgba(4, 12, 16, 0.6);
+}
+
+.holo-stage__ref ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+}
+
+.holo-stage__ref li {
+  position: relative;
+  padding-left: 12px;
+  font-family: var(--font-jp);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.holo-stage__ref li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.65em;
+  width: 5px;
+  height: 1px;
+  background: var(--cyan);
+}
+
+.holo-stage__sources {
+  margin: 10px 0 0;
+  display: grid;
+  gap: 3px;
+}
+
+.holo-stage__sources a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--cyan);
+}
+
+@media (max-width: 1200px) {
+  .holo-stage__ref {
+    display: none;
+  }
+}

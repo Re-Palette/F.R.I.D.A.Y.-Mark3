@@ -484,11 +484,32 @@ function HoloStage({ open }: { open: boolean }) {
         <div className="holo-stage__head">
           <span className="holo-stage__label">HOLOGRAM</span>
           <b>{hs.model?.title ?? hs.subject ?? ""}</b>
-          {hs.status === "loading" && <span className="holo-stage__status">設計しています…</span>}
+          {hs.status === "loading" && (
+            <span className="holo-stage__status">{hs.step === "research" ? "見た目を検索で調べています…" : "調べた結果をもとに設計しています…"}</span>
+          )}
           {hs.status === "error" && <span className="holo-stage__status holo-stage__status--err">{hs.error}</span>}
         </div>
         <p className="holo-stage__help">ドラッグ・つまんで回す ／ ホイール・両手で拡大 ／ ダブルクリック・グーで元の向き</p>
         <div className="holo-stage__hand" />
+        {hs.brief && (
+          <aside className="holo-stage__ref" aria-label="参考にした見た目">
+            <span className="holo-stage__label">REFERENCE</span>
+            <ul>
+              {hs.brief.notes.split("\n").map((line, i) => (
+                <li key={i}>{line.replace(/^・/, "")}</li>
+              ))}
+            </ul>
+            {hs.brief.sources.length > 0 && (
+              <p className="holo-stage__sources">
+                {hs.brief.sources.map((src) => (
+                  <a key={src.uri} href={src.uri} target="_blank" rel="noopener noreferrer">
+                    {src.title}
+                  </a>
+                ))}
+              </p>
+            )}
+          </aside>
+        )}
         <div className="holo-stage__actions">
           <button type="button" className="ghost-btn" aria-pressed={handOn} onClick={toggleHand}>
             HAND {handOn ? "ON" : "OFF"}

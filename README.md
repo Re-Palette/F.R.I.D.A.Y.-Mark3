@@ -229,7 +229,9 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
 
 ### 「〇〇の 3D ホログラムを作って」
 
-- 会話で頼むと、返答の隠しタグ `<hologram>対象</hologram>` を受けて画面が `/api/hologram` を呼び、
+- 会話で頼むと、返答の隠しタグ `<hologram>対象</hologram>` を受けて画面が `/api/hologram` を 2 回呼びます。
+  1 回目（`step: "research"`）は Google 検索で見た目（比率・部品と配置・数・特徴的な形）を調べた設計メモを作り、
+  拡大表示の右側に「REFERENCE」として要点と参考ページを出します。2 回目はそのメモに忠実に、
   Gemini が箱・球・楕円体・円柱・円錐・輪・カプセルに加え、回転体（lathe）・なめらかな管（tube）・押し出し板（extrude）を組み合わせて
   設計図（JSON、最大 160 部品）を作ります（`src/integrations/hologram.ts`）。
 - 見た目は縁ほど光る面（フレネル）・走査線・光のにじみ（ブルーム）・表面の光の粒・投影台の光の筒（`src/components/hologram-visuals.ts`）。

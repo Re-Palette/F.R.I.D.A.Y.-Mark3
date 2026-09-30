@@ -11,6 +11,10 @@ export interface HoloState {
   subject?: string;
   model?: HoloModel;
   error?: string;
+  /** 作成中の段階（見た目を調べている／設計している） */
+  step?: "research" | "design";
+  /** 検索で調べた見た目の要点と参考ページ */
+  brief?: { notes: string; sources: { title: string; uri: string }[] } | null;
   /** 画面いっぱいに大きく表示しているか */
   expanded: boolean;
 }
@@ -41,20 +45,24 @@ export function useHoloState(): HoloState {
 export async function requestHologram(subject: string): Promise<void> {
   const id = ++seq;
   resetView();
-  set({ status: "loading", subject, error: undefined, expanded: true });
+  set({ status: "loading", subject, error: undefined, expanded: true, step: "research", brief: undefined });
+  const post = (body: object) =>
+    fetch("/api/hologram", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   try {
-    const res = await fetch("/api/hologram", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject }),
-    });
+    // 1. 見た目を Google 検索で調べる（調べられなくても設計は続ける）
+    const found = (await (await post({ subject, step: "research" })).json().catch(() => ({}))) as { brief?: HoloState["brief"] };
+    if (id !== seq) return;
+    const brief = found.brief ?? null;
+    set({ step: "design", brief });
+    // 2. 調べた結果をもとに設計する
+    const res = await post({ subject, notes: brief?.notes });
     const json = (await res.json().catch(() => ({}))) as { ok?: boolean; model?: HoloModel; error?: string };
     if (id !== seq) return; // 後から別のものを頼まれた
     if (!res.ok || !json.ok || !json.model) throw new Error(json.error ?? "ホログラムを作れませんでした。");
-    set({ status: "ready", model: json.model });
+    set({ status: "ready", model: json.model, step: undefined });
   } catch (err) {
     if (id !== seq) return;
-    set({ status: "error", error: err instanceof Error ? err.message : "ホログラムを作れませんでした。" });
+    set({ status: "error", step: undefined, error: err instanceof Error ? err.message : "ホログラムを作れませんでした。" });
   }
 }
 
@@ -62,7 +70,7 @@ export async function requestHologram(subject: string): Promise<void> {
 export function clearHologram(): void {
   seq++;
   resetView();
-  set({ status: "idle", subject: undefined, model: undefined, error: undefined, expanded: false });
+  set({ status: "idle", subject: undefined, model: undefined, error: undefined, expanded: false, step: undefined, brief: undefined });
 }
 
 export function setHoloExpanded(expanded: boolean): void {
