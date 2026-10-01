@@ -169,7 +169,7 @@ export function SchedulePanel({ gmail }: { gmail?: boolean }) {
         extra={
           <>
             {gmail === false && (
-              <a href="/api/calendar/connect" title="Gmail も読めるように、Google にもう一度接続します" className="panel__warn">
+              <a href="/api/calendar/connect" title="Gmail を読む・下書きを作る許可のために、Google にもう一度接続します" className="panel__warn">
                 再接続
               </a>
             )}{" "}

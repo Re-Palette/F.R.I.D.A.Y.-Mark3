@@ -6,7 +6,7 @@ import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
 import { asksForSns, asksForTrend, needsSearch } from "@/agents/search/needs-search";
 import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { readNewsSettings } from "@/integrations/news";
-import { asksForMail } from "@/integrations/gmail";
+import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
@@ -65,10 +65,12 @@ export const chatAgent: Agent = {
     const prepStart = Date.now();
     const budget = ctx.voice ? CONTEXT_BUDGET_MS.voice : CONTEXT_BUDGET_MS.text;
     const briefing = Boolean(ctx.news?.deliver);
-    // メールは頼まれたとき・朝のあいさつ・ニュースのまとめのときだけ読む
-    const wantsMail = Boolean(ctx.mail) && (asksForMail(latest) || briefing || /^おはよう/.test(latest.trim()));
+    // メールは頼まれたとき・朝のあいさつ・ニュースのまとめのときだけ読む。
+    // 返信・メールの下書きを頼まれたら、直近のメールを本文つきで読み、下書きを作れるかも確かめる
+    const drafting = Boolean(ctx.mailRecent) && asksForMailDraft(latest);
+    const wantsMail = drafting || (Boolean(ctx.mail) && (asksForMail(latest) || briefing || /^おはよう/.test(latest.trim())));
     const mailTask: Promise<MailData> = wantsMail
-      ? ctx.mail!().then(
+      ? (drafting ? ctx.mailRecent! : ctx.mail!)().then(
           (list) => ({ list }),
           (err: unknown) => ({ error: err instanceof Error ? err.message : "メールを読めませんでした。" }),
         )
@@ -83,7 +85,9 @@ export const chatAgent: Agent = {
           "review",
         )
       : Promise.resolve(null);
-    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial] = await Promise.all([
+    const canDraftTask: Promise<boolean | undefined> =
+      wantsMail && ctx.mailCanDraft ? ctx.mailCanDraft().catch(() => false) : Promise.resolve(undefined);
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -93,6 +97,7 @@ export const chatAgent: Agent = {
       ctx.memory.connected ? within<Reminder[] | null>(listReminders(), budget, null, "reminders") : null,
       within<MailData>(mailTask, budget + 600, wantsMail ? { error: "メールの読み込みが間に合いませんでした。" } : null, "mail"),
       reviewTask,
+      within<boolean | undefined>(canDraftTask, budget + 600, undefined, "mail-draft"),
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -102,27 +107,33 @@ export const chatAgent: Agent = {
     const mode = settings.search ?? getSearchMode();
     // ニュースをまとめるときは検索する（FRIDAY_SEARCH=off のときだけは検索しない）
     const sns = asksForSns(latest);
-    const search = mode !== "off" && (mode === "always" || briefing || needsSearch(latest) || asksForTrend(latest));
+    // カメラの映像を見せたときは、画像から答える（「調べて」と言われたときだけ検索する）
+    const looking = Boolean(ctx.messages[ctx.messages.length - 1]?.image);
+    const search =
+      mode !== "off" &&
+      (mode === "always" || briefing || (looking ? /調べ|検索|ググ/.test(latest) : needsSearch(latest) || asksForTrend(latest)));
 
     yield { text: "", stage: search ? "search" : "think" };
 
+    // カメラの映像（最新の発言にだけ付く）は、文字の前に画像として渡す
+    const camera = looking;
     const contents: GeminiContent[] = ctx.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
+      parts: m.image ? [{ inlineData: { mimeType: m.image.mimeType, data: m.image.data } }, { text: m.content }] : [{ text: m.content }],
     }));
 
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
     // ニュースのまとめは長くなるので上限を広げる
     // 短い普通の発言（検索・まとめ以外）も考える量を最小にする（最初の一言が速くなる）
-    const quick = !search && !briefing && !reviewKind && !sns && latest.length < QUICK_REPLY_CHARS;
+    const quick = !search && !briefing && !reviewKind && !sns && !drafting && latest.length < QUICK_REPLY_CHARS;
     const runConfig = ctx.voice
       ? {
           ...config,
           thinkingLevel: "minimal" as const,
           // 文書・振り返りは本文を隠しタグに書くので長く、読み上げは短い
-          maxOutputTokens: briefing ? 1200 : reviewKind || sns || /企画書|レポート|報告書|文書|原稿|下書き/.test(latest) ? 5000 : Math.min(config.maxOutputTokens, 400),
+          maxOutputTokens: briefing ? 1200 : reviewKind || sns || drafting || /企画書|レポート|報告書|文書|原稿|下書き/.test(latest) ? 5000 : Math.min(config.maxOutputTokens, 400),
         }
-      : briefing || reviewKind || sns || /企画書|レポート|報告書|文書|原稿|下書き|書いて|作成して/.test(latest)
+      : briefing || reviewKind || sns || drafting || /企画書|レポート|報告書|文書|原稿|下書き|書いて|作成して/.test(latest)
         ? { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, 6000) }
         : quick
           ? { ...config, thinkingLevel: "minimal" as const }
@@ -143,6 +154,8 @@ export const chatAgent: Agent = {
         tasks,
         reminders,
         mail,
+        mailDraft: mailCanDraft,
+        camera,
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         replyLength: settings.replyLength,
         sns,

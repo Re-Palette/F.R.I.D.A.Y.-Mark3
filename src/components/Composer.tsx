@@ -26,6 +26,9 @@ interface Props {
   voiceInterim?: string;
   onVoiceToggle?: () => void;
   onTalk?: () => void;
+  /** カメラで見せて聞く（オンの間は、話しかけた瞬間の 1 枚が添えられる） */
+  cameraOn?: boolean;
+  onCameraToggle?: () => void;
 }
 
 const VOICE_LABEL: Record<VoiceState, string> = {
@@ -38,7 +41,7 @@ const VOICE_LABEL: Record<VoiceState, string> = {
 
 export const Composer = memo(
   forwardRef<ComposerHandle, Props>(function Composer(
-    { phase, disabled, onSend, onStop, onTyping, voiceState = "off", voiceInterim, onVoiceToggle, onTalk },
+    { phase, disabled, onSend, onStop, onTyping, voiceState = "off", voiceInterim, onVoiceToggle, onTalk, cameraOn = false, onCameraToggle },
     ref,
   ) {
   const [value, setValue] = useState("");
@@ -145,6 +148,19 @@ export const Composer = memo(
           <button type="button" className="tool-btn" disabled title="今後対応">
             <Icon name="image" size={14} /> 画像生成
           </button>
+          {onCameraToggle && (
+            <button
+              type="button"
+              className="composer__camera"
+              data-on={cameraOn || undefined}
+              onClick={onCameraToggle}
+              aria-pressed={cameraOn}
+              title={cameraOn ? "カメラを閉じる" : "カメラで見せて聞く（話しかけた瞬間の 1 枚を F.R.I.D.A.Y. に見せます）"}
+            >
+              <Icon name="camera" size={14} />
+              CAMERA
+            </button>
+          )}
           <button
             type="button"
             className="composer__voice"

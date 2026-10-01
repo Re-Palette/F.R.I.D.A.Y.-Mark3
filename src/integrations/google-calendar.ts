@@ -16,9 +16,10 @@ import { invalidate, swr } from "@/lib/swr";
 export const CALENDAR_COOKIE = "friday_gcal";
 export const STATE_COOKIE = "friday_gcal_state";
 export const CALENDAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 400; // ブラウザの上限（約 400 日）
-/** 予定の読み書きと、Gmail を読む権限（Gmail は読むだけ） */
+/** 予定の読み書きと、Gmail を読む権限・下書きを作る権限（送信は F.R.I.D.A.Y. からはしない） */
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
-const SCOPE = `https://www.googleapis.com/auth/calendar.events ${GMAIL_SCOPE}`;
+export const GMAIL_COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose";
+const SCOPE = `https://www.googleapis.com/auth/calendar.events ${GMAIL_SCOPE} ${GMAIL_COMPOSE_SCOPE}`;
 
 export interface CalendarConfig {
   clientId: string | undefined;
@@ -163,6 +164,11 @@ export async function accessToken(refresh: string): Promise<string> {
 /** この接続で Gmail を読む許可があるか（以前の接続は予定の権限だけのことがある） */
 export async function hasGmailScope(refresh: string): Promise<boolean> {
   return (await accessGrant(refresh)).scopes.includes(GMAIL_SCOPE);
+}
+
+/** この接続で Gmail の下書きを作る許可があるか（以前の接続は読むだけのことがある） */
+export async function hasComposeScope(refresh: string): Promise<boolean> {
+  return (await accessGrant(refresh)).scopes.includes(GMAIL_COMPOSE_SCOPE);
 }
 
 /* ---------- 日付（タイムゾーン付き） ---------- */

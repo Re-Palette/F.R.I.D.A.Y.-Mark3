@@ -6,9 +6,11 @@
 import { FridayError } from "@/lib/errors";
 import { settingsHint, type GeminiConfig, type ThinkingLevel } from "@/lib/config";
 
+export type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+
 export interface GeminiContent {
   role: "user" | "model";
-  parts: { text: string }[];
+  parts: GeminiPart[];
 }
 
 export interface GeminiStreamOptions {

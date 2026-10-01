@@ -6,7 +6,7 @@
 import { listAgents } from "@/core/router";
 import type { StatusResponse } from "@/core/types";
 import { getContextConfig, getSearchMode } from "@/lib/config";
-import { hasGmailScope, isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-calendar";
+import { hasGmailScope, hasComposeScope, isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-calendar";
 import { checkGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { checkBrain } from "@/memory/obsidian";
@@ -50,8 +50,10 @@ export async function GET(req: Request): Promise<Response> {
   const newsSettings = await readNewsSettings().catch(() => ({ time: "07:00", topics: [] as string[] }));
   const appSettings = await readAppSettings().catch(() => ({}) as { voiceSpeed?: number; search?: "auto" | "always" | "off" });
   const refresh = refreshTokenFrom(req);
-  const gmail = refresh ? await hasGmailScope(refresh).catch(() => false) : false;
-  const calendar = { configured: isCalendarConfigured(), connected: Boolean(refresh), gmail };
+  const [gmail, gmailDraft] = refresh
+    ? await Promise.all([hasGmailScope(refresh).catch(() => false), hasComposeScope(refresh).catch(() => false)])
+    : [false, false];
+  const calendar = { configured: isCalendarConfigured(), connected: Boolean(refresh), gmail, gmailDraft };
   const body: StatusResponse = { agents, context: { maxMessages: getContextConfig().maxMessages }, tts, brain, calendar, search: appSettings.search ?? getSearchMode(),
     voiceSpeed: appSettings.voiceSpeed ?? getTtsConfig().speed,
     automation: { diary: Boolean(process.env.CRON_SECRET?.trim()) },

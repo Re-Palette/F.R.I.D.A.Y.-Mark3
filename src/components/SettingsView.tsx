@@ -513,10 +513,18 @@ export const SettingsView = memo(function SettingsView({
             </Row>
             <Row
               label="Gmail"
-              state={status.calendar.gmail ? "ok" : status.calendar.connected ? "warn" : "off"}
-              detail={status.calendar.gmail ? "読める" : status.calendar.connected ? "許可が必要" : "Google 未接続"}
+              state={status.calendar.gmail && status.calendar.gmailDraft ? "ok" : status.calendar.connected ? "warn" : "off"}
+              detail={
+                !status.calendar.connected
+                  ? "Google 未接続"
+                  : status.calendar.gmail && status.calendar.gmailDraft
+                    ? "読める・下書きを作れる（送信はしない）"
+                    : status.calendar.gmail
+                      ? "読める（下書きは再接続が必要）"
+                      : "許可が必要"
+              }
             >
-              {status.calendar.connected && !status.calendar.gmail && (
+              {status.calendar.connected && !(status.calendar.gmail && status.calendar.gmailDraft) && (
                 <a className="ghost-btn" href="/api/calendar/connect">
                   再接続
                 </a>

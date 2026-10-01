@@ -30,8 +30,12 @@ export interface PersonaInput {
   tasks?: TasksOverview | null;
   /** これからのリマインダー */
   reminders?: Reminder[] | null;
-  /** 未読メール */
+  /** 未読メール（返信の下書きを頼まれたときは直近のメールを本文つきで） */
   mail?: MailData;
+  /** Gmail に下書きを作れるか（メールを読んだときだけ分かる） */
+  mailDraft?: boolean;
+  /** 最新の発言にカメラの映像（静止画 1 枚）が付いている */
+  camera?: boolean;
   /** SNS の投稿づくり・トレンドの相談（SNS AI） */
   sns?: boolean;
   /** 返答の長さの好み（SETTINGS） */
@@ -77,6 +81,8 @@ export function buildSystemInstruction({
   tasks,
   reminders,
   mail,
+  mailDraft,
+  camera,
   review,
   replyLength,
   sns,
@@ -131,7 +137,8 @@ export function buildSystemInstruction({
   out += BROWSER_RULES;
   if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
   if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
-  if (mail) out += mailSection(mail);
+  if (camera) out += CAMERA_RULES;
+  if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
   if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
   if (sns) out += snsSection(Boolean(search), memoryConnected);
@@ -320,8 +327,17 @@ ${upcoming}
 - タグは見えず、脳のノートに保存される。本文では「〇〇を ToDo に入れておきます」「18時にお知らせします」と自然に一言だけ伝える。`;
 }
 
-/** 未読メール */
-function mailSection(mail: NonNullable<MailData>): string {
+/** カメラの映像を見せて聞かれたとき */
+const CAMERA_RULES = `
+
+# カメラの映像
+- 最新の発言には、ユーザーのカメラ（パソコン・スマホ）で今写した静止画が 1 枚付いている。ユーザーは目の前の物を見せながら話している。
+- 「これ」「この」は画像に写っている物を指す。写っている物を見て、質問に直接答える（例：物の名前・使い方・読める文字・服の印象・問題の解き方）。
+- 写っていない・ぼやけていて分からないときは、正直にそう言い、「もう少し近づけて」「明るい所で」などと一言頼む。
+- 人の顔が写っていても、その人が誰かを特定・推測しない。画像の説明を長々と前置きせず、聞かれたことから答える。`;
+
+/** メール（未読の一覧、または返信用の直近のメール）と、下書きの作り方 */
+function mailSection(mail: NonNullable<MailData>, canDraft?: boolean): string {
   if ("error" in mail) {
     return `
 
@@ -329,17 +345,39 @@ function mailSection(mail: NonNullable<MailData>): string {
 - 今回はメールを読めなかった：${mail.error}
 - メールについて聞かれたら、この理由を短く伝える。`;
   }
+  const withBody = mail.list.some((m) => m.body !== undefined);
   const list = mail.list.length
     ? mail.list
-        .map((m) => `- ${m.from}「${m.subject}」 ${m.snippet}`)
-        .join("\n")
-    : "（直近 3 日の未読メールは無い）";
+        .map((m) =>
+          withBody
+            ? `## [id:${m.id}] ${m.from}「${m.subject}」\n${m.body || m.snippet}`
+            : `- [id:${m.id}] ${m.from}「${m.subject}」 ${m.snippet}`,
+        )
+        .join(withBody ? "\n\n" : "\n")
+    : withBody
+      ? "（直近 7 日の受信メールは無い）"
+      : "（直近 3 日の未読メールは無い）";
+  const draftRules =
+    canDraft === false
+      ? `
+- 返信やメールの下書きを頼まれたら、「Gmail に下書きを作る許可がまだないので、画面右の SCHEDULE の『再接続』で Google にもう一度接続してください」と伝える（本文の案は会話の中で書いてよい）。`
+      : canDraft
+        ? `
+
+# メールの下書き（Gmail。送信はしない）
+- 返信やメールを書いてと頼まれたら、本文を次のタグに書く。Gmail の「下書き」に保存され、ユーザーが Gmail で確認してから自分で送る：
+  返信：<gmail-draft reply-to="上の一覧の id">本文</gmail-draft>
+  新しいメール：<gmail-draft to="相手のメールアドレス" subject="件名">本文</gmail-draft>
+- どのメールへの返信か分からないとき、新しいメールで相手のアドレスが分からないときは、タグを書かずに先に確認する。アドレスを作り上げない。
+- 本文は宛名 → 用件 → 結びの普通のメール文。相手と元のメールの調子に合わせる。分からない日時・数字は作らず【要確認】と書く。
+- タグの外では「〇〇さんへの返信を下書きに保存しました。〜と伝えています」と 1〜2 文で要点だけ伝える。本文を重ねて書かない。`
+        : "";
   return `
 
-# 未読メール（Gmail・直近 3 日・広告/SNS 以外）
+# ${withBody ? "直近のメール（Gmail・7 日以内・本文つき）" : "未読メール（Gmail・直近 3 日・広告/SNS 以外）"}
 ${list}
 - メールについて聞かれたら、件数と、重要そうなもの（締め切り・予定・返信が要りそうなもの）を優先して短く要約する。本文にない内容は推測しない。
-- メールの送信・削除・既読にすることはできない。`;
+- メールの送信・削除・既読にすることはできない（下書きを作るだけ）。${draftRules}`;
 }
 
 /** WRITING AI: 文書を書いて脳に保存する */

@@ -5,8 +5,8 @@
 import { after } from "next/server";
 import { handleConversation, preflight, sanitizeHistory } from "@/core/friday";
 import type { StreamEvent } from "@/core/types";
-import { CalendarAccess, refreshTokenFrom } from "@/integrations/google-calendar";
-import { unreadMail } from "@/integrations/gmail";
+import { CalendarAccess, hasComposeScope, refreshTokenFrom } from "@/integrations/google-calendar";
+import { createDraft, recentMail, unreadMail } from "@/integrations/gmail";
 import { asksForNews, localNow, NEWS_COOKIE, peekNewsSettings } from "@/integrations/news";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { cookieHeader, readCookie } from "@/lib/secure-cookie";
@@ -63,7 +63,19 @@ export async function POST(req: Request): Promise<Response> {
   // ニュース: 決まった時間を過ぎてからその日最初の会話、または頼まれたときにまとめて伝える
   const news = newsPlan(req, history[history.length - 1]?.content ?? "");
   const mail = refresh ? () => unreadMail(refresh) : undefined;
-  const events = handleConversation(history, req.signal, { voice, onTurn: resolveTurn, calendar, news: news.context, mail });
+  const mailRecent = refresh ? () => recentMail(refresh) : undefined;
+  const mailCanDraft = refresh ? () => hasComposeScope(refresh) : undefined;
+  const draft = refresh ? (input: Parameters<typeof createDraft>[1]) => createDraft(refresh, input) : undefined;
+  const events = handleConversation(history, req.signal, {
+    voice,
+    onTurn: resolveTurn,
+    calendar,
+    news: news.context,
+    mail,
+    mailRecent,
+    mailCanDraft,
+    draft,
+  });
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {

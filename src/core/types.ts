@@ -15,9 +15,17 @@ export type AgentId =
 
 export type Role = "user" | "assistant";
 
+/** 会話に添える画像（カメラで写した 1 枚）。data は base64（"data:…;base64," は含まない） */
+export interface ChatImage {
+  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  data: string;
+}
+
 export interface ChatMessage {
   role: Role;
   content: string;
+  /** 最新のユーザー発言にだけ付く（カメラの映像を見せて聞くとき） */
+  image?: ChatImage;
 }
 
 /** POST /api/chat のリクエストボディ */
@@ -49,6 +57,8 @@ export type StreamEvent =
   | { type: "browser"; action: "close"; target: "last" | "all" }
   /** 3D ホログラムを作る（subject）・消す（null）。設計は画面が /api/hologram に頼む */
   | { type: "hologram"; subject: string | null }
+  /** Gmail に返信・メールの下書きを保存した結果（送信はしない） */
+  | { type: "mail-draft"; ok: boolean; to: string; subject: string; error?: string }
   /** いま何をしているか（外部の情報を集めている／検索している／考えている） */
   | { type: "stage"; stage: "connect" | "think" | "search" }
   | { type: "done"; finishReason?: string; prepMs?: number }
@@ -63,7 +73,7 @@ export interface StatusResponse {
   /** Obsidian の脳（GitHub）。未設定なら configured: false */
   brain: { configured: boolean; connected: boolean; notes?: number; reason?: string };
   /** Google カレンダー（configured: サーバー側の設定あり / connected: この端末が接続済み） */
-  calendar: { configured: boolean; connected: boolean; gmail?: boolean };
+  calendar: { configured: boolean; connected: boolean; gmail?: boolean; gmailDraft?: boolean };
   /** Web 検索（auto: 必要なときだけ / always / off） */
   search: "auto" | "always" | "off";
   /** 読み上げの速さ（SETTINGS。ブラウザの声の換算にも使う） */

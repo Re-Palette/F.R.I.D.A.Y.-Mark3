@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
-import { STATUS_CHANGED, useChat } from "@/hooks/useChat";
+import { STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
 import { useVoice } from "@/hooks/useVoice";
 import { useBargeIn } from "@/hooks/useBargeIn";
@@ -23,6 +23,8 @@ import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
 import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
 import { useHoloState } from "@/lib/hologram-model";
+import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
+import { CameraView } from "./CameraView";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -149,7 +151,21 @@ export function Dashboard() {
   }, [view, chat.phase]);
 
   // 話しかけても画面は切り替えない（HOME では中央下のパネルにやり取りを表示する）
-  const send = chat.send;
+  // カメラがオンなら、話しかけた瞬間の 1 枚を添える。オフでも「これ何？」「これ見て」なら先にカメラを開く
+  const { send: chatSendRaw } = chat;
+  const send = useCallback(
+    (text: string, opts: SendOptions = {}) => {
+      if (!text.trim()) return false;
+      void (async () => {
+        if (!getCameraState().on && asksToLook(text)) await openCamera();
+        const image = getCameraState().on ? await captureFrame() : null;
+        chatSendRaw(text, image ? { ...opts, image } : opts);
+      })();
+      return true;
+    },
+    [chatSendRaw],
+  );
+  const camera = useCameraState();
 
   // 入力中に Gemini への接続を温める（サーバー側でも間引くが、ここでも 2 秒に 1 回まで）
   const lastWarm = useRef(0);
@@ -170,8 +186,8 @@ export function Dashboard() {
   }, [agent.status, warm]);
 
   /* ---- 音声会話 ---- */
-  const { send: chatSend, stop: chatStop } = chat;
-  const onVoiceCommand = useCallback((text: string) => void chatSend(text, { voice: true }), [chatSend]);
+  const { stop: chatStop } = chat;
+  const onVoiceCommand = useCallback((text: string) => void send(text, { voice: true }), [send]);
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
@@ -492,10 +508,13 @@ export function Dashboard() {
           onVoiceToggle={voice.toggle}
           onTalk={voice.talkNow}
           onTyping={warm}
+          cameraOn={camera.on}
+          onCameraToggle={toggleCamera}
         />
+        <CameraView />
       </main>
 
-      {!narrow && view !== "home" && <RightPanel gmail={agent.calendar.connected ? agent.calendar.gmail : undefined} />}
+      {!narrow && view !== "home" && <RightPanel gmail={agent.calendar.connected ? Boolean(agent.calendar.gmail && agent.calendar.gmailDraft) : undefined} />}
     </div>
   );
 }

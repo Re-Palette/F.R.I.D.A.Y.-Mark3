@@ -11,7 +11,7 @@
  *   何件を Gemini に渡すかはサーバー側（src/memory/context.ts）が上限をかけて決める。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage, StreamEvent } from "@/core/types";
+import type { ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
@@ -47,6 +47,10 @@ export interface UiMessage {
   tabs?: { action: "open" | "close"; ok: boolean; label: string; url?: string; blocked?: boolean; error?: string }[];
   /** ニュースの設定を変えた結果 */
   newsSettings?: { ok: boolean; time?: string; topics?: string[]; error?: string };
+  /** カメラで見せた 1 枚（画面に出す小さい版の data URL） */
+  image?: string;
+  /** Gmail に保存した下書き（送信はしていない） */
+  drafts?: { ok: boolean; to: string; subject: string; error?: string }[];
 }
 
 /** 予定を追加したら右パネルなどに知らせるイベント名 */
@@ -59,6 +63,8 @@ export const TASKS_CHANGED = "friday:tasks-changed";
 export interface SendOptions {
   /** 音声会話モード（読み上げ向けの短い話し言葉で返答させる） */
   voice?: boolean;
+  /** カメラで撮った 1 枚（送る用と、画面に出す小さい版） */
+  image?: { full: string; thumb: string };
 }
 
 export type ChatPhase = "idle" | "waiting" | "streaming";
@@ -78,10 +84,24 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
+/**
+ * カメラの画像（送る用の大きい版）。会話の保存（sessionStorage）には入れず、ここに少しだけ持つ。
+ * 送るのは最新のユーザー発言の画像だけ（サーバーも最新以外は受け取らない）。
+ */
+const fullImages = new Map<string, string>();
+
+/** "data:image/jpeg;base64,xxxx" → { mimeType, data } */
+function toChatImage(dataUrl: string | undefined): ChatImage | undefined {
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl ?? "");
+  return m ? { mimeType: m[1] as ChatImage["mimeType"], data: m[2] } : undefined;
+}
+
 function toApiHistory(messages: UiMessage[]): ChatMessage[] {
-  return messages
-    .filter((m) => m.status !== "error" && m.content.trim())
-    .map((m) => ({ role: m.role, content: m.content }));
+  const list = messages.filter((m) => m.status !== "error" && m.content.trim());
+  return list.map((m, i) => {
+    const image = i === list.length - 1 && m.role === "user" ? toChatImage(fullImages.get(m.id)) : undefined;
+    return image ? { role: m.role, content: m.content, image } : { role: m.role, content: m.content };
+  });
 }
 
 function loadSession(): UiMessage[] {
@@ -367,6 +387,11 @@ export function useChat() {
                 patch(assistantId, (m) => ({ ...m, sources }));
                 break;
               }
+              case "mail-draft": {
+                const { ok, to, subject, error } = event;
+                patch(assistantId, (m) => ({ ...m, drafts: [...(m.drafts ?? []), { ok, to, subject, error }] }));
+                break;
+              }
               case "memory":
                 patch(assistantId, (m) => ({ ...m, memories: [...(m.memories ?? []), event.text] }));
                 break;
@@ -469,8 +494,17 @@ export function useChat() {
     (text: string, opts: SendOptions = {}) => {
       const content = text.trim();
       if (!content) return false;
+      const id = uid();
+      if (opts.image) {
+        fullImages.set(id, opts.image.full);
+        // 古い画像は持ち続けない（送るのは最新の 1 枚だけ）
+        while (fullImages.size > 3) fullImages.delete(fullImages.keys().next().value!);
+      }
       enqueue(
-        (current) => [...current, { id: uid(), role: "user", content, createdAt: Date.now(), status: "done" }],
+        (current) => [
+          ...current,
+          { id, role: "user", content, createdAt: Date.now(), status: "done", ...(opts.image ? { image: opts.image.thumb } : {}) },
+        ],
         opts,
       );
       return true;

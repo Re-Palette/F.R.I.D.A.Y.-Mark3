@@ -3,7 +3,7 @@
  *
  *   ユーザー → Core → Router → Agent（Chat / Search / ...）→ Core → ユーザー
  */
-import type { ChatMessage, StreamEvent } from "@/core/types";
+import type { ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { routeRequest } from "@/core/router";
 import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/lib/config";
 import { FridayError, toFridayError } from "@/lib/errors";
@@ -16,10 +16,24 @@ import { BRAIN_TAGS, runBrainActions } from "./brain-actions";
 import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
 import { BROWSER_TAGS, toBrowserEvent } from "./browser-actions";
+import { GMAIL_TAGS, runGmailActions } from "./gmail-actions";
+import type { DraftInput } from "@/integrations/gmail";
 import { saveDocument, toFolder } from "@/integrations/documents";
 
 export const MAX_MESSAGE_CHARS = 16000;
 const MAX_HISTORY_ITEMS = 400;
+/** カメラの画像の上限（base64 の文字数。約 1.5MB。画面側で 1024px 以内の JPEG にしてから送る） */
+const MAX_IMAGE_CHARS = 2_000_000;
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/** 画像が正しい形か（種類・大きさ・base64 の文字だけか） */
+function toImage(v: unknown): ChatImage | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const { mimeType, data } = v as { mimeType?: unknown; data?: unknown };
+  if (typeof mimeType !== "string" || !IMAGE_TYPES.has(mimeType)) return undefined;
+  if (typeof data !== "string" || data.length === 0 || data.length > MAX_IMAGE_CHARS || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) return undefined;
+  return { mimeType: mimeType as ChatImage["mimeType"], data };
+}
 
 /** クライアントから来た履歴を検証・正規化する */
 export function sanitizeHistory(input: unknown): ChatMessage[] {
@@ -36,7 +50,12 @@ export function sanitizeHistory(input: unknown): ChatMessage[] {
         typeof m.content === "string" &&
         m.content.trim().length > 0,
     )
-    .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) }));
+    .map((m, i, all) => {
+      const out: ChatMessage = { role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) };
+      // 画像は最新のユーザー発言のものだけ受け取る（古い画像を毎回送り直さない）
+      const image = i === all.length - 1 && m.role === "user" ? toImage((m as { image?: unknown }).image) : undefined;
+      return image ? { ...out, image } : out;
+    });
 
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     throw new FridayError("BAD_REQUEST", "送信するメッセージがありません。", 400);
@@ -68,6 +87,11 @@ export async function* handleConversation(
     news?: AgentContext["news"];
     /** 未読メールを読む */
     mail?: AgentContext["mail"];
+    /** 返信用に直近のメールを本文つきで読む・下書きを作れるか */
+    mailRecent?: AgentContext["mailRecent"];
+    mailCanDraft?: AgentContext["mailCanDraft"];
+    /** Gmail に下書きを作る（送信はしない） */
+    draft?: (input: DraftInput) => Promise<{ to: string; subject: string }>;
   } = {},
 ): AsyncGenerator<StreamEvent> {
   let turn: SaveTurnInput | null = null;
@@ -87,8 +111,9 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram"] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS] as const, {
       document: 30_000,
+      "gmail-draft": 8000,
     });
     const sources: { title: string; uri: string }[] = [];
     // ページを開く・閉じるは待たせたくないので、タグが閉じた時点ですぐ画面に送る
@@ -116,6 +141,8 @@ export async function* handleConversation(
       calendar: options.calendar,
       news: options.news,
       mail: options.mail,
+      mailRecent: options.mailRecent,
+      mailCanDraft: options.mailCanDraft,
       signal,
     })) {
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
@@ -152,6 +179,15 @@ export async function* handleConversation(
     }
     // ToDo・進捗・リマインダーを脳に書く（失敗したら本文でも知らせる）
     for await (const { event, note } of runBrainActions(tags.captures, memory.connected, signal)) {
+      yield event;
+      if (note) {
+        const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;
+        reply += text;
+        yield { type: "delta", text };
+      }
+    }
+    // 頼まれたメールの下書きを Gmail に保存（送信はしない。失敗したら本文でも知らせる）
+    for await (const { event, note } of runGmailActions(tags.captures, tags.attrs, options.draft, signal)) {
       yield event;
       if (note) {
         const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;
@@ -208,7 +244,8 @@ export async function* handleConversation(
     // 脳が無い・つながらないときは保存されないので、覚えたとは表示しない（保存自体は試みる）
     if (memory.save && memory.healthy !== false) for (const text of facts) yield { type: "memory", text };
     turn = {
-      user: window.messages[window.messages.length - 1]?.content ?? "",
+      // カメラの映像を見せたことだけ記録する（画像そのものは保存しない）
+      user: `${window.messages[window.messages.length - 1]?.content ?? ""}${window.messages[window.messages.length - 1]?.image ? "（カメラの映像つき）" : ""}`,
       assistant: reply.trim(),
       memories: memory.save ? facts : [],
       voice: options.voice ?? false,

@@ -283,7 +283,13 @@ export function ResponsePanel({
       <div className="rpanel__body" ref={bodyRef}>
         {question && (
           <>
-            <p className="rpanel__q">&gt; {question.content}</p>
+            <p className="rpanel__q">
+              {question.image && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="rpanel__shot" src={question.image} alt="カメラで見せた映像" />
+              )}
+              &gt; {question.content}
+            </p>
             {waiting ? (
               <span className="signal" aria-label="応答を生成中">
                 <i />
@@ -306,6 +312,16 @@ export function ResponsePanel({
                 </button>
               </p>
             )}
+            {reply?.drafts?.map((d, i) => (
+              <p key={`${d.subject}-${i}`} className="rpanel__docs" data-failed={!d.ok || undefined}>
+                <Icon name="mail" size={12} /> {d.ok ? `下書きを保存：${d.to}「${d.subject}」` : `下書きを保存できませんでした：${d.error ?? ""}`}
+                {d.ok && (
+                  <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noreferrer noopener">
+                    GMAIL ↗
+                  </a>
+                )}
+              </p>
+            ))}
             {sources.length > 0 && (
               <div className="rpanel__sources">
                 <b>SOURCES</b>

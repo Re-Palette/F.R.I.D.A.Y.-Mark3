@@ -38,6 +38,10 @@ const Message = memo(function Message({
   if (msg.role === "user") {
     return (
       <div className="msg msg--user">
+        {msg.image && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="msg__image" src={msg.image} alt="カメラで見せた映像" />
+        )}
         <div className="msg__bubble hud">
           <HudFrame cut={10} small={4} ticks={false} />
           {msg.content}
@@ -92,6 +96,20 @@ const Message = memo(function Message({
             >
               <Icon name="calendar" size={12} /> <span>{c.ok ? CALENDAR_LABEL[c.action] : "CALENDAR FAILED"}</span> {c.when}{" "}
               {c.title}
+            </li>
+          ))}
+        </ul>
+      )}
+      {msg.drafts && msg.drafts.length > 0 && (
+        <ul className="msg__memories" aria-label="Gmail に保存した下書き">
+          {msg.drafts.map((d, i) => (
+            <li key={`${d.subject}-${i}`} className="memory-chip memory-chip--mail" data-failed={!d.ok || undefined} title={d.ok ? "送信はしていません。Gmail の下書きで確認して送ってください" : d.error}>
+              <Icon name="mail" size={12} /> <span>{d.ok ? "DRAFT SAVED" : "DRAFT FAILED"}</span> {d.to} {d.subject && `「${d.subject}」`}
+              {d.ok && (
+                <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noreferrer noopener">
+                  GMAIL ↗
+                </a>
+              )}
             </li>
           ))}
         </ul>

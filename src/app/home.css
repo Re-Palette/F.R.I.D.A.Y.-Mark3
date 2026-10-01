@@ -3272,3 +3272,163 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     padding: 22px 60px 30px;
   }
 }
+
+/* ==========================================================================
+   カメラで見せて聞く（小窓・入力欄のボタン・会話の中の写真）と、メールの下書きの表示
+   ========================================================================== */
+
+.composer__camera {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--orange);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.composer__camera:hover {
+  border-color: var(--line);
+  background: rgba(255, 138, 31, 0.1);
+}
+
+.composer__camera[data-on] {
+  color: #ffe6c8;
+  border-color: var(--amber);
+  background: rgba(255, 130, 30, 0.22);
+  box-shadow: 0 0 10px rgba(255, 110, 10, 0.45);
+}
+
+.camview {
+  position: absolute;
+  right: 60px;
+  bottom: 96px;
+  z-index: 35;
+  width: 300px;
+  padding: 8px 10px 9px;
+  border: 1.5px solid var(--amber);
+  border-radius: 4px;
+  background: rgba(10, 6, 3, 0.94);
+  box-shadow: var(--amber-glow), 0 12px 40px rgba(0, 0, 0, 0.7);
+  animation: hpop-in 0.2s ease-out;
+}
+
+.camview__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: #ffd6a6;
+}
+
+.camview__head b {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--warm);
+}
+
+.camview__head button,
+.camview--error button {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--amber-line);
+  background: none;
+  color: var(--warm);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.camview__led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b5a48;
+}
+
+.camview__led[data-live] {
+  background: #ff5a1f;
+  box-shadow: 0 0 6px #ff5a1f;
+  animation: blink-soft 1.4s ease-in-out infinite;
+}
+
+.camview__video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border: 1px solid rgba(255, 140, 40, 0.35);
+  background: #000;
+}
+
+.camview__hint {
+  margin: 6px 0 0;
+  font-family: var(--font-jp);
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 220, 185, 0.65);
+}
+
+.camview--error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffd6a6;
+  font-family: var(--font-jp);
+  font-size: 12px;
+}
+
+/* 会話の中のカメラの写真 */
+.msg__image {
+  align-self: flex-end;
+  width: 200px;
+  max-width: 60%;
+  margin-bottom: 6px;
+  border: 1.5px solid var(--amber);
+  border-radius: 4px;
+  box-shadow: var(--amber-glow);
+}
+
+.rpanel__shot {
+  width: 44px;
+  height: 28px;
+  margin-right: 8px;
+  object-fit: cover;
+  vertical-align: middle;
+  border: 1px solid var(--amber-line);
+  border-radius: 2px;
+}
+
+/* メールの下書き */
+.memory-chip--mail a,
+.rpanel__docs a {
+  margin-left: 8px;
+  color: var(--orange-hi);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-decoration: none;
+}
+
+.rpanel__docs[data-failed] {
+  color: #ff8a73;
+}
+
+@media (max-width: 999px) {
+  .camview {
+    right: 12px;
+    bottom: 150px;
+    width: min(70vw, 260px);
+  }
+}

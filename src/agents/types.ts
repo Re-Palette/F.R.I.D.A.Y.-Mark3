@@ -17,6 +17,10 @@ export interface AgentContext {
   calendar?: CalendarAccess;
   /** 未読メールを読む（Google に接続済みの場合だけ） */
   mail?: () => Promise<MailSummary[]>;
+  /** 返信の下書き用に、直近のメールを本文つきで読む（Google に接続済みの場合だけ） */
+  mailRecent?: () => Promise<MailSummary[]>;
+  /** Gmail に下書きを作る許可があるか */
+  mailCanDraft?: () => Promise<boolean>;
   /** ニュースの設定と、今回ニュースをまとめて伝えるか（scheduled: 決まった時間 / asked: 頼まれた） */
   news?: { settings: NewsSettings; deliver: false | "scheduled" | "asked"; canSave: boolean };
   /** 現在時刻とタイムゾーン */
