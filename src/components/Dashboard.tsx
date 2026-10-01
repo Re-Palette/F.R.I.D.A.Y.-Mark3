@@ -15,6 +15,7 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
 import { Header } from "./Header";
 import { HomeHud } from "./home/HomeHud";
+import { ScreenFrame } from "./home/ScreenFrame";
 import type { ChatAgentStatus } from "./home/panels";
 import { RightPanel } from "./RightPanel";
 import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./Pages";
@@ -296,9 +297,7 @@ export function Dashboard() {
         <div className="bg__noise" />
       </div>
       {/* 画面全体を囲む HUD の枠（HOME のときだけ見せる） */}
-      <svg className="screen-frame" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-        <path d="M0 40V8L8 0H300M700 0H992L1000 8V40M1000 960V992L992 1000H700M300 1000H8L0 992V960" />
-      </svg>
+      <ScreenFrame />
 
       <Header />
 

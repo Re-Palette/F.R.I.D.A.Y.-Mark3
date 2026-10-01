@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * コアの中心で光る粒の球（canvas 2D）。F.R.I.D.A.Y. の状態で動きが変わる。
- *   待機：ゆっくり回って呼吸する／聞き取り中：表面が波打つ／考え中：速く渦を巻く
+ * コアの中心：光る太陽と、線でつながった光の点の網（canvas 2D）。F.R.I.D.A.Y. の状態で動きが変わる。
+ *   待機：ゆっくり回って呼吸する／聞き取り中：網が波打つ／考え中：速く渦を巻く
  *   検索中：光の帯が上下に走査する／処理中：縮んで広がる／返事中：中心から光の波が広がる
  * 見えていないとき・タブが裏のときは描かない。動きを減らす設定なら止まった絵を 1 枚だけ描く。
  */
@@ -10,57 +10,142 @@ import { useEffect, useRef } from "react";
 
 export type CoreMode = "idle" | "listening" | "connect" | "think" | "search" | "create" | "speaking";
 
-const N = 820;
+const SHELL = 190; // 球の表面の点
+const INNER = 70; // 内側の点
+const N = SHELL + INNER;
+const DUST = 220; // 細かい光の粒
 const TILT = 0.38;
 
 /** 状態ごとの回る速さ（rad/s）・明るさ */
 const TUNE: Record<CoreMode, { spin: number; glow: number }> = {
-  idle: { spin: 0.16, glow: 0.62 },
-  listening: { spin: 0.24, glow: 0.8 },
-  connect: { spin: 0.42, glow: 0.82 },
-  think: { spin: 0.7, glow: 0.9 },
-  search: { spin: 0.36, glow: 0.86 },
-  create: { spin: 0.3, glow: 1 },
-  speaking: { spin: 0.3, glow: 1 },
+  idle: { spin: 0.14, glow: 0.8 },
+  listening: { spin: 0.22, glow: 0.95 },
+  connect: { spin: 0.4, glow: 0.95 },
+  think: { spin: 0.65, glow: 1 },
+  search: { spin: 0.34, glow: 1 },
+  create: { spin: 0.28, glow: 1.1 },
+  speaking: { spin: 0.28, glow: 1.1 },
 };
 
-function makePoints() {
-  const pts = new Float32Array(N * 4); // x, y, z, 半径の揺らぎ
+function makeNetwork() {
+  const pts = new Float32Array(N * 3);
   const golden = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < N; i++) {
-    const y = 1 - (i / (N - 1)) * 2;
+  for (let i = 0; i < SHELL; i++) {
+    const y = 1 - (i / (SHELL - 1)) * 2;
     const r = Math.sqrt(1 - y * y);
-    const a = i * golden;
-    // 7 割は表面、3 割は内側に散らして奥行きを出す
-    const depth = i % 10 < 7 ? 0.94 + Math.random() * 0.08 : 0.25 + Math.random() * 0.6;
-    pts[i * 4] = Math.cos(a) * r;
-    pts[i * 4 + 1] = y;
-    pts[i * 4 + 2] = Math.sin(a) * r;
-    pts[i * 4 + 3] = depth;
+    pts[i * 3] = Math.cos(i * golden) * r;
+    pts[i * 3 + 1] = y;
+    pts[i * 3 + 2] = Math.sin(i * golden) * r;
   }
-  return pts;
+  for (let i = SHELL; i < N; i++) {
+    // 内側：中心に寄りすぎない位置にばらまく
+    const u = Math.random() * 2 - 1;
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.35 + Math.random() * 0.5;
+    const s = Math.sqrt(1 - u * u);
+    pts[i * 3] = Math.cos(a) * s * r;
+    pts[i * 3 + 1] = u * r;
+    pts[i * 3 + 2] = Math.sin(a) * s * r;
+  }
+  // それぞれ近い 3 点と線でつなぐ（重複は除く）
+  const edges: number[] = [];
+  const seen = new Set<number>();
+  for (let i = 0; i < N; i++) {
+    const near: [number, number][] = [];
+    for (let j = 0; j < N; j++) {
+      if (i === j) continue;
+      const dx = pts[i * 3] - pts[j * 3];
+      const dy = pts[i * 3 + 1] - pts[j * 3 + 1];
+      const dz = pts[i * 3 + 2] - pts[j * 3 + 2];
+      near.push([dx * dx + dy * dy + dz * dz, j]);
+    }
+    near.sort((a, b) => a[0] - b[0]);
+    for (const [, j] of near.slice(0, 3)) {
+      const key = Math.min(i, j) * N + Math.max(i, j);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push(i, j);
+    }
+  }
+  const dust = new Float32Array(DUST * 3);
+  for (let i = 0; i < DUST; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * 1.05;
+    dust[i * 3] = Math.cos(a) * r;
+    dust[i * 3 + 1] = Math.sin(a) * r;
+    dust[i * 3 + 2] = Math.random();
+  }
+  return { pts, edges: Uint16Array.from(edges), dust };
 }
 
-export function ParticleCore({ mode, active }: { mode: CoreMode; active: boolean }) {
+/**
+ * onSlow：この端末では描画が追いつかない（なめらかに動かない）と分かったときに 1 回だけ呼ぶ。
+ * そのあとは自分でも軽い描き方（低い解像度・少ないコマ数）に切り替える。
+ */
+export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active: boolean; onSlow?: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const slowRef = useRef(onSlow);
+  slowRef.current = onSlow;
 
   useEffect(() => {
     const canvas = ref.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx || !active) return;
-    const pts = makePoints();
+    const { pts, edges, dust } = makeNetwork();
+    const sx = new Float32Array(N);
+    const sy = new Float32Array(N);
+    const sn = new Float32Array(N);
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let w = 0;
     let h = 0;
+    let lite = false;
+    // 毎回作ると重い「にじむ光・同心円・細かい粒」と「太陽」は、大きさが変わったときだけ別の canvas に描いておく
+    const back = document.createElement("canvas");
+    const sun = document.createElement("canvas");
+    const prerender = (R: number) => {
+      const size = Math.ceil(R * 2.3);
+      back.width = back.height = size;
+      const b = back.getContext("2d")!;
+      const c = size / 2;
+      const halo = b.createRadialGradient(c, c, 0, c, c, R * 1.1);
+      halo.addColorStop(0, "rgba(255, 160, 50, 0.75)");
+      halo.addColorStop(0.4, "rgba(255, 110, 10, 0.35)");
+      halo.addColorStop(1, "rgba(255, 80, 0, 0)");
+      b.fillStyle = halo;
+      b.fillRect(0, 0, size, size);
+      b.lineWidth = 0.8;
+      b.strokeStyle = "rgba(255, 160, 70, 0.22)";
+      for (const k of [0.3, 0.55, 0.8]) {
+        b.beginPath();
+        b.arc(c, c, R * k, 0, Math.PI * 2);
+        b.stroke();
+      }
+      for (let i = 0; i < DUST; i++) {
+        b.fillStyle = `rgba(255, 170, 80, ${(0.15 + dust[i * 3 + 2] * 0.3).toFixed(2)})`;
+        b.fillRect(c + dust[i * 3] * R - 0.6, c + dust[i * 3 + 1] * R - 0.6, 1.2, 1.2);
+      }
+      const sr = Math.ceil(R * 0.6);
+      sun.width = sun.height = sr * 2;
+      const g = sun.getContext("2d")!;
+      const grad = g.createRadialGradient(sr, sr, 0, sr, sr, sr);
+      grad.addColorStop(0, "rgba(255, 255, 235, 1)");
+      grad.addColorStop(0.12, "rgba(255, 236, 160, 1)");
+      grad.addColorStop(0.35, "rgba(255, 170, 50, 0.75)");
+      grad.addColorStop(0.7, "rgba(255, 120, 10, 0.3)");
+      grad.addColorStop(1, "rgba(255, 100, 0, 0)");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, sr * 2, sr * 2);
+    };
     const fit = () => {
-      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      const dpr = lite ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
       w = canvas.clientWidth;
       h = canvas.clientHeight;
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      prerender(Math.max(1, Math.min(w, h) * 0.44));
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -72,6 +157,11 @@ export function ParticleCore({ mode, active }: { mode: CoreMode; active: boolean
     let raf = 0;
     const cosT = Math.cos(TILT);
     const sinT = Math.sin(TILT);
+    const NODE = [
+      { lo: -1, hi: 0.45, size: 1.6, color: "rgba(255, 170, 80, 0.45)" },
+      { lo: 0.45, hi: 0.8, size: 2.3, color: "rgba(255, 200, 110, 0.75)" },
+      { lo: 0.8, hi: 9, size: 3, color: "rgba(255, 238, 170, 1)" },
+    ];
 
     const draw = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
@@ -83,32 +173,30 @@ export function ParticleCore({ mode, active }: { mode: CoreMode; active: boolean
       const t = now / 1000;
       const cx = w / 2;
       const cy = h / 2;
-      const R = Math.min(w, h) * 0.38;
-
-      ctx.globalCompositeOperation = "source-over";
-      ctx.clearRect(0, 0, w, h);
-      // 中心の光
-      const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.5);
-      halo.addColorStop(0, `rgba(255, 236, 205, ${0.85 * glow})`);
-      halo.addColorStop(0.12, `rgba(255, 170, 80, ${0.55 * glow})`);
-      halo.addColorStop(0.45, `rgba(255, 110, 20, ${0.18 * glow})`);
-      halo.addColorStop(1, "rgba(255, 90, 0, 0)");
-      ctx.fillStyle = halo;
-      ctx.fillRect(0, 0, w, h);
-
-      ctx.globalCompositeOperation = "lighter";
-      const breath = 1 + Math.sin(t * 1.1) * 0.025;
+      const R = Math.min(w, h) * 0.44;
+      const breath = 1 + Math.sin(t * 1.1) * 0.02;
       const scan = Math.sin(t * 1.6); // 検索中の光の帯の高さ
       const wave = (t * 0.9) % 1; // 返事中の光の波
+
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+      ctx.clearRect(0, 0, w, h);
+
+      // にじむ光・同心円・細かい粒（描いておいた絵を呼吸に合わせて少し拡大して貼る）
+      ctx.globalAlpha = Math.min(1, glow);
+      const bs = back.width * breath;
+      ctx.drawImage(back, cx - bs / 2, cy - bs / 2, bs, bs);
+      ctx.globalAlpha = 1;
+
+      // 網の点を回して画面上の位置を出す
       const cosA = Math.cos(angle);
       const sinA = Math.sin(angle);
       for (let i = 0; i < N; i++) {
-        let x = pts[i * 4];
-        const y0 = pts[i * 4 + 1];
-        let z = pts[i * 4 + 2];
-        let s = pts[i * 4 + 3] * breath;
+        let x = pts[i * 3];
+        const y0 = pts[i * 3 + 1];
+        let z = pts[i * 3 + 2];
+        let s = breath;
         if (m === "think") {
-          // 高さで回る角度をずらして渦を巻く
           const tw = y0 * Math.sin(t * 0.8) * 0.9;
           const c = Math.cos(tw);
           const d = Math.sin(tw);
@@ -118,35 +206,89 @@ export function ParticleCore({ mode, active }: { mode: CoreMode; active: boolean
         } else if (m === "connect") {
           s *= 0.9 + 0.1 * Math.sin(t * 3);
         }
-        // 回転（縦軸）→ 手前へ傾ける
         const rx = x * cosA - z * sinA;
         const rz = x * sinA + z * cosA;
         const ry = y0 * cosT - rz * sinT;
         const pz = y0 * sinT + rz * cosT;
-        const px = cx + rx * R * s;
-        const py = cy + ry * R * s;
-        const near = (pz + 1) / 2; // 0 奥 … 1 手前
-        let a = (0.3 + near * 0.75) * glow;
-        let size = 1 + near * 1.7;
-        if (m === "search") {
-          const band = Math.max(0, 1 - Math.abs(ry - scan) * 5);
-          a += band * 0.8;
-          size += band * 1.2;
-        } else if (m === "create" || m === "speaking") {
-          const dist = Math.hypot(rx, ry) * s;
-          const ring = Math.max(0, 1 - Math.abs(dist - wave * 1.1) * 7);
-          a += ring * 0.7;
-          size += ring;
-        }
-        ctx.fillStyle = `rgba(255, ${Math.round(150 + near * 70)}, ${Math.round(60 + near * 60)}, ${Math.min(1, a).toFixed(3)})`;
-        ctx.fillRect(px - size / 2, py - size / 2, size, size);
+        sx[i] = cx + rx * R * s;
+        sy[i] = cy + ry * R * s;
+        let n = (pz + 1) / 2; // 0 奥 … 1 手前
+        if (m === "search") n += Math.max(0, 1 - Math.abs(ry * s - scan) * 5) * 0.9;
+        else if (m === "create" || m === "speaking") n += Math.max(0, 1 - Math.abs(Math.hypot(rx, ry) * s - wave * 1.1) * 7) * 0.8;
+        sn[i] = n;
       }
+
+      // 線と点は、明るさ 3 段階ごとにまとめて描く（色の切り替えを減らして軽く）
+      ctx.globalAlpha = Math.min(1, glow);
+      for (const [lo, hi, alpha] of [
+        [-1, 0.45, 0.16],
+        [0.45, 0.8, 0.34],
+        [0.8, 9, 0.6],
+      ] as const) {
+        ctx.strokeStyle = `rgba(255, 150, 50, ${alpha})`;
+        ctx.lineWidth = alpha > 0.5 ? 1.1 : 0.8;
+        ctx.beginPath();
+        for (let e = 0; e < edges.length; e += 2) {
+          const a = edges[e];
+          const b = edges[e + 1];
+          const n = (sn[a] + sn[b]) / 2;
+          if (n < lo || n >= hi) continue;
+          ctx.moveTo(sx[a], sy[a]);
+          ctx.lineTo(sx[b], sy[b]);
+        }
+        ctx.stroke();
+      }
+      for (const k of NODE) {
+        ctx.fillStyle = k.color;
+        const hs = k.size / 2;
+        for (let i = 0; i < N; i++) {
+          if (sn[i] < k.lo || sn[i] >= k.hi) continue;
+          ctx.fillRect(sx[i] - hs, sy[i] - hs, k.size, k.size);
+        }
+      }
+
+      // 中心の太陽（描いておいた絵を脈に合わせて拡大して貼る。ここだけ光を足し合わせる）
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = Math.min(1, glow);
+      const ss = sun.width * (1 + Math.sin(t * 2.2) * 0.04 * glow);
+      ctx.drawImage(sun, cx - ss / 2, cy - ss / 2, ss, ss);
+      ctx.globalAlpha = 1;
     };
 
     // 30fps で十分（負荷を抑える）
+    // ふだんは 30fps。画面の更新（requestAnimationFrame）の間隔を 3 秒ごとに測り、
+    // 2 回続けて平均 45ms を超えたら（20fps 未満）、この端末には重いと判断して軽い描き方にする
+    let gap = 32;
+    let prev = 0;
+    let sum = 0;
+    let frames = 0;
+    let windowStart = 0;
+    let strikes = 0;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      if (document.hidden || now - last < 32) return;
+      if (document.hidden) {
+        prev = 0;
+        return;
+      }
+      if (!lite) {
+        if (prev) {
+          sum += now - prev;
+          frames++;
+        } else windowStart = now;
+        prev = now;
+        if (now - windowStart > 3000 && frames) {
+          strikes = sum / frames > 45 ? strikes + 1 : 0;
+          sum = frames = 0;
+          windowStart = now;
+          if (strikes >= 2) {
+            lite = true;
+            gap = 66;
+            fit();
+            slowRef.current?.();
+          }
+        }
+      }
+      if (now - last < gap) return;
       draw(now);
     };
     if (still) {

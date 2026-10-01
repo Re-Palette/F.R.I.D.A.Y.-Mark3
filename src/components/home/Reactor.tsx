@@ -1,11 +1,10 @@
 "use client";
 
 /**
- * HOME 中央の F.R.I.D.A.Y. CORE（平面の HUD ＋ ほんの少しの奥行き）。
- *   外周：細い HUD リング・角度マーカー・回路ライン／回る目盛り
- *   区切りリング 3 層（一部のセグメントが周期的に点灯）／周回する光の粒
- *   中心：ガラスの円・光る粒の球（状態で動きが変わる）・状態を示す弧・F.R.I.D.A.Y. と状態の文字
- * 考え中・返答中は発光が強まり、声を聞いている間は内側のリングが脈打つ。
+ * HOME 中央の F.R.I.D.A.Y. CORE（リファレンス準拠の細い線の HUD）。
+ *   外周：点線の輪・外向きの三角マーカー・斜めの光る括弧・破線の輪（ゆっくり回る。回す層は 2 枚だけ）
+ *   太いオレンジの輪（上下の長い弧と左右の短い弧）・細い同心円・十字の細線・左右へ伸びる線
+ *   中心：光る太陽と、つながった光の点の網（ParticleCore。状態で動きが変わる）
  * 「〇〇のホログラム」を作ったときだけ、中心に 3D ホログラムが浮かぶ。
  */
 import type { ChatPhase, ChatStage } from "@/hooks/useChat";
@@ -26,43 +25,6 @@ const arc = (r: number, from: number, to: number) => {
   const [x2, y2] = polar(r, to);
   return `M${f(x1)} ${f(y1)} A${r} ${r} 0 ${to - from > 180 ? 1 : 0} 1 ${f(x2)} ${f(y2)}`;
 };
-const ray = (r1: number, r2: number, deg: number) => {
-  const [x1, y1] = polar(r1, deg);
-  const [x2, y2] = polar(r2, deg);
-  return `M${f(x1)} ${f(y1)}L${f(x2)} ${f(y2)}`;
-};
-
-/** n 個に区切ったリング。hot はオレンジ、blink は周期的に点灯（遅れをずらして流れるように） */
-function Segments({ r, n, gap, width, hot, blink }: { r: number; n: number; gap: number; width: number; hot: (i: number) => boolean; blink?: (i: number) => boolean }) {
-  const step = 360 / n;
-  return (
-    <>
-      {Array.from({ length: n }, (_, i) => {
-        const b = blink?.(i);
-        return (
-          <path
-            key={i}
-            d={arc(r, i * step + gap / 2, (i + 1) * step - gap / 2)}
-            className={hot(i) ? "reactor__hot" : b ? "reactor__cold reactor__blink" : "reactor__cold"}
-            style={b ? { animationDelay: `${((i * 0.37) % 4).toFixed(2)}s` } : undefined}
-            strokeWidth={width}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-const inRange = (i: number, ranges: [number, number][]) => ranges.some(([a, b]) => i >= a && i <= b);
-
-/** 外周の回路ライン（外へ伸びて折れ、先に点） */
-const CIRCUITS = [32, 58, 122, 148, 212, 238, 302, 328].map((d, k) => {
-  const [x1, y1] = polar(278, d);
-  const [x2, y2] = polar(292, d);
-  const bend = k % 2 ? 8 : -8;
-  const [x3, y3] = polar(292, d + bend);
-  return { d: `M${f(x1)} ${f(y1)}L${f(x2)} ${f(y2)}L${f(x3)} ${f(y3)}`, dot: [x3, y3] as const };
-});
 
 /** いまの状態（待機・聞き取り・接続・考え中・検索・返事の作成・読み上げ） */
 export function coreMode(phase: ChatPhase, stage: ChatStage, voiceState: VoiceState): CoreMode {
@@ -73,113 +35,84 @@ export function coreMode(phase: ChatPhase, stage: ChatStage, voiceState: VoiceSt
   return "idle";
 }
 
+/** 外向きの三角（上・右・下・左） */
+const TRIANGLES = [0, 90, 180, 270].map((d) => {
+  const [x, y] = polar(284, d);
+  return { d, x, y };
+});
+
+/** 斜めの光る括弧 */
+const BRACKETS = [30, 60, 120, 150, 210, 240, 300, 330];
+
 export function Reactor({
   phase,
   stage,
   voiceState,
   active,
+  onSlow,
 }: {
   phase: ChatPhase;
   stage: ChatStage;
   voiceState: VoiceState;
   active: boolean;
+  /** 描画が追いつかない端末だと分かったとき（HOME を軽い表示に切り替える） */
+  onSlow?: () => void;
 }) {
   const holo = useHoloState();
   const modelShown = holo.status === "ready" || holo.status === "loading";
   const speaking = voiceState === "speaking";
   const mode = coreMode(phase, stage, voiceState);
   return (
-    <div className="reactor" data-phase={phase} data-mode={mode} data-speaking={speaking || undefined} data-model={modelShown || undefined}>
-      {/* 静止の外周：四隅の枠・細い HUD リング・角度マーカー・回路ライン */}
+    <div
+      className="reactor"
+      data-phase={phase}
+      data-mode={mode}
+      data-speaking={speaking || undefined}
+      data-model={modelShown || undefined}
+      role="img"
+      aria-label={`F.R.I.D.A.Y. CORE — ${MODE_LABEL[mode]}`}
+    >
+      {/* 静止：十字の細線・左右へ伸びる線・細い同心円・三角マーカー */}
       <svg className="reactor__layer" viewBox="0 0 600 600" aria-hidden="true">
-        <path className="reactor__bracket" d="M20 70V20H70M530 20H580V70M580 530V580H530M70 580H20V530" />
-        <circle cx={C} cy={C} r="297" className="reactor__thin" />
-        {[0, 90, 180, 270].map((d) => {
-          const [x, y] = polar(297, d);
-          return <path key={d} className="reactor__marker" d={`M${f(x)} ${f(y)} l-6 -9 h12 z`} transform={`rotate(${d + 180} ${f(x)} ${f(y)})`} />;
-        })}
-        {[45, 135, 225, 315].map((d) => (
-          <path key={d} className="reactor__arcmark" d={arc(297, d - 8, d + 8)} />
-        ))}
-        {CIRCUITS.map((c, i) => (
-          <g key={i} className="reactor__circuit">
-            <path d={c.d} />
-            <circle cx={f(c.dot[0])} cy={f(c.dot[1])} r="2.2" style={{ animationDelay: `${(i * 0.6).toFixed(1)}s` }} />
-          </g>
+        <path className="rx__hair" d="M300 70V530M70 300H530" />
+        <path className="rx__link" d="M8 300H-190M592 300H790" />
+        <circle cx={C} cy={C} r="236" className="rx__thin" />
+        <circle cx={C} cy={C} r="200" className="rx__thin rx__thin--hi" />
+        <circle cx={C} cy={C} r="150" className="rx__faint" />
+        {TRIANGLES.map((t) => (
+          <path key={t.d} className="rx__tri" d={`M${f(t.x)} ${f(t.y)} l-9 12 h18 z`} transform={`rotate(${t.d} ${f(t.x)} ${f(t.y)}) translate(0 -8)`} />
         ))}
       </svg>
 
-      {/* 回る細い目盛り */}
-      <svg className="reactor__layer reactor__spin reactor__spin--ticks" viewBox="0 0 600 600" aria-hidden="true">
-        {Array.from({ length: 144 }, (_, i) => i * 2.5).map((d) => (
-          <path key={d} d={ray(d % 15 === 0 ? 281 : 284, 288, d)} className={d % 15 === 0 ? "reactor__tick reactor__tick--major" : "reactor__tick"} />
-        ))}
+      <svg className="reactor__layer rx__spin rx__spin--dash" viewBox="0 0 600 600" aria-hidden="true">
+        <circle cx={C} cy={C} r="258" className="rx__dash" />
       </svg>
 
-      {/* 区切りリング 3 層 */}
-      <svg className="reactor__layer reactor__spin reactor__spin--a" viewBox="0 0 600 600" aria-hidden="true">
-        <Segments r={268} n={48} gap={2.4} width={12} hot={(i) => inRange(i, [[2, 7], [26, 29], [40, 42]])} blink={(i) => i % 7 === 3} />
-      </svg>
-      <svg className="reactor__layer reactor__spin reactor__spin--b" viewBox="0 0 600 600" aria-hidden="true">
-        <circle cx={C} cy={C} r="246" className="reactor__dots" strokeDasharray="1.2 5" />
-        <Segments r={228} n={36} gap={3} width={9} hot={(i) => inRange(i, [[31, 35], [14, 17], [22, 23]])} blink={(i) => i % 5 === 1} />
-      </svg>
-      <svg className="reactor__layer reactor__spin reactor__spin--c" viewBox="0 0 600 600" aria-hidden="true">
-        <Segments r={196} n={60} gap={1.6} width={14} hot={(i) => inRange(i, [[4, 12], [33, 40], [52, 55]])} />
-      </svg>
-
-      {/* 周回する光の粒 */}
-      <svg className="reactor__layer reactor__spin reactor__spin--orbit" viewBox="0 0 600 600" aria-hidden="true">
-        {[20, 140, 260].map((d, i) => {
-          const [x, y] = polar(246, d);
-          return <circle key={d} cx={f(x)} cy={f(y)} r={i === 0 ? 3.2 : 2.2} className="reactor__particle" />;
+      {/* 太いオレンジの輪・点線の輪・斜めの括弧（ひとまとめにしてゆっくり回す。回す層を減らして軽く） */}
+      <svg className="reactor__layer rx__spin rx__spin--ring" viewBox="0 0 600 600" aria-hidden="true">
+        <circle cx={C} cy={C} r="292" className="rx__dots" />
+        {BRACKETS.map((d) => {
+          const [x1, y1] = polar(262, d - 4);
+          const [x2, y2] = polar(274, d);
+          const [x3, y3] = polar(262, d + 4);
+          return <path key={d} className="rx__bracket" d={`M${f(x1)} ${f(y1)}L${f(x2)} ${f(y2)}L${f(x3)} ${f(y3)}`} />;
         })}
-      </svg>
-      <svg className="reactor__layer reactor__spin reactor__spin--orbit2" viewBox="0 0 600 600" aria-hidden="true">
-        {[80, 300].map((d) => {
-          const [x, y] = polar(211, d);
-          return <circle key={d} cx={f(x)} cy={f(y)} r="1.8" className="reactor__particle reactor__particle--dim" />;
-        })}
+        {/* 光り：drop-shadow は重いので、太く薄い線を下に重ねる */}
+        <path className="rx__ring-glow" d={arc(222, -62, 62)} />
+        <path className="rx__ring-glow" d={arc(222, 118, 242)} />
+        <path className="rx__ring" d={arc(222, -62, 62)} />
+        <path className="rx__ring" d={arc(222, 118, 242)} />
+        <path className="rx__ring rx__ring--thin" d={arc(222, 70, 110)} />
+        <path className="rx__ring rx__ring--thin" d={arc(222, 250, 290)} />
       </svg>
 
-      {/* 中心のガラスの円・状態の弧（声を聞いている間は脈打つ） */}
-      <svg className="reactor__layer" viewBox="0 0 600 600" aria-hidden="true">
-        <defs>
-          <radialGradient id="reactor-glass" cx="50%" cy="42%" r="60%">
-            <stop offset="0" stopColor="#140b05" />
-            <stop offset="0.75" stopColor="#060403" />
-            <stop offset="1" stopColor="#020101" />
-          </radialGradient>
-        </defs>
-        <circle cx={C} cy={C} r="170" fill="url(#reactor-glass)" />
-        <circle cx={C} cy={C} r="170" className="reactor__rim" />
-        <circle cx={C} cy={C} r="160" className="reactor__inner" />
-        <path className="reactor__cross" d="M300 132V146M300 454V468M132 300H146M454 300H468" />
-      </svg>
-      <svg className="reactor__layer reactor__status" viewBox="0 0 600 600" aria-hidden="true">
-        <circle cx={C} cy={C} r="178" className="reactor__statusring" pathLength="100" />
-      </svg>
-      <div className="reactor__sweep" aria-hidden="true" />
-      <div className="reactor__scan" aria-hidden="true">
-        <i />
+      {/* 中心の光る太陽と光の点の網（作ったホログラムを出している間は隠す） */}
+      <div className="reactor__core">
+        <ParticleCore mode={mode} active={active && !modelShown} onSlow={onSlow} />
       </div>
 
-      {/* 作ったホログラムだけを中心に浮かべる（普段は何も描かない） */}
       <div className="reactor__holo">
         <Hologram phase={phase} speaking={speaking} active={active} modelOnly />
-      </div>
-
-      {/* 中心の光る粒（作ったホログラムを出している間は隠す） */}
-      <div className="reactor__core">
-        <ParticleCore mode={mode} active={active && !modelShown} />
-      </div>
-
-      <div className="reactor__label">
-        <b className="reactor__name">F.R.I.D.A.Y.</b>
-        <span className="reactor__state">
-          <i />
-          {MODE_LABEL[mode]}
-        </span>
       </div>
     </div>
   );

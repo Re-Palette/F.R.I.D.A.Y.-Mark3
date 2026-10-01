@@ -59,19 +59,31 @@ export function agentOnline(key: string, phase: string, chat: ChatAgentStatus, b
 /* ---------- レーダー ---------- */
 
 export function Radar() {
+  const ticks = Array.from({ length: 36 }, (_, i) => i * 10);
   return (
     <div className="radar" aria-hidden="true">
       <svg viewBox="0 0 180 180">
-        {[86, 64, 42, 20].map((r) => (
-          <circle key={r} cx="90" cy="90" r={r} className="radar__ring" />
+        <defs>
+          <linearGradient id="radar-sweep" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#ff6a00" stopOpacity="0" />
+            <stop offset="1" stopColor="#ffb347" stopOpacity="0.95" />
+          </linearGradient>
+        </defs>
+        <circle cx="90" cy="90" r="84" className="radar__rim" />
+        <circle cx="90" cy="90" r="56" className="radar__ring" />
+        <circle cx="90" cy="90" r="28" className="radar__ring" />
+        {ticks.map((d) => (
+          <path key={d} className="radar__tick" d={`M90 ${d % 90 === 0 ? 8 : 10}V${d % 90 === 0 ? 18 : 14}`} transform={`rotate(${d} 90 90)`} />
         ))}
-        <path d="M90 4V176M4 90H176" className="radar__ring" />
-        <g className="radar__sweep">
-          <path d="M90 90 L90 4 A86 86 0 0 1 150.8 29.2 Z" />
-        </g>
+        <path d="M90 16V164M16 90H164" className="radar__ring radar__ring--cross" />
         <circle cx="118" cy="62" r="2.4" className="radar__blip" />
-        <circle cx="70" cy="112" r="1.8" className="radar__blip radar__blip--b" />
-        <circle cx="90" cy="90" r="2.6" className="radar__center" />
+        <circle cx="66" cy="118" r="1.8" className="radar__blip radar__blip--b" />
+        <circle cx="90" cy="90" r="3" className="radar__center" />
+      </svg>
+      {/* 回る扇形は別の SVG にして、要素ごと回す（描き直しを起こさず軽い） */}
+      <svg viewBox="0 0 180 180" className="radar__spinner">
+        <path d="M90 90 L90 6 A84 84 0 0 1 132 17.2 Z" fill="url(#radar-sweep)" />
+        <path d="M90 90 L132 17.2" className="radar__edge" />
       </svg>
     </div>
   );

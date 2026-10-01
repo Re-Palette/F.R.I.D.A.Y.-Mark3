@@ -6,7 +6,7 @@
  *   左：SYSTEM STATUS・CURRENT MODE・接続の短いバー・現在地／右：レーダー・VOICE ACTIVITY・NOTIFICATIONS
  *   下：ACTIVITY LIVE。返事（検索の要約と関連ページ）は、話しかけたときだけ下に HUD パネルで開く。
  */
-import { memo, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import type { ChatPhase, ChatStage, LastRunStats, UiMessage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
@@ -56,6 +56,9 @@ export const HomeHud = memo(function HomeHud({
   maxContext: number;
 }) {
   const mode = coreMode(phase, stage, voiceState);
+  // 描画が追いつかない端末では、輪の回転などを止めて軽くする（コアが知らせる）
+  const [lite, setLite] = useState(false);
+  const onSlow = useCallback(() => setLite(true), []);
 
   // 返事のパネル：話しかけたら開き、× で閉じる（次に話しかけるとまた開く）
   const lastQuestion = [...messages].reverse().find((m) => m.role === "user")?.id;
@@ -86,7 +89,7 @@ export const HomeHud = memo(function HomeHud({
   };
 
   return (
-    <div className="home" data-mode={mode} data-response={showResponse || undefined} aria-hidden={hidden} inert={hidden}>
+    <div className="home" data-mode={mode} data-lite={lite || undefined} data-response={showResponse || undefined} aria-hidden={hidden} inert={hidden}>
       <div className="home__top">
         <TopTabs chatStatus={chatStatus} brain={brain} lastRun={lastRun} maxContext={maxContext} open={tab} onTab={onTab} />
         {tab === "agents" && (
@@ -99,13 +102,16 @@ export const HomeHud = memo(function HomeHud({
       <div className="home__left">
         <SystemBars active={!hidden} />
         <CurrentMode mode={mode} hint={HINT[voiceState]} />
-        <LinkBars chatStatus={chatStatus} phase={phase} brain={brain} calendar={calendar} lastRun={lastRun} />
+        <LinkBars chatStatus={chatStatus} phase={phase} brain={brain} calendar={calendar} voiceState={voiceState} lastRun={lastRun} maxContext={maxContext} />
+      </div>
+
+      <div className="home__loc">
         <LocationMark />
       </div>
 
       <div className="home__core">
         <div className="core-rig">
-          <Reactor phase={phase} stage={stage} voiceState={voiceState} active={!hidden} />
+          <Reactor phase={phase} stage={stage} voiceState={voiceState} active={!hidden} onSlow={onSlow} />
         </div>
         <HandControl hidden={hidden} />
       </div>
@@ -114,6 +120,12 @@ export const HomeHud = memo(function HomeHud({
         <Radar />
         <VoiceActivity state={voiceState} />
         <Notifications news={news} />
+        <div className="hdeco" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <i />
+        </div>
       </div>
 
       <div className="home__bottom">
@@ -127,7 +139,7 @@ export const HomeHud = memo(function HomeHud({
             onClose={() => setClosedFor(lastQuestion)}
           />
         ) : (
-          <ActivityLive messages={messages} phase={phase} />
+          <ActivityLive messages={messages} phase={phase} mode={mode} lastRun={lastRun} maxContext={maxContext} />
         )}
       </div>
     </div>

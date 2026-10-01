@@ -1739,19 +1739,21 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 }
 
 /* ==========================================================================
-   ミニマル HUD（リファレンス準拠）：画面を囲むオレンジの枠、中央の大きなコア、
-   左右に短いバーと数字だけ。詳細（返事・検索結果・一覧）は必要なときだけ HUD パネルで開く。
+   ミニマル HUD（リファレンス準拠）：画面を囲む光るオレンジの枠と上のバー、
+   中央の大きなコア（光る太陽と光の点の網）、左右は短いバーと数字、四角い枠のパネル。
+   詳細（返事・検索結果・一覧）は必要なときだけ HUD パネルで開く。
    ========================================================================== */
 
 :root {
-  --warm: #ffe9d2;
-  --amber-line: rgba(255, 140, 40, 0.42);
-  --amber-soft: rgba(255, 140, 40, 0.14);
+  --warm: #ffe6c8;
+  --amber: #ff8a1f;
+  --amber-line: rgba(255, 140, 40, 0.5);
+  --amber-glow: 0 0 10px rgba(255, 110, 10, 0.45), inset 0 0 12px rgba(255, 110, 10, 0.14);
 }
 
 .bg {
   background:
-    radial-gradient(circle at 50% 46%, rgba(255, 110, 20, 0.14), rgba(255, 90, 0, 0.035) 30%, transparent 52%),
+    radial-gradient(circle at 50% 48%, rgba(255, 110, 20, 0.12), rgba(255, 90, 0, 0.03) 30%, transparent 52%),
     linear-gradient(180deg, #0a0a0a 0%, #070707 55%, #050505 100%);
 }
 
@@ -1770,15 +1772,42 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   height: calc(100% - 12px);
   z-index: 0;
   pointer-events: none;
+  overflow: visible;
   display: none;
 }
 
-.screen-frame path {
+.sframe__outer {
   fill: none;
-  stroke: var(--orange);
+  stroke: var(--amber);
+  stroke-width: 2.2;
+  filter: drop-shadow(0 0 5px rgba(255, 100, 0, 0.9));
+}
+
+.sframe__corner {
+  fill: none;
+  stroke: #ffb458;
+  stroke-width: 5;
+  filter: drop-shadow(0 0 7px rgba(255, 110, 0, 1));
+}
+
+.sframe__bar {
+  fill: none;
+  stroke: var(--amber);
   stroke-width: 1.4;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 4px rgba(255, 120, 20, 0.8));
+  opacity: 0.85;
+  filter: drop-shadow(0 0 3px rgba(255, 110, 0, 0.8));
+}
+
+.sframe__inner {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.35);
+  stroke-width: 1;
+}
+
+.sframe__hatch {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.7);
+  stroke-width: 1.4;
 }
 
 @media (min-width: 1000px) {
@@ -1786,37 +1815,130 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     display: block;
   }
 
-  /* HOME ではメニューをアイコンだけの細いレールにする（ほかの画面へはここから） */
-  .app[data-view="home"] {
-    grid-template-columns: 72px minmax(0, 1fr) 0;
+  /* 枠の中に薄い方眼 */
+  .app[data-view="home"] .bg::after {
+    content: "";
+    position: absolute;
+    inset: 60px 24px 24px;
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 140, 40, 0.035) 0 1px, transparent 1px 48px),
+      repeating-linear-gradient(90deg, rgba(255, 140, 40, 0.035) 0 1px, transparent 1px 48px);
   }
 
+  .app[data-view="home"] {
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+    grid-template-rows: 52px minmax(0, 1fr);
+  }
+
+  /* ---------- 上のバー：F.R.I.D.A.Y.・メニュー・日付と時刻 ---------- */
+
+  .app[data-view="home"] .topbar {
+    padding: 0 48px 4px 46px;
+  }
+
+  .app[data-view="home"] .topbar__frame,
+  .app[data-view="home"] .brand__mk,
+  .app[data-view="home"] .brand__sub {
+    display: none;
+  }
+
+  .app[data-view="home"] .brand {
+    gap: 10px;
+  }
+
+  .app[data-view="home"] .brand__mark {
+    width: 18px;
+    height: 18px;
+  }
+
+  .app[data-view="home"] .brand__name {
+    font-size: 14px;
+    letter-spacing: 0.34em;
+    color: #ffd9ad;
+    text-shadow: 0 0 8px rgba(255, 120, 20, 0.8);
+  }
+
+  .app[data-view="home"] .topbar__right {
+    gap: 22px;
+  }
+
+  .app[data-view="home"] .clock {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 14px;
+    padding: 0;
+  }
+
+  .app[data-view="home"] .clock::before,
+  .app[data-view="home"] .clock::after {
+    display: none;
+  }
+
+  .app[data-view="home"] .clock__date,
+  .app[data-view="home"] .clock__time {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    letter-spacing: 0.14em;
+    color: #ffc27a;
+    text-shadow: 0 0 6px rgba(255, 120, 20, 0.8);
+  }
+
+  .app[data-view="home"] .sys-icons {
+    gap: 14px;
+    color: #ffc27a;
+    transform: scale(0.8);
+    transform-origin: right center;
+  }
+
+  /* メニューは上のバーの中に小さなアイコンで並べる（ほかの画面へはここから） */
   .app[data-view="home"] .sidebar {
-    padding-top: 22px;
+    padding: 0;
     overflow: visible;
   }
 
   .app[data-view="home"] .nav {
-    border-right-color: rgba(255, 140, 40, 0.16);
+    position: absolute;
+    top: 9px;
+    left: 250px;
+    z-index: 6;
+    flex-direction: row;
+    gap: 2px;
+    padding: 0;
+    border: 0;
   }
 
-  .app[data-view="home"] .nav::before {
+  .app[data-view="home"] .nav::before,
+  .app[data-view="home"] .nav::after,
+  .app[data-view="home"] .nav__idx,
+  .app[data-view="home"] .signature,
+  .app[data-view="home"] .sys-status {
     display: none;
   }
 
   .app[data-view="home"] .nav__item {
-    justify-content: center;
-    padding: 12px 0;
-    color: rgba(255, 220, 190, 0.7);
+    padding: 6px 9px 5px;
+    color: rgba(255, 190, 130, 0.62);
+    border-bottom: 2px solid transparent;
+    clip-path: none;
+    margin: 0;
+  }
+
+  .app[data-view="home"] .nav__item svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .app[data-view="home"] .nav__item:hover:not([aria-disabled="true"]):not([data-active]) {
+    background: none;
+    color: #ffd2a0;
   }
 
   .app[data-view="home"] .nav__item[data-active] {
-    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
-  }
-
-  .app[data-view="home"] .nav__idx,
-  .app[data-view="home"] .signature {
-    display: none;
+    background: none;
+    box-shadow: none;
+    color: #ffd9ad;
+    border-bottom-color: var(--amber);
+    filter: drop-shadow(0 0 5px rgba(255, 120, 20, 0.9));
   }
 
   /* 名前は見た目だけ隠す（読み上げや操作では今まで通り使える） */
@@ -1829,33 +1951,68 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     white-space: nowrap;
   }
 
-  /* 手で操作のカメラ映像は、レールの横に浮かべる */
+  /* 手で操作のカメラ映像は左下に浮かべる */
   .app[data-view="home"] .hand-slot {
     position: absolute;
-    left: 84px;
-    bottom: 150px;
+    left: 60px;
+    bottom: 190px;
     z-index: 30;
     width: 220px;
     padding: 0;
   }
 
   .app[data-view="home"] .center {
-    padding: 6px 30px 16px 12px;
+    padding: 22px 60px 30px;
+    gap: 12px;
+  }
+
+  /* ---------- 入力欄：1 行のコンパクトな形 ---------- */
+
+  .app[data-view="home"] .composer {
+    width: min(100%, 660px);
+    padding: 7px 18px 7px 12px;
+    gap: 12px;
+  }
+
+  .app[data-view="home"] .composer__mic {
+    width: 42px;
+    height: 42px;
+  }
+
+  .app[data-view="home"] .composer__main {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .app[data-view="home"] .composer__row {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .app[data-view="home"] .composer__tools {
+    flex: none;
+  }
+
+  .app[data-view="home"] .composer__tools .tool-btn {
+    display: none;
   }
 }
 
 /* ---------- 配置 ---------- */
 
 .home {
-  grid-template-columns: 280px minmax(0, 1fr) 290px;
+  grid-template-columns: 300px minmax(0, 1fr) 300px;
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "top top right"
+    "top core right"
     "left core right"
-    "left bottom right";
-  column-gap: 40px;
-  row-gap: 8px;
-  padding: 10px 0 4px;
+    "loc bottom right";
+  column-gap: 30px;
+  row-gap: 10px;
+  padding: 0;
 }
 
 .home__top {
@@ -1867,8 +2024,13 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 .home__left {
   grid-area: left;
   grid-row: auto;
-  gap: 22px;
-  padding-top: 18px;
+  gap: 30px;
+  padding-top: 52px;
+}
+
+.home__loc {
+  grid-area: loc;
+  align-self: end;
 }
 
 .home__right {
@@ -1879,7 +2041,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
 .home__core {
   grid-area: core;
-  --rw: min(100cqw, 100cqh);
+  --rw: calc(min(100cqw, 100cqh) * 0.97);
 }
 
 .home__bottom {
@@ -1891,7 +2053,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
 .home__core .hand {
   right: 0;
-  bottom: 4px;
+  bottom: 0;
 }
 
 /* ---------- 上のタブ ---------- */
@@ -1902,52 +2064,37 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 }
 
 .htab {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 112px;
-  padding: 9px 16px 8px;
-  border: 1px solid var(--amber-line);
-  background: linear-gradient(180deg, rgba(255, 130, 30, 0.1), rgba(255, 130, 30, 0.02));
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-  color: var(--warm);
-  font-family: var(--font-brand);
-  font-size: 11px;
-  letter-spacing: 0.16em;
+  padding: 6px 12px 5px;
+  border: 1.5px solid var(--amber);
+  border-radius: 3px;
+  background: rgba(255, 120, 20, 0.08);
+  box-shadow: var(--amber-glow);
+  color: #ffdcb3;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 6px rgba(255, 130, 30, 0.9);
   cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s, color 0.2s;
-}
-
-.htab b {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  color: var(--orange-hi);
+  transition: background 0.2s, color 0.2s;
 }
 
 .htab:hover,
 .htab[data-open] {
-  background: linear-gradient(180deg, rgba(255, 130, 30, 0.32), rgba(255, 130, 30, 0.08));
-  box-shadow: inset 0 0 14px rgba(255, 130, 30, 0.35);
-}
-
-.htab[data-open] {
+  background: rgba(255, 130, 30, 0.3);
   color: #fff;
 }
 
 /* AGENTS の小窓 */
 .hpop {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   left: 0;
+  z-index: 40;
   width: 320px;
+  background: rgba(10, 7, 4, 0.97);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   animation: hpop-in 0.18s ease-out;
-}
-
-.hpop .spanel {
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7), 0 0 24px rgba(255, 120, 20, 0.18);
 }
 
 @keyframes hpop-in {
@@ -1957,37 +2104,38 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   }
 }
 
-/* ---------- 見出しと短いバー ---------- */
+/* ---------- 見出しとバー ---------- */
 
 .hblock__title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   margin: 0 0 12px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid rgba(255, 140, 40, 0.22);
-  font-family: var(--font-brand);
-  font-size: 11.5px;
-  font-weight: 400;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
   letter-spacing: 0.18em;
-  color: var(--orange);
-  text-shadow: 0 0 8px rgba(255, 120, 20, 0.45);
+  color: #ffd6a6;
+  text-shadow: 0 0 6px rgba(255, 120, 20, 0.6);
 }
 
 .hblock__title::before {
   content: "";
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   flex: none;
-  align-self: center;
-  background: var(--orange);
-  box-shadow: 0 0 6px var(--orange);
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
 }
 
 .hblock__title b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.04em;
   color: var(--warm);
@@ -1999,47 +2147,56 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 13px;
+  gap: 12px;
 }
 
+/* SYSTEM STATUS：名前の下にバー、右に値 */
 .hrows li {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  row-gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  grid-template-areas:
+    "label label"
+    "bar value";
+  align-items: center;
+  row-gap: 5px;
+  column-gap: 12px;
+}
+
+.hrows li > span {
+  grid-area: label;
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.14em;
-  color: rgba(255, 225, 200, 0.78);
+  color: rgba(255, 220, 185, 0.8);
 }
 
-.hrows li b {
+.hrows li > .hbar {
+  grid-area: bar;
+}
+
+.hrows li > b {
+  grid-area: value;
   font-family: var(--font-mono);
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 400;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   color: var(--warm);
-}
-
-.hrows li .hbar {
-  grid-column: 1 / -1;
 }
 
 .hbar {
   display: block;
-  height: 6px;
-  background: rgba(255, 140, 40, 0.1);
-  -webkit-mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 7px);
-  mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 7px);
+  height: 7px;
+  border: 1px solid rgba(255, 140, 40, 0.38);
+  border-radius: 1px;
   overflow: hidden;
 }
 
 .hbar em {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #ff6a00, #ffb458);
-  box-shadow: 0 0 8px rgba(255, 130, 30, 0.8);
+  background: linear-gradient(90deg, #ff5a00, #ffa53a 70%, #ffd28a);
+  box-shadow: 0 0 8px rgba(255, 130, 30, 0.9);
   transform-origin: left;
   transition: transform 0.8s ease;
 }
@@ -2048,25 +2205,43 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   animation: blink-soft 1.2s ease-in-out infinite;
 }
 
-/* 接続の短いバー：名前・バー・値を 1 行に */
+/* 接続の短いバー：印・名前・バー・値を 1 行に */
 .hrows--short {
   gap: 9px;
 }
 
 .hrows--short li {
-  grid-template-columns: 78px minmax(0, 1fr) 44px;
+  grid-template-columns: 6px 70px minmax(0, 1fr) 42px;
+  grid-template-areas: none;
   column-gap: 10px;
-  align-items: center;
-  font-size: 11.5px;
 }
 
-.hrows--short li .hbar {
-  grid-column: auto;
-  height: 4px;
+.hrows--short li > span,
+.hrows--short li > .hbar,
+.hrows--short li > b {
+  grid-area: auto;
 }
 
-.hrows--short li b {
-  font-size: 12px;
+.hrows--short li > span {
+  font-size: 9.5px;
+  color: rgba(255, 190, 130, 0.62);
+}
+
+.hrows__mark {
+  width: 5px;
+  height: 5px;
+  background: var(--amber);
+  box-shadow: 0 0 5px var(--amber);
+}
+
+.hrows--short .hbar {
+  height: 5px;
+  border: 0;
+  background: rgba(255, 140, 40, 0.12);
+}
+
+.hrows--short li > b {
+  font-size: 10.5px;
   text-align: right;
 }
 
@@ -2076,42 +2251,33 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
 /* ---------- CURRENT MODE ---------- */
 
-.hmode {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px 13px;
-  border: 1px solid var(--amber-line);
-  background: linear-gradient(135deg, rgba(255, 130, 30, 0.12), rgba(255, 130, 30, 0.02) 60%);
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
-}
-
-.hmode__label {
-  font-family: var(--font-brand);
-  font-size: 10.5px;
-  letter-spacing: 0.2em;
-  color: rgba(255, 200, 150, 0.75);
+.hmode .hblock__title {
+  margin-bottom: 10px;
 }
 
 .hmode__value {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 7px 12px;
+  border: 1.5px solid var(--amber);
+  border-radius: 3px;
+  background: rgba(255, 120, 20, 0.07);
+  box-shadow: var(--amber-glow);
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--orange-hi);
-  text-shadow: 0 0 14px rgba(255, 130, 30, 0.7);
+  letter-spacing: 0.18em;
+  color: #ffcf99;
+  text-shadow: 0 0 8px rgba(255, 130, 30, 0.9);
 }
 
 .hmode__value i {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 8px currentColor;
+  box-shadow: 0 0 6px currentColor;
   animation: blink-soft 2.4s ease-in-out infinite;
 }
 
@@ -2123,116 +2289,246 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   animation-duration: 0.8s;
 }
 
-.hmode__hint {
-  font-family: var(--font-jp);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: rgba(255, 225, 200, 0.62);
-}
-
 /* ---------- 左下の現在地 ---------- */
 
 .hloc {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-top: auto;
-  padding-bottom: 4px;
+  gap: 18px;
 }
 
 .hloc__cross {
-  width: 46px;
-  height: 46px;
+  width: 72px;
+  height: 72px;
   flex: none;
+  overflow: visible;
 }
 
 .hloc__cross circle,
 .hloc__cross path {
   fill: none;
-  stroke: var(--orange);
-  stroke-width: 1.2;
+  stroke: var(--amber);
+  stroke-width: 1.6;
+  filter: drop-shadow(0 0 4px rgba(255, 110, 0, 0.9));
 }
 
 .hloc__cross .hloc__dot {
-  fill: var(--orange-hi);
+  fill: #ffb458;
   stroke: none;
-  filter: drop-shadow(0 0 4px var(--orange));
   animation: blink-soft 2s ease-in-out infinite;
 }
 
-.hloc b {
-  display: block;
-  font-family: var(--font-brand);
-  font-size: 16px;
-  font-weight: 400;
-  letter-spacing: 0.22em;
-  color: var(--warm);
+.hloc__text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.hloc span {
+.hloc__rule {
+  display: block;
+  width: 70px;
+  height: 1.5px;
+  background: rgba(255, 140, 40, 0.6);
+}
+
+.hloc__rule--long {
+  width: 150px;
+}
+
+.hloc__text b {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: #ffd6a6;
+  text-shadow: 0 0 6px rgba(255, 120, 20, 0.8);
+}
+
+.hloc__text b svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 1.5;
+}
+
+.hloc__text span {
   font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-size: 11px;
   color: rgba(255, 200, 150, 0.7);
 }
 
-/* ---------- レーダー ---------- */
+.hloc__text span:empty {
+  display: none;
+}
+
+/* ---------- 右：レーダー ---------- */
+
+.home__right .radar {
+  display: flex;
+  justify-content: flex-end;
+  padding-right: 18px;
+}
 
 .home__right .radar svg {
-  width: 200px;
-  height: 200px;
-  margin: 0 auto;
+  width: 176px;
+  height: 176px;
+  margin: 0;
+  overflow: visible;
 }
 
-/* ---------- VOICE ACTIVITY ---------- */
+.radar__rim {
+  fill: rgba(255, 90, 0, 0.04);
+  stroke: var(--amber);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 5px rgba(255, 110, 0, 0.9));
+}
 
-.hvoice__wave {
+.radar__ring {
+  stroke: rgba(255, 140, 40, 0.28);
+}
+
+.radar__ring--cross {
+  stroke: rgba(255, 140, 40, 0.18);
+}
+
+.radar__tick {
+  stroke: rgba(255, 160, 70, 0.7);
+  stroke-width: 1;
+}
+
+.radar__edge {
+  stroke: #ffd9a0;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px #ff8a1f);
+}
+
+/* ---------- 四角い枠のパネル（VOICE / NOTIFICATIONS / ACTIVITY） ---------- */
+
+.hbox {
+  position: relative;
+  padding: 11px 14px 12px;
+  border: 1.5px solid var(--amber);
+  border-radius: 4px;
+  background: rgba(255, 100, 10, 0.05);
+  box-shadow: var(--amber-glow);
+}
+
+.hbox .hblock__title {
+  margin-bottom: 9px;
+  font-size: 11px;
+}
+
+.hbox .hblock__title::before {
+  width: 5px;
+  height: 5px;
+}
+
+.hlamp {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5a4a3a;
+}
+
+.hlamp[data-on] {
+  background: #6dff8a;
+  box-shadow: 0 0 6px #6dff8a;
+}
+
+.hbox__ticks {
   display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 58px;
+  justify-content: space-between;
+  margin-top: 8px;
 }
 
-.hvoice__wave i {
-  flex: 1;
-  height: calc(var(--h) * 100%);
-  background: linear-gradient(180deg, #ffb458, #ff6a00);
-  box-shadow: 0 0 6px rgba(255, 120, 20, 0.6);
-  transform: scaleY(0.08);
-  transition: transform 0.4s;
+.hbox__ticks i {
+  display: block;
+  width: 18%;
+  height: 2px;
+  background: rgba(255, 140, 40, 0.45);
 }
 
-.hvoice[data-voice="standby"] .hvoice__wave i {
-  animation: vwave 2.6s ease-in-out infinite;
-  --lo: 0.06;
-  --hi: 0.2;
+.hbox__ticks i:nth-child(2) {
+  width: 8%;
 }
 
-.hvoice[data-voice="listening"] .hvoice__wave i,
-.hvoice[data-voice="speaking"] .hvoice__wave i {
-  animation: vwave 0.7s ease-in-out infinite;
-  --lo: 0.2;
-  --hi: 1;
+/* VOICE ACTIVITY：流れる光の波（箱ごと横に流し、高さは箱ごと伸縮。どちらも描き直しなしで動く） */
+.hvoice__wave {
+  position: relative;
+  height: 46px;
+  overflow: hidden;
 }
 
-.hvoice[data-voice="thinking"] .hvoice__wave i {
-  animation: vwave 1.3s ease-in-out infinite;
-  --lo: 0.1;
-  --hi: 0.45;
+.hvoice__amp {
+  position: absolute;
+  inset: 0;
+  transform: scaleY(0.06);
+  transition: transform 0.6s ease;
+  will-change: transform;
 }
 
-@keyframes vwave {
-  0%,
-  100% {
-    transform: scaleY(var(--lo));
+.hvoice__flow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  animation: wave-flow 4s linear infinite;
+  will-change: transform;
+}
+
+.hvoice__flow svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hvoice__flow--a path {
+  fill: #ff8a1f;
+}
+
+.hvoice__flow--b {
+  animation-duration: 6.5s;
+}
+
+.hvoice__flow--b path {
+  fill: rgba(255, 196, 110, 0.55);
+}
+
+@keyframes wave-flow {
+  to {
+    transform: translateX(-50%);
   }
-  50% {
-    transform: scaleY(var(--hi));
-  }
 }
 
-/* ---------- NOTIFICATIONS ---------- */
+.hvoice[data-voice="standby"] .hvoice__amp {
+  transform: scaleY(0.3);
+}
 
+.hvoice[data-voice="thinking"] .hvoice__amp {
+  transform: scaleY(0.55);
+}
+
+.hvoice[data-voice="listening"] .hvoice__amp,
+.hvoice[data-voice="speaking"] .hvoice__amp {
+  transform: scaleY(1);
+}
+
+.hvoice[data-voice="listening"] .hvoice__flow--a,
+.hvoice[data-voice="speaking"] .hvoice__flow--a {
+  animation-duration: 1.6s;
+}
+
+.hvoice[data-voice="listening"] .hvoice__flow--b,
+.hvoice[data-voice="speaking"] .hvoice__flow--b {
+  animation-duration: 2.4s;
+}
+
+/* NOTIFICATIONS */
 .hnote ul {
   list-style: none;
   margin: 0;
@@ -2244,16 +2540,25 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
 .hnote li {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  color: var(--orange);
 }
 
-.hnote li span {
+.hnote__icon {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--amber-line);
+  border-radius: 2px;
+  color: var(--amber);
+}
+
+.hnote__text {
   font-family: var(--font-jp);
   font-size: 13px;
-  color: var(--warm);
+  color: #ffe3c4;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2261,90 +2566,163 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
 .hnote li time {
   font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--orange-hi);
+  font-size: 11.5px;
+  color: #ffd6a6;
 }
 
 .hnote__empty {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   letter-spacing: 0.14em;
   color: rgba(255, 200, 150, 0.55);
 }
 
-/* ---------- ACTIVITY LIVE ---------- */
+/* 右下の飾りの目盛り */
+.hdeco {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  margin-top: auto;
+  padding-right: 4px;
+}
 
+.hdeco i {
+  display: block;
+  height: 3px;
+  width: 90px;
+  background: linear-gradient(90deg, rgba(255, 140, 40, 0.8) 0 55%, transparent 55% 65%, rgba(255, 140, 40, 0.8) 65%);
+  box-shadow: 0 0 5px rgba(255, 110, 0, 0.6);
+}
+
+.hdeco i:nth-child(2) {
+  width: 110px;
+}
+
+.hdeco i:nth-child(3) {
+  width: 80px;
+}
+
+.hdeco i:nth-child(4) {
+  width: 100px;
+}
+
+/* ACTIVITY LIVE */
 .hactivity {
-  width: min(100%, 700px);
+  width: min(100%, 540px);
   padding: 10px 16px 12px;
-  border: 1px solid var(--amber-line);
-  background: linear-gradient(180deg, rgba(255, 130, 30, 0.08), rgba(255, 130, 30, 0.01));
-  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%, 0 14px);
 }
 
 .hactivity header {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 8px;
-  font-family: var(--font-brand);
+  gap: 10px;
+  margin-bottom: 10px;
+  font-family: var(--font-ui);
   font-size: 11px;
-  letter-spacing: 0.18em;
-  color: var(--orange);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: #ffd6a6;
+}
+
+.hactivity header > span::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 9px;
+  background: var(--amber);
+  box-shadow: 0 0 5px var(--amber);
 }
 
 .hactivity__live {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-mono);
+  margin-left: auto;
+  font-family: var(--font-ui);
   font-size: 11px;
-  font-weight: 400;
-  color: var(--warm);
+  font-weight: 600;
+  color: #ffd6a6;
 }
 
 .hactivity__live i {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #ff5a1f;
-  box-shadow: 0 0 6px #ff5a1f;
+  background: #ffd23f;
+  box-shadow: 0 0 6px #ffd23f;
   animation: blink-soft 1.4s ease-in-out infinite;
-}
-
-.hactivity header em {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-style: normal;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  color: var(--warm);
 }
 
 .hactivity__bars {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
-  height: 46px;
-  border-bottom: 1px solid rgba(255, 140, 40, 0.3);
+  gap: 2px;
+  height: 52px;
 }
 
 .hactivity__bars i {
   flex: 1;
   height: 100%;
-  background: linear-gradient(180deg, #ffb458, rgba(255, 106, 0, 0.35));
+  background: linear-gradient(180deg, #ff9a2e, #ff5a00);
+  box-shadow: 0 0 5px rgba(255, 110, 0, 0.5);
   transform-origin: bottom;
   transition: transform 0.6s ease;
 }
 
 .hactivity__bars i[data-now] {
-  background: linear-gradient(180deg, #fff1dd, #ff8a1f);
-  box-shadow: 0 0 8px rgba(255, 130, 30, 0.8);
+  background: linear-gradient(180deg, #ffe4b8, #ff8a1f);
 }
 
 .hactivity[data-busy] .hactivity__bars i[data-now] {
   animation: blink-soft 0.8s ease-in-out infinite;
+}
+
+.hactivity__meter {
+  margin: 10px 0;
+}
+
+.hactivity__meter .hbar {
+  height: 7px;
+  border: 0;
+  background: rgba(255, 140, 40, 0.14);
+}
+
+.hactivity__cells {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.hactivity__cells li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 140, 40, 0.35);
+  border-radius: 2px;
+}
+
+.hactivity__cells span {
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: rgba(255, 190, 130, 0.62);
+}
+
+.hactivity__cells b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--warm);
+  white-space: nowrap;
 }
 
 /* ---------- 返事（RESPONSE）のパネル ---------- */
@@ -2355,11 +2733,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 }
 
 .home__bottom .rpanel__body {
-  max-height: min(34vh, 300px);
-}
-
-.home[data-response] .home__core {
-  --rw: min(100cqw, 100cqh);
+  max-height: min(30vh, 280px);
 }
 
 .rpanel__close {
@@ -2443,13 +2817,12 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   color: #fff;
 }
 
-/* ---------- 中央のコア：光る粒の球が主役 ---------- */
+/* ---------- 中央のコア：細い線の HUD と、光る太陽と網 ---------- */
 
 .reactor__core {
   position: absolute;
-  inset: calc(50% - 28.33%);
+  inset: calc(50% - 33.4%);
   border-radius: 50%;
-  overflow: hidden;
   pointer-events: none;
 }
 
@@ -2459,48 +2832,149 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   height: 100%;
 }
 
-.reactor__sweep {
-  opacity: 0.5;
-}
-
 .reactor[data-model] .reactor__core {
   opacity: 0;
 }
 
-.reactor__label {
-  justify-content: flex-end;
-  gap: 4px;
-  padding-bottom: 25%;
+.rx__hair {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.14);
+  stroke-width: 1;
 }
 
-.reactor__name {
-  font-family: var(--font-brand);
-  font-size: clamp(11px, 2.3cqw, 20px);
-  font-weight: 400;
-  letter-spacing: 0.34em;
-  padding-left: 0.34em;
-  color: var(--warm);
-  text-shadow: 0 0 10px rgba(255, 150, 60, 0.8);
+.rx__link {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.35);
+  stroke-width: 1;
 }
 
-.reactor__state,
-.reactor:not([data-mode="idle"]) .reactor__state,
-.reactor[data-mode="listening"] .reactor__state {
-  color: var(--orange-hi);
+.rx__thin {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.28);
+  stroke-width: 1;
 }
 
-.reactor[data-mode="listening"] .reactor__state,
-.reactor[data-mode="speaking"] .reactor__state,
-.reactor[data-mode="create"] .reactor__state {
-  color: #fff1dd;
+.rx__thin--hi {
+  stroke: rgba(255, 160, 60, 0.6);
+  stroke-width: 1.5;
 }
 
-/* 青は使わない（HOME の案内・手の操作ボタン） */
-.home__hint[data-voice="listening"],
+.rx__faint {
+  fill: none;
+  stroke: rgba(255, 140, 40, 0.18);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+
+.rx__tri {
+  fill: #ff9a2e;
+  filter: drop-shadow(0 0 6px rgba(255, 110, 0, 1));
+}
+
+.rx__dots {
+  fill: none;
+  stroke: #ff8a1f;
+  stroke-width: 2.4;
+  stroke-dasharray: 0.5 8;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(255, 110, 0, 0.9));
+}
+
+.rx__bracket {
+  fill: none;
+  stroke: #ffb458;
+  stroke-width: 3;
+  stroke-linejoin: miter;
+  filter: drop-shadow(0 0 5px rgba(255, 110, 0, 1));
+}
+
+.rx__dash {
+  fill: none;
+  stroke: rgba(255, 150, 60, 0.5);
+  stroke-width: 1.2;
+  stroke-dasharray: 12 9;
+}
+
+.rx__ring {
+  fill: none;
+  stroke: #ff8a1f;
+  stroke-width: 7;
+  filter: drop-shadow(0 0 8px rgba(255, 100, 0, 1));
+  transition: stroke 0.4s;
+}
+
+.rx__ring--thin {
+  stroke-width: 3;
+  opacity: 0.8;
+}
+
+.rx__spin {
+  will-change: transform;
+}
+
+.rx__spin--outer {
+  animation: spin 160s linear infinite;
+}
+
+.rx__spin--dash {
+  animation: spin 90s linear infinite reverse;
+}
+
+.rx__spin--ring {
+  animation: spin 120s linear infinite;
+}
+
+.reactor:not([data-phase="idle"]) .rx__spin--ring {
+  animation-duration: 14s;
+}
+
+.reactor:not([data-phase="idle"]) .rx__spin--dash {
+  animation-duration: 22s;
+}
+
+.reactor:not([data-phase="idle"]) .rx__ring,
+.reactor[data-speaking] .rx__ring {
+  stroke: #ffa640;
+}
+
+.reactor[data-mode="listening"] .rx__ring {
+  animation: ring-listen 1.2s ease-in-out infinite;
+}
+
+@keyframes ring-listen {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* 作ったホログラムの名前の札は、コアの上の方に */
+.reactor .holo-chip {
+  top: 18%;
+}
+
+/* 青は使わない（手の操作ボタン） */
 .home .hand__btn:hover,
 .home .hand__btn[aria-pressed="true"] {
   color: var(--orange-hi);
   border-color: var(--amber-line);
+}
+
+/* ---------- 画面が低いとき：パネルを少し詰める ---------- */
+
+@media (min-width: 1000px) and (max-height: 820px) {
+  .home__left {
+    gap: 20px;
+    padding-top: 36px;
+  }
+
+  .hactivity__bars {
+    height: 36px;
+  }
+
+  .home__right .radar svg {
+    width: 150px;
+    height: 150px;
+  }
 }
 
 /* ---------- タブレット・スマホ：縦に並べる ---------- */
@@ -2520,7 +2994,6 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
   .htab {
     flex: 1 1 40%;
-    min-width: 0;
   }
 
   .home__core {
@@ -2541,8 +3014,12 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     order: 4;
   }
 
-  .hloc {
-    margin-top: 0;
+  .home__loc {
+    order: 5;
+  }
+
+  .hdeco {
+    display: none;
   }
 
   .hpop {
@@ -2550,20 +3027,93 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   }
 }
 
-.home .reactor__sweep {
+/* ==========================================================================
+   軽さ優先：光り（drop-shadow）は使わず、太く薄い線を下に重ねて光らせる。
+   動くものは要素ごと動かして（transform）、毎フレームの描き直しを起こさない。
+   ========================================================================== */
+
+.app[data-view="home"] .home svg,
+.app[data-view="home"] .home svg *,
+.app[data-view="home"] .nav__item,
+.screen-frame * {
+  filter: none !important;
+}
+
+.sframe__glow {
+  fill: none;
+  stroke: rgba(255, 100, 0, 0.22);
+  stroke-width: 9;
+}
+
+.sframe__glow--corner {
+  stroke: rgba(255, 110, 0, 0.3);
+  stroke-width: 15;
+}
+
+.rx__ring-glow {
+  fill: none;
+  stroke: rgba(255, 100, 0, 0.2);
+  stroke-width: 22;
+}
+
+.home .radar {
+  position: relative;
+}
+
+.radar__spinner {
+  position: absolute;
+  top: 0;
+  right: 18px;
+  width: 176px;
+  height: 176px;
+  overflow: visible;
+  animation: spin 5s linear infinite;
+  will-change: transform;
+}
+
+.hloc__cross .hloc__dot {
+  animation: none;
+}
+
+@media (min-width: 1000px) and (max-height: 820px) {
+  .radar__spinner {
+    width: 150px;
+    height: 150px;
+  }
+}
+
+@media (max-width: 999px) {
+  .home__right .radar {
+    justify-content: center;
+    padding-right: 0;
+  }
+
+  .radar__spinner {
+    right: calc(50% - 85px);
+    width: 170px;
+    height: 170px;
+  }
+}
+
+/* 描画が追いつかない端末（コアが自動で判断）：大きな輪の回転と飾りの動きを止める */
+.home[data-lite] .rx__spin,
+.home[data-lite] .hvoice__flow--b,
+.home[data-lite] .hactivity__live i,
+.home[data-lite] .hmode__value i {
+  animation-play-state: paused;
+}
+
+/* HOME ではコア自身が光るので、背景の大きな光（呼吸アニメーション）は出さない */
+.app[data-view="home"] .bg__glow {
   display: none;
 }
 
-.hpop {
-  z-index: 40;
-  background: rgba(10, 7, 4, 0.97);
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+.home[data-lite] .radar__blip {
+  animation-play-state: paused;
 }
 
-.home .reactor__scan {
-  display: none;
-}
-
-.hactivity__bars {
-  height: 38px;
+/* 待機中は外側の大きな輪を止める（リファレンスどおり静か・軽い）。動いているのは中心のコアだけ。
+   聞く・考える・検索・返事のあいだだけ輪が回り、「いま働いている」ことが分かる */
+.reactor[data-mode="idle"] .rx__spin {
+  animation-play-state: paused;
 }
