@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { GestureTracker, type Point } from "@/lib/hand-gestures";
+import { HandPredictor } from "@/lib/hand-predict";
 import { holo, resetView, steerBy, zoomBy } from "@/lib/hologram-control";
 import { useHoloState } from "@/lib/hologram-model";
 
@@ -24,7 +25,7 @@ const BONES = [
 
 type Status = "off" | "loading" | "ready" | "error";
 
-/** 手の認識の間隔の下限（ミリ秒）。最大で約 30 回/秒。前の認識が終わってから次を送るので、遅い端末では自然に減る */
+/** 手の認識に送る間隔の下限（ミリ秒）。最大で約 30 回/秒。各 Worker は前の認識が終わってから次を受け取るので、遅い端末では自然に減る */
 const FRAME_MS = 33;
 /** CPU での認識がこれより遅い（ミリ秒・平均）端末では、GPU に切り替える */
 const SLOW_INFER_MS = 35;
@@ -69,10 +70,21 @@ export function warmHands(): Promise<Worker | null> {
   return warmed;
 }
 
+/** 2 つ目の認識（CPU のコアに余裕がある端末だけ）。1 つ目と交互にコマを受け持つ */
+let second: Promise<Worker | null> | null = null;
+function warmSecond(): Promise<Worker | null> {
+  if ((navigator.hardwareConcurrency || 2) < 4) return Promise.resolve(null);
+  second ??= startWorker().catch(() => {
+    second = null;
+    return null;
+  });
+  return second;
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => {
-    void warmed?.then((w) => w?.postMessage({ type: "close" }));
-    warmed = null;
+    for (const p of [warmed, second]) void p?.then((w) => w?.postMessage({ type: "close" }));
+    warmed = second = null;
   });
 }
 
@@ -184,125 +196,107 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       setMessage("");
 
       const tracker = new GestureTracker();
+      const predictor = new HandPredictor();
       let lastCount = 0;
-      // 認識結果（撮った時刻つき）。小窓では、映像と骨格を同じ時刻にそろえて描く
-      const results: { at: number; hands: Point[][] }[] = [];
-      let pinching: boolean[] = [];
-      /** 撮ってから結果が届くまで（ミリ秒・平均）。小窓の映像はこの分だけ遅らせて骨格とそろえる */
-      let delay = 60;
+      /** 最後に使った認識結果の撮影時刻（並行して認識するので、追い越された古い結果は捨てる） */
+      let newest = 0;
+      let count = 0;
+      let rateFrom = performance.now();
+      /** カメラの 1 コマを撮ってから結果が届くまで（ミリ秒・平均） */
+      let lag = 0;
       const apply = (landmarks: Point[][], capturedAt: number) => {
         const now = performance.now();
-        for (const ev of tracker.update(landmarks, now)) {
+        lag = lag ? lag * 0.8 + (now - capturedAt) * 0.2 : now - capturedAt;
+        if (capturedAt <= newest) return;
+        newest = capturedAt;
+        predictor.push(landmarks, capturedAt);
+        if (landmarks.length !== lastCount) {
+          lastCount = landmarks.length;
+          setHands(lastCount);
+        }
+        // 1 秒あたりの認識回数（小窓に表示）
+        count++;
+        const span = now - rateFrom;
+        if (span >= 1000) {
+          setRate(Math.round((count * 1000) / span));
+          setLagMs(Math.round(lag));
+          count = 0;
+          rateFrom = now;
+        }
+      };
+
+      // 描画のたびに：先読みした「いま」の手の形で操作を読み取り、小窓に今の映像と骨格を描く。
+      // （認識は 1 秒に十数回しか届かず、届いたときには手はもう先へ動いているため、先読みで追いつかせる）
+      let raf = 0;
+      const frame = (now: number) => {
+        if (stopped) return;
+        raf = requestAnimationFrame(frame);
+        const hands = predictor.at(now);
+        for (const ev of tracker.update(hands, now)) {
           if (ev.type === "rotate") steerBy(ev.dx, ev.dy);
           else if (ev.type === "zoom") zoomBy(ev.factor);
           else resetView();
         }
         holo.cursors = tracker.cursors;
-        results.push({ at: capturedAt, hands: landmarks });
-        if (results.length > 6) results.shift();
-        delay = delay * 0.8 + Math.min(250, now - capturedAt) * 0.2;
-        pinching = tracker.cursors.map((c) => c.pinching);
-        if (landmarks.length !== lastCount) {
-          lastCount = landmarks.length;
-          setHands(lastCount);
-        }
+        draw(canvasRef.current, video, hands, tracker.cursors.map((c) => c.pinching));
       };
-
-      // 小窓：カメラの映像を少しの間とっておき、骨格の結果と同じ時刻のコマを描く。
-      // 骨格は前後 2 回の認識の間をつないで、映像と同じ時刻の位置に置く（映像はなめらか・骨格はずれない）
-      const W = 176;
-      const H = 132;
-      const frames = Array.from({ length: 16 }, () => {
-        const c = document.createElement("canvas");
-        c.width = W;
-        c.height = H;
-        return { at: -1, canvas: c };
-      });
-      let slot = 0;
-      let raf = 0;
-      const handsAt = (t: number): Point[][] => {
-        if (!results.length) return [];
-        const last = results[results.length - 1];
-        if (t >= last.at) return last.hands;
-        for (let i = results.length - 1; i > 0; i--) {
-          const r1 = results[i];
-          const r0 = results[i - 1];
-          if (t < r0.at) continue;
-          if (r0.hands.length !== r1.hands.length) return r1.hands;
-          const k = (t - r0.at) / Math.max(1, r1.at - r0.at);
-          return r1.hands.map((h, a) => h.map((p, j) => {
-            const q = r0.hands[a]?.[j] ?? p;
-            return { x: q.x + (p.x - q.x) * k, y: q.y + (p.y - q.y) * k };
-          }));
-        }
-        return results[0].hands;
-      };
-      const paint = (now: number) => {
-        if (stopped) return;
-        raf = requestAnimationFrame(paint);
-        // 今のコマをとっておく
-        const f = frames[slot];
-        f.canvas.getContext("2d")!.drawImage(video, 0, 0, W, H);
-        f.at = now;
-        slot = (slot + 1) % frames.length;
-        // 骨格の結果に合わせた時刻のコマを選んで描く
-        const want = now - delay;
-        let pick = f;
-        for (const fr of frames) if (fr.at >= 0 && fr.at <= want && (pick.at > want || fr.at > pick.at)) pick = fr;
-        draw(canvasRef.current, pick.canvas, handsAt(pick.at), pinching);
-      };
-      raf = requestAnimationFrame(paint);
+      raf = requestAnimationFrame(frame);
       const stopLoops = stopRef.current;
       stopRef.current = () => {
         cancelAnimationFrame(raf);
         stopLoops();
       };
 
-      // 認識：前の認識が終わってから次のコマを送る（重なって溜まらないように）。最大で約 30 回/秒
-      let avgMs = 0;
-      let samples = 0;
-      let switched = false;
-      let count = 0;
-      let rateFrom = performance.now();
-      /** カメラの 1 コマを撮ってから結果が届くまで（ミリ秒・平均） */
-      let lag = 0;
-      const next = (wait: number) => {
-        if (!stopped) timer = window.setTimeout(tick, wait);
-      };
-      const tick = async () => {
-        const began = performance.now();
-        if (video.readyState < 2) return next(FRAME_MS);
-        if (worker) {
+      // 認識：各 Worker は、前の認識が終わってから次のコマを受け取る（重なって溜まらないように）。
+      // CPU のコアに余裕がある端末では 2 つの Worker が交互にコマを受け持ち、1 秒あたりの認識回数を倍にする。
+      // 送る間隔は全体で FRAME_MS 以上あける（最大で約 30 回/秒）
+      let nextSend = 0;
+      const run = async (w: Worker) => {
+        let avgMs = 0;
+        let samples = 0;
+        let switched = false;
+        while (!stopped) {
+          const wait = nextSend - performance.now();
+          if (wait > 0) await new Promise((r) => (timer = window.setTimeout(r, wait)));
+          if (stopped) return;
+          if (video.readyState < 2) {
+            await new Promise((r) => (timer = window.setTimeout(r, FRAME_MS)));
+            continue;
+          }
+          const began = performance.now();
+          nextSend = Math.max(nextSend, began) + FRAME_MS;
           const bitmap = await createImageBitmap(video, { resizeWidth: 384, resizeHeight: 288, resizeQuality: "medium" }).catch(() => null);
-          if (!bitmap || stopped) return next(FRAME_MS);
-          const result = await askWorker(worker, bitmap, began);
+          if (!bitmap || stopped) continue;
+          const result = await askWorker(w, bitmap, began);
           if (stopped) return;
           apply(result.landmarks, began);
-          lag = lag ? lag * 0.8 + (performance.now() - began) * 0.2 : performance.now() - began;
           // CPU での認識が遅すぎる端末では、GPU に切り替える（1 回だけ）
           if (result.ms !== undefined) {
             avgMs = samples ? avgMs * 0.85 + result.ms * 0.15 : result.ms;
             samples++;
             if (!switched && samples > 20 && result.delegate === "CPU" && avgMs > SLOW_INFER_MS) {
               switched = true;
-              worker.postMessage({ type: "delegate", value: "GPU" });
+              w.postMessage({ type: "delegate", value: "GPU" });
             }
           }
-        } else if (landmarker) {
-          apply(landmarker.detectForVideo(video, began).landmarks, began);
         }
-        // 1 秒あたりの認識回数（小窓に表示）
-        count++;
-        const span = performance.now() - rateFrom;
-        if (span >= 1000) {
-          setRate(Math.round((count * 1000) / span));
-          setLagMs(Math.round(lag));
-          count = 0;
-          rateFrom = performance.now();
-        }
-        next(Math.max(0, FRAME_MS - (performance.now() - began)));
       };
-      next(0);
+      if (worker) {
+        void run(worker);
+        // 2 つ目は、1 つ目が動き出してから裏で準備する（オンにしてから動き出すまでを遅くしない）
+        void warmSecond().then((w2) => {
+          if (w2 && !stopped) void run(w2);
+        });
+      } else if (landmarker) {
+        const lm = landmarker;
+        const tick = () => {
+          if (stopped) return;
+          const began = performance.now();
+          if (video.readyState >= 2) apply(lm.detectForVideo(video, began).landmarks, began);
+          timer = window.setTimeout(tick, Math.max(0, FRAME_MS - (performance.now() - began)));
+        };
+        tick();
+      }
     } catch (err) {
       stopRef.current();
       const name = (err as { name?: string }).name;

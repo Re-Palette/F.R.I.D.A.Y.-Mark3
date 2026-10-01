@@ -120,12 +120,16 @@ export class GestureTracker {
       if (i >= 0) {
         const p = pinchPoints[0];
         const st = this.hands[i];
-        if (st.last) {
+        if (!st.last) st.last = p;
+        else {
+          // 細かい揺れは無視するが、ゆっくり動かした分は貯めて、たまったら回す（1 秒に何十回呼ばれても取りこぼさない）
           const dx = p.x - st.last.x;
           const dy = p.y - st.last.y;
-          if (Math.abs(dx) + Math.abs(dy) > 0.002) events.push({ type: "rotate", dx: dx * ROTATE_GAIN, dy: dy * ROTATE_GAIN });
+          if (Math.abs(dx) + Math.abs(dy) > 0.002) {
+            events.push({ type: "rotate", dx: dx * ROTATE_GAIN, dy: dy * ROTATE_GAIN });
+            st.last = p;
+          }
         }
-        st.last = p;
       }
     }
     return events;

@@ -71,7 +71,7 @@ self.onmessage = async (e) => {
     }
     bitmap.close();
     // 認識にかかった時間も返す（遅すぎる端末では GPU に切り替える目安）
-    self.postMessage({ type: "result", landmarks, ms: performance.now() - began, delegate });
+    self.postMessage({ type: "result", landmarks, ms: performance.now() - began, delegate, time: d.time });
   } else if (d.type === "delegate") {
     // CPU では遅すぎる端末：GPU で作り直す（作れなければ CPU のまま）
     if (!files || delegate === d.value) return;
