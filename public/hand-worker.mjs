@@ -38,6 +38,10 @@ function make(which) {
     baseOptions: { modelAssetBuffer: model, delegate: which },
     runningMode: "VIDEO",
     numHands: 2,
+    // 速く動かした手も見失いにくいよう、追いかけ続ける基準を少し甘くする（初めて見つけるときの基準はそのまま）
+    minHandDetectionConfidence: 0.5,
+    minHandPresenceConfidence: 0.35,
+    minTrackingConfidence: 0.35,
   });
 }
 

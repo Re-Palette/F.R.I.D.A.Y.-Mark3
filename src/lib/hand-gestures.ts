@@ -20,12 +20,20 @@ export type GestureEvent = { type: "rotate"; dx: number; dy: number } | { type: 
 const PINCH_ON = 0.35;
 const PINCH_OFF = 0.5;
 const FIST_MS = 700;
+/** 速く動かして一瞬見失っても、この時間までは「つまんだまま」とみなして操作を続ける */
+const LOST_GRACE_MS = 220;
 const ROTATE_GAIN = 1.1;
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 interface HandState {
   pinching: boolean;
+  /** 見失った時刻（見えている間は無し） */
+  lostAt?: number;
+  /** 最後に見えた手首の位置（片手を見失ったとき、残った手がどちらかを見分ける） */
+  wrist?: Point;
+  /** 最後に見えたつまみの位置（一瞬見失った間はここにあるとみなす） */
+  seen?: { x: number; y: number };
   last?: { x: number; y: number };
   fistSince?: number;
   fistDone?: boolean;
@@ -47,17 +55,40 @@ export class GestureTracker {
     this.cursors = [];
     const pinchPoints: { x: number; y: number }[] = [];
 
+    // 2 本見えていれば左から順。1 本だけなら、前に見えていた手首が近い方の手として扱う
+    const slots: (Point[] | undefined)[] = [list[0], list[1]];
+    if (list.length === 1) {
+      let best = 0;
+      let bestDist = Infinity;
+      this.hands.forEach((h, i) => {
+        if (!h.wrist) return;
+        const d = dist(h.wrist, list[0][0]);
+        if (d < bestDist) {
+          bestDist = d;
+          best = i;
+        }
+      });
+      slots[0] = slots[1] = undefined;
+      slots[best] = list[0];
+    }
+
     for (let i = 0; i < 2; i++) {
-      const lm = list[i];
+      const lm = slots[i];
       const st = this.hands[i];
       if (!lm) {
-        this.hands[i] = { pinching: false };
+        // 一瞬見失っただけなら状態を残す（速く動かしたときに操作が途切れないように）
+        st.lostAt ??= now;
+        if (now - st.lostAt > LOST_GRACE_MS) this.hands[i] = { pinching: false };
+        else if (st.pinching && st.seen) pinchPoints.push(st.seen);
         continue;
       }
+      st.lostAt = undefined;
+      st.wrist = lm[0];
       const size = dist(lm[0], lm[9]) || 1e-6;
       const gap = dist(lm[4], lm[8]) / size;
       st.pinching = st.pinching ? gap < PINCH_OFF : gap < PINCH_ON;
       const point = { x: 1 - (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 };
+      st.seen = point;
       this.cursors.push({ ...point, pinching: st.pinching });
 
       // グー：4 本の指先がすべて手のひらの近くにある

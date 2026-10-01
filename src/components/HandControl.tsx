@@ -27,7 +27,7 @@ type Status = "off" | "loading" | "ready" | "error";
 /** 手の認識の間隔の下限（ミリ秒）。最大で約 30 回/秒。前の認識が終わってから次を送るので、遅い端末では自然に減る */
 const FRAME_MS = 33;
 /** CPU での認識がこれより遅い（ミリ秒・平均）端末では、GPU に切り替える */
-const SLOW_INFER_MS = 55;
+const SLOW_INFER_MS = 35;
 
 /** 認識用の Worker（public/hand-worker.mjs）を起動して、準備ができたら返す */
 function startWorker(): Promise<Worker> {
@@ -118,6 +118,8 @@ export function HandControl({ hidden }: { hidden: boolean }) {
   const [hands, setHands] = useState(0);
   /** 1 秒あたりの手の認識回数 */
   const [rate, setRate] = useState(0);
+  /** 手の認識の遅れ（ミリ秒） */
+  const [lagMs, setLagMs] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stopRef = useRef<() => void>(() => {});
 
@@ -127,6 +129,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
     holo.cursors = [];
     setHands(0);
     setRate(0);
+    setLagMs(0);
     setStatus("off");
     setMessage("");
   }, []);
@@ -149,7 +152,9 @@ export function HandControl({ hidden }: { hidden: boolean }) {
     try {
       // カメラの起動と、認識の準備を同時に進める（順番に待たない）
       const cameraReady = navigator.mediaDevices
-        .getUserMedia({ video: { width: 320, height: 240, facingMode: "user" }, audio: false })
+        // コマ数が多いほど、手を動かしてから届くまでが短い（暗い所ではカメラが自動で減らすことがある）
+        .getUserMedia({ video: { width: 320, height: 240, frameRate: { ideal: 60, min: 24 }, facingMode: "user" }, audio: false })
+        .catch(() => navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: "user" }, audio: false }))
         .then(async (s) => {
           stream = s;
           if (stopped) s.getTracks().forEach((t) => t.stop());
@@ -180,8 +185,11 @@ export function HandControl({ hidden }: { hidden: boolean }) {
 
       const tracker = new GestureTracker();
       let lastCount = 0;
-      // 最新の認識結果（小窓の描画は、これを毎フレームなめらかに追いかけて描く）
+      // 最新の認識結果と、その 1 つ前（小窓では、手が動いている向きに少し先読みして描き、認識の遅れを目立たせない）
       let latest: Point[][] = [];
+      let prev: Point[][] = [];
+      let latestAt = 0;
+      let gap = 50;
       let pinching: boolean[] = [];
       const apply = (landmarks: Point[][]) => {
         const now = performance.now();
@@ -191,7 +199,10 @@ export function HandControl({ hidden }: { hidden: boolean }) {
           else resetView();
         }
         holo.cursors = tracker.cursors;
+        prev = latest.length === landmarks.length ? latest : landmarks;
+        gap = latestAt ? Math.min(150, now - latestAt) : gap;
         latest = landmarks;
+        latestAt = now;
         pinching = tracker.cursors.map((c) => c.pinching);
         if (landmarks.length !== lastCount) {
           lastCount = landmarks.length;
@@ -199,24 +210,18 @@ export function HandControl({ hidden }: { hidden: boolean }) {
         }
       };
 
-      // 小窓：カメラの映像は毎フレーム描き、手の骨格は認識と認識の間をなめらかにつなぐ
-      let shown: Point[][] = [];
-      let lastDraw = performance.now();
+      // 小窓：カメラの映像は毎フレーム描き、手の骨格は前回からの動きを延ばして今の位置を予想する（最大で認識 1 回分）
       let raf = 0;
       const paint = (now: number) => {
         if (stopped) return;
         raf = requestAnimationFrame(paint);
-        const dt = Math.min(0.1, (now - lastDraw) / 1000);
-        lastDraw = now;
-        const k = 1 - Math.exp(-dt * 22);
-        if (shown.length !== latest.length) shown = latest.map((h) => h.map((p) => ({ ...p })));
-        else
-          shown = shown.map((h, i) =>
-            h.map((p, j) => {
-              const q = latest[i]?.[j] ?? p;
-              return { x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k };
-            }),
-          );
+        const ahead = Math.min(1, (now - latestAt) / Math.max(16, gap)) * 0.8;
+        const shown = latest.map((h, i) =>
+          h.map((p, j) => {
+            const q = prev[i]?.[j] ?? p;
+            return { x: p.x + (p.x - q.x) * ahead, y: p.y + (p.y - q.y) * ahead };
+          }),
+        );
         draw(canvasRef.current, video, shown, pinching);
       };
       raf = requestAnimationFrame(paint);
@@ -232,6 +237,8 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       let switched = false;
       let count = 0;
       let rateFrom = performance.now();
+      /** カメラの 1 コマを撮ってから結果が届くまで（ミリ秒・平均） */
+      let lag = 0;
       const next = (wait: number) => {
         if (!stopped) timer = window.setTimeout(tick, wait);
       };
@@ -244,6 +251,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
           const result = await askWorker(worker, bitmap, began);
           if (stopped) return;
           apply(result.landmarks);
+          lag = lag ? lag * 0.8 + (performance.now() - began) * 0.2 : performance.now() - began;
           // CPU での認識が遅すぎる端末では、GPU に切り替える（1 回だけ）
           if (result.ms !== undefined) {
             avgMs = samples ? avgMs * 0.85 + result.ms * 0.15 : result.ms;
@@ -261,6 +269,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
         const span = performance.now() - rateFrom;
         if (span >= 1000) {
           setRate(Math.round((count * 1000) / span));
+          setLagMs(Math.round(lag));
           count = 0;
           rateFrom = performance.now();
         }
@@ -318,7 +327,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
         <div className="hand__view">
           <canvas ref={canvasRef} width={176} height={132} />
           <span className="hand__tag">
-            {status === "ready" ? `${hands ? `HAND ×${hands}` : "NO HAND"}${rate ? ` · ${rate}/s` : ""}` : "LOADING"}
+            {status === "ready" ? `${hands ? `HAND ×${hands}` : "NO HAND"}${rate ? ` · ${rate}/s · ${lagMs}ms` : ""}` : "LOADING"}
           </span>
         </div>
       )}
