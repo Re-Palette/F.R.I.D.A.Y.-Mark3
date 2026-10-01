@@ -979,10 +979,10 @@
   background: #ffb458;
   box-shadow: 0 0 6px 1px rgba(255, 130, 30, 0.8);
   opacity: 0;
-  animation: rise linear infinite;
+  animation: particle-rise linear infinite;
 }
 
-@keyframes rise {
+@keyframes particle-rise {
   0% { transform: translateY(0); opacity: 0; }
   12% { opacity: 0.7; }
   80% { opacity: 0.4; }
@@ -1178,8 +1178,8 @@
 }
 
 .reactor[data-mode="listening"] .reactor__statusring {
-  stroke: #7ff0ff;
-  filter: drop-shadow(0 0 6px rgba(46, 230, 255, 0.9));
+  stroke: #fff1dd;
+  filter: drop-shadow(0 0 6px rgba(255, 170, 80, 0.9));
 }
 
 @keyframes listen-pulse {
@@ -1243,7 +1243,7 @@
 }
 
 .reactor[data-mode="listening"] .reactor__state {
-  color: #7ff0ff;
+  color: #fff1dd;
 }
 
 .reactor[data-model] .reactor__scan {
@@ -1511,7 +1511,7 @@ li[data-lamp="offline"] .sstatus__bar::after {
 li[data-lamp="online"] .roster__state { color: var(--green); }
 li[data-lamp="standby"] .roster__state { color: #ffb458; }
 li[data-lamp="offline"] .roster__state { color: var(--red); }
-li[data-lamp="processing"] .roster__state { color: #7ff0ff; }
+li[data-lamp="processing"] .roster__state { color: #fff1dd; }
 li[data-lamp="processing"] .roster__state i { box-shadow: 0 0 6px currentColor; animation: blink-soft 0.8s ease-in-out infinite; }
 li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
@@ -1665,8 +1665,8 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 }
 
 .composer[data-voice="listening"] .composer__wave i {
-  background: #7ff0ff;
-  box-shadow: 0 0 4px rgba(46, 230, 255, 0.9);
+  background: #fff1dd;
+  box-shadow: 0 0 4px rgba(255, 170, 80, 0.9);
   animation: wave-bar 0.7s ease-in-out infinite;
 }
 
@@ -1811,12 +1811,12 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 }
 
 @media (min-width: 1000px) {
-  .app[data-view="home"] .screen-frame {
+  .app .screen-frame {
     display: block;
   }
 
-  /* 枠の中に薄い方眼 */
-  .app[data-view="home"] .bg::after {
+  /* 枠の中に薄い方眼（どの画面でも同じ枠と上のバー・メニュー・入力欄にそろえる） */
+  .app .bg::after {
     content: "";
     position: absolute;
     inset: 60px 24px 24px;
@@ -1825,57 +1825,61 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
       repeating-linear-gradient(90deg, rgba(255, 140, 40, 0.035) 0 1px, transparent 1px 48px);
   }
 
+  .app {
+    grid-template-columns: 0 minmax(0, 1fr) 340px;
+    grid-template-rows: 52px minmax(0, 1fr);
+  }
+
   .app[data-view="home"] {
     grid-template-columns: 0 minmax(0, 1fr) 0;
-    grid-template-rows: 52px minmax(0, 1fr);
   }
 
   /* ---------- 上のバー：F.R.I.D.A.Y.・メニュー・日付と時刻 ---------- */
 
-  .app[data-view="home"] .topbar {
+  .app .topbar {
     padding: 0 48px 4px 46px;
   }
 
-  .app[data-view="home"] .topbar__frame,
-  .app[data-view="home"] .brand__mk,
-  .app[data-view="home"] .brand__sub {
+  .app .topbar__frame,
+  .app .brand__mk,
+  .app .brand__sub {
     display: none;
   }
 
-  .app[data-view="home"] .brand {
+  .app .brand {
     gap: 10px;
   }
 
-  .app[data-view="home"] .brand__mark {
+  .app .brand__mark {
     width: 18px;
     height: 18px;
   }
 
-  .app[data-view="home"] .brand__name {
+  .app .brand__name {
     font-size: 14px;
     letter-spacing: 0.34em;
     color: #ffd9ad;
     text-shadow: 0 0 8px rgba(255, 120, 20, 0.8);
   }
 
-  .app[data-view="home"] .topbar__right {
+  .app .topbar__right {
     gap: 22px;
   }
 
-  .app[data-view="home"] .clock {
+  .app .clock {
     flex-direction: row;
     align-items: baseline;
     gap: 14px;
     padding: 0;
   }
 
-  .app[data-view="home"] .clock::before,
-  .app[data-view="home"] .clock::after {
+  .app .clock::before,
+  .app .clock::after {
     display: none;
   }
 
-  .app[data-view="home"] .clock__date,
-  .app[data-view="home"] .clock__time {
+  .app .clock__date,
+  .app .clock__time {
     font-family: var(--font-mono);
     font-size: 14px;
     letter-spacing: 0.14em;
@@ -1883,7 +1887,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     text-shadow: 0 0 6px rgba(255, 120, 20, 0.8);
   }
 
-  .app[data-view="home"] .sys-icons {
+  .app .sys-icons {
     gap: 14px;
     color: #ffc27a;
     transform: scale(0.8);
@@ -1891,12 +1895,12 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   }
 
   /* メニューは上のバーの中に小さなアイコンで並べる（ほかの画面へはここから） */
-  .app[data-view="home"] .sidebar {
+  .app .sidebar {
     padding: 0;
     overflow: visible;
   }
 
-  .app[data-view="home"] .nav {
+  .app .nav {
     position: absolute;
     top: 9px;
     left: 250px;
@@ -1907,15 +1911,15 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     border: 0;
   }
 
-  .app[data-view="home"] .nav::before,
-  .app[data-view="home"] .nav::after,
-  .app[data-view="home"] .nav__idx,
-  .app[data-view="home"] .signature,
-  .app[data-view="home"] .sys-status {
+  .app .nav::before,
+  .app .nav::after,
+  .app .nav__idx,
+  .app .signature,
+  .app .sys-status {
     display: none;
   }
 
-  .app[data-view="home"] .nav__item {
+  .app .nav__item {
     padding: 6px 9px 5px;
     color: rgba(255, 190, 130, 0.62);
     border-bottom: 2px solid transparent;
@@ -1923,17 +1927,17 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     margin: 0;
   }
 
-  .app[data-view="home"] .nav__item svg {
+  .app .nav__item svg {
     width: 17px;
     height: 17px;
   }
 
-  .app[data-view="home"] .nav__item:hover:not([aria-disabled="true"]):not([data-active]) {
+  .app .nav__item:hover:not([aria-disabled="true"]):not([data-active]) {
     background: none;
     color: #ffd2a0;
   }
 
-  .app[data-view="home"] .nav__item[data-active] {
+  .app .nav__item[data-active] {
     background: none;
     box-shadow: none;
     color: #ffd9ad;
@@ -1942,7 +1946,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   }
 
   /* 名前は見た目だけ隠す（読み上げや操作では今まで通り使える） */
-  .app[data-view="home"] .nav__label {
+  .app .nav__label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1952,7 +1956,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   }
 
   /* 手で操作のカメラ映像は左下に浮かべる */
-  .app[data-view="home"] .hand-slot {
+  .app .hand-slot {
     position: absolute;
     left: 60px;
     bottom: 190px;
@@ -1961,42 +1965,42 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     padding: 0;
   }
 
-  .app[data-view="home"] .center {
+  .app .center {
     padding: 22px 60px 30px;
     gap: 12px;
   }
 
   /* ---------- 入力欄：1 行のコンパクトな形 ---------- */
 
-  .app[data-view="home"] .composer {
+  .app .composer {
     width: min(100%, 660px);
     padding: 7px 18px 7px 12px;
     gap: 12px;
   }
 
-  .app[data-view="home"] .composer__mic {
+  .app .composer__mic {
     width: 42px;
     height: 42px;
   }
 
-  .app[data-view="home"] .composer__main {
+  .app .composer__main {
     flex-direction: row;
     align-items: center;
     gap: 14px;
   }
 
-  .app[data-view="home"] .composer__row {
+  .app .composer__row {
     flex: 1;
     min-width: 0;
     padding: 0;
     border-bottom: 0;
   }
 
-  .app[data-view="home"] .composer__tools {
+  .app .composer__tools {
     flex: none;
   }
 
-  .app[data-view="home"] .composer__tools .tool-btn {
+  .app .composer__tools .tool-btn {
     display: none;
   }
 }
@@ -3034,7 +3038,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 
 .app[data-view="home"] .home svg,
 .app[data-view="home"] .home svg *,
-.app[data-view="home"] .nav__item,
+.app .nav__item,
 .screen-frame * {
   filter: none !important;
 }
@@ -3104,7 +3108,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 }
 
 /* HOME ではコア自身が光るので、背景の大きな光（呼吸アニメーション）は出さない */
-.app[data-view="home"] .bg__glow {
+.app .bg__glow {
   display: none;
 }
 
@@ -3116,4 +3120,155 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
    聞く・考える・検索・返事のあいだだけ輪が回り、「いま働いている」ことが分かる */
 .reactor[data-mode="idle"] .rx__spin {
   animation-play-state: paused;
+}
+
+/* ==========================================================================
+   HOME 以外の画面（CHAT / PROJECTS / MEMORY / TASKS / CALENDAR / FILES / SETTINGS）も
+   HOME と同じ見た目にそろえる：光る枠と上のバー（上で共通化）、四角い枠のパネル、
+   ● 付きの見出し、アンバーの文字。青は使わない。
+   ========================================================================== */
+
+/* 斜めに切った HUD 枠の代わりに、HOME と同じ四角い光る枠 */
+.app:not([data-view="home"]) :is(.panel, .settings__section, .doc-card, .msg__panel).hud > .hud-frame {
+  display: none;
+}
+
+.app:not([data-view="home"]) :is(.panel, .settings__section, .doc-card, .msg__panel).hud {
+  border: 1.5px solid var(--amber);
+  border-radius: 4px;
+  background: rgba(14, 8, 3, 0.86);
+  box-shadow: var(--amber-glow);
+}
+
+/* 会話の吹き出し：自分の発言は塗り、F.R.I.D.A.Y. は枠だけ */
+.app:not([data-view="home"]) .msg__bubble.hud > .hud-frame {
+  display: none;
+}
+
+.app:not([data-view="home"]) .msg__bubble.hud {
+  border: 1px solid var(--amber-line);
+  border-radius: 4px;
+  background: rgba(255, 110, 10, 0.06);
+}
+
+.app:not([data-view="home"]) .msg--user .msg__bubble.hud {
+  border-color: var(--amber);
+  background: rgba(255, 120, 20, 0.16);
+  box-shadow: var(--amber-glow);
+}
+
+/* 見出し：HOME の「● SYSTEM STATUS」と同じ形 */
+.app:not([data-view="home"]) .panel__head,
+.app:not([data-view="home"]) .settings__section h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: #ffd6a6;
+  text-shadow: 0 0 6px rgba(255, 120, 20, 0.6);
+}
+
+.app:not([data-view="home"]) .panel__head::before,
+.app:not([data-view="home"]) .settings__section h2::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
+}
+
+.app:not([data-view="home"]) .panel__head em {
+  color: #ffd6a6;
+}
+
+.app:not([data-view="home"]) .panel__idx,
+.app:not([data-view="home"]) .panel__rule {
+  display: none;
+}
+
+.app:not([data-view="home"]) .panel__extra {
+  margin-left: auto;
+}
+
+.app:not([data-view="home"]) .settings__section h2 span {
+  font-family: var(--font-jp);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: rgba(255, 220, 185, 0.7);
+  text-shadow: none;
+}
+
+/* ページの見出し（TASKS・SETTINGS など）と CHAT の見出し */
+.app:not([data-view="home"]) .settings__bar,
+.app:not([data-view="home"]) .conversation__bar {
+  border-bottom: 1px solid rgba(255, 140, 40, 0.3);
+}
+
+.app:not([data-view="home"]) .conversation__bar::after {
+  display: none;
+}
+
+.app:not([data-view="home"]) .settings__title,
+.app:not([data-view="home"]) .conversation__name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #ffdcb3;
+  text-shadow: 0 0 10px rgba(255, 120, 20, 0.8);
+}
+
+.app:not([data-view="home"]) .settings__sub {
+  color: rgba(255, 220, 185, 0.65);
+}
+
+/* 右側：引用と標語は出さず、パネルだけを枠の内側に */
+.app:not([data-view="home"]) .quote,
+.app:not([data-view="home"]) .motto {
+  display: none;
+}
+
+@media (min-width: 1000px) {
+  .app:not([data-view="home"]) .rightbar {
+    gap: 16px;
+    padding: 22px 46px 30px 0;
+  }
+
+  .app:not([data-view="home"]) .center {
+    padding-right: 30px;
+  }
+}
+
+/* 文字と小物の色：白っぽい文字はあたたかい白に、青い文字・ランプはアンバーに */
+.app:not([data-view="home"]) :is(.panel, .settings__section) {
+  color: #ffe6c8;
+}
+
+.app:not([data-view="home"]) .schedule__title {
+  color: #ffe3c4;
+}
+
+.app:not([data-view="home"]) :is(input, select, textarea):not(.composer__input) {
+  border-color: var(--amber-line);
+  background: rgba(10, 6, 3, 0.9);
+  color: #ffe6c8;
+  border-radius: 3px;
+}
+
+.app:not([data-view="home"]) :is(.ghost-btn, .settings__choice button, .tool-btn, .quick__item) {
+  border-radius: 3px;
+}
+
+/* HOME の余白は前のまま（共通化したルールより、古い HOME 用のルールが優先されないように） */
+@media (min-width: 1000px) {
+  .app[data-view="home"] .center {
+    padding: 22px 60px 30px;
+  }
 }
