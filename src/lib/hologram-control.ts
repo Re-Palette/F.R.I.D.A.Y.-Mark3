@@ -13,6 +13,9 @@ export const holo = {
   /** 手やマウスで与えた回転の速さ（ラジアン/フレーム）。少しずつ弱まる */
   spinX: 0,
   spinY: 0,
+  /** 手で動かした分のうち、まだ回していない残り（ラジアン）。毎フレーム少しずつ回して、なめらかにつなぐ */
+  aimX: 0,
+  aimY: 0,
   /** 大きさ（1 が標準） */
   zoom: 1,
   /** 元の向きに戻す合図（増えたら戻す） */
@@ -29,6 +32,16 @@ export function rotateBy(dx: number, dy: number) {
   holo.spinX += dy;
 }
 
+/**
+ * 手の動きで回す。手の認識は 1 秒に十数回なので、そのたびに勢いを足すと「ガクッ→減速」を繰り返してカクついて見える。
+ * そこで、動かした量を「残り」として貯め、描画のたびに少しずつ回して途切れなく見せる。
+ */
+const STEER_GAIN = 6;
+export function steerBy(dx: number, dy: number) {
+  holo.aimY += dx * STEER_GAIN;
+  holo.aimX += dy * STEER_GAIN;
+}
+
 export function zoomBy(factor: number) {
   holo.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, holo.zoom * factor));
 }
@@ -36,6 +49,8 @@ export function zoomBy(factor: number) {
 export function resetView() {
   holo.spinX = 0;
   holo.spinY = 0;
+  holo.aimX = 0;
+  holo.aimY = 0;
   holo.zoom = 1;
   holo.resets++;
 }

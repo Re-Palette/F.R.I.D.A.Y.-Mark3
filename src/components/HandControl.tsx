@@ -4,12 +4,13 @@
  * カメラで手を読み取って、中央のホログラムを動かす（アイアンマン風）。
  *   つまんで動かす → 回す ／ 両手でつまんで広げる → 拡大 ／ グーを長め → 元に戻す
  * 手の認識（MediaPipe Hand Landmarker）はブラウザの中だけで動き、カメラの映像はどこにも送らない。
- * 認識の部品（wasm・自分のサイトから）とモデル（Google から）は、オンにしたときだけ読み込む。
+ * 認識の部品（wasm・自分のサイトから）とモデル（Google から）は、ホログラムを作り始めたとき・ボタンに触れたとき・
+ * オンにしたときに裏で準備を始め、一度準備した認識はこの画面を開いている間ずっと使い回す（2 回目からはすぐ動く）。
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { GestureTracker, type Point } from "@/lib/hand-gestures";
-import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
+import { holo, resetView, steerBy, zoomBy } from "@/lib/hologram-control";
 import { useHoloState } from "@/lib/hologram-model";
 
 /** wasm は build 時に public/mediapipe/ へコピーしたもの（scripts/copy-mediapipe.mjs） */
@@ -51,6 +52,25 @@ function startWorker(): Promise<Worker> {
       } else if (e.data.type === "error") fail(new Error(e.data.message));
     };
     worker.postMessage({ type: "init", model: MODEL });
+  });
+}
+
+/** 準備済み（または準備中）の認識。オフにしても捨てずに、次にオンにしたとき使い回す */
+let warmed: Promise<Worker | null> | null = null;
+
+/** 手の認識の準備を裏で始める（何度呼んでもよい）。使えない環境では null */
+export function warmHands(): Promise<Worker | null> {
+  warmed ??= startWorker().catch(() => {
+    warmed = null;
+    return null;
+  });
+  return warmed;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    void warmed?.then((w) => w?.postMessage({ type: "close" }));
+    warmed = null;
   });
 }
 
@@ -111,25 +131,33 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       stopped = true;
       clearTimeout(timer);
       stream?.getTracks().forEach((t) => t.stop());
-      worker?.postMessage({ type: "close" });
+      // 認識（Worker）は捨てずに残し、次にオンにしたとき使い回す
       landmarker?.close();
     };
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: "user" }, audio: false });
-      const video = document.createElement("video");
-      video.muted = true;
-      video.playsInline = true;
-      video.srcObject = stream;
-      await video.play();
+      // カメラの起動と、認識の準備を同時に進める（順番に待たない）
+      const cameraReady = navigator.mediaDevices
+        .getUserMedia({ video: { width: 320, height: 240, facingMode: "user" }, audio: false })
+        .then(async (s) => {
+          stream = s;
+          if (stopped) s.getTracks().forEach((t) => t.stop());
+          const v = document.createElement("video");
+          v.muted = true;
+          v.playsInline = true;
+          v.srcObject = s;
+          await v.play();
+          return v;
+        });
+      const [video, w] = await Promise.all([cameraReady, warmHands()]);
+      worker = w;
 
       // 認識は別の作業場所（Worker）で。使えない環境では画面側で（回数を絞って）動かす
-      worker = await startWorker().catch(() => null);
       if (!worker) {
         const { FilesetResolver, HandLandmarker } = await import("@mediapipe/tasks-vision");
         const files = await FilesetResolver.forVisionTasks(WASM);
         const make = (delegate: "GPU" | "CPU") =>
           HandLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO", numHands: 2 });
-        landmarker = await make("GPU").catch(() => make("CPU"));
+        landmarker = await make("CPU").catch(() => make("GPU"));
       }
       if (stopped) {
         stopRef.current();
@@ -143,7 +171,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       const apply = (landmarks: Point[][]) => {
         const now = performance.now();
         for (const ev of tracker.update(landmarks, now)) {
-          if (ev.type === "rotate") rotateBy(ev.dx, ev.dy);
+          if (ev.type === "rotate") steerBy(ev.dx, ev.dy);
           else if (ev.type === "zoom") zoomBy(ev.factor);
           else resetView();
         }
@@ -197,6 +225,14 @@ export function HandControl({ hidden }: { hidden: boolean }) {
     return () => window.removeEventListener(TOGGLE, onToggle);
   }, [start, stop]);
 
+  // ホログラムを作り始めたら、手で動かせるよう裏で認識の準備を始めておく（画面が空いたときに）
+  const holoStatus = useHoloState().status;
+  useEffect(() => {
+    if (holoStatus !== "loading" && holoStatus !== "ready") return;
+    if ("requestIdleCallback" in window) window.requestIdleCallback(() => void warmHands(), { timeout: 4000 });
+    else setTimeout(() => void warmHands(), 1500);
+  }, [holoStatus]);
+
   // HOME を離れたらカメラを止める
   useEffect(() => {
     if (hidden && status !== "off") stop();
@@ -232,7 +268,14 @@ export function HandControl({ hidden }: { hidden: boolean }) {
   return (
     <div className="hand" data-status={status}>
       {panel && (slot ? createPortal(panel, slot) : panel)}
-      <button type="button" className="hand__btn" aria-pressed={on} onClick={() => (on ? stop() : void start())}>
+      <button
+        type="button"
+        className="hand__btn"
+        aria-pressed={on}
+        onPointerEnter={() => void warmHands()}
+        onFocus={() => void warmHands()}
+        onClick={() => (on ? stop() : void start())}
+      >
         <HandIcon /> HAND {on ? "ON" : "OFF"}
       </button>
     </div>

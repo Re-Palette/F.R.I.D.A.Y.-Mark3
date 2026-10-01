@@ -14,7 +14,7 @@ import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
 import { assetFailed, clearHologram, getHoloState, setHoloExpanded, subscribeHolo, useHoloState, type HoloState } from "@/lib/hologram-model";
 import type { HoloModel } from "@/lib/hologram-schema";
 import { buildAsset, buildModel, dotTexture, holoMaterial } from "./hologram-visuals";
-import { toggleHand, useHandStatus } from "./HandControl";
+import { toggleHand, useHandStatus, warmHands } from "./HandControl";
 
 const ORANGE = 0xff8a1f;
 const AMBER = 0xffb45a;
@@ -414,8 +414,14 @@ export function Hologram({
           root.rotation.y += (0 - root.rotation.y) * Math.min(1, dt * 5);
           if (Math.abs(root.rotation.y) < 0.002 && Math.abs(root.rotation.x - 0.35) < 0.002) returning = false;
         }
-        root.rotation.y += holo.spinY;
-        root.rotation.x = Math.max(-1.3, Math.min(1.3, root.rotation.x + holo.spinX));
+        // 手で動かした分は、残りを毎フレーム一定の割合で回す（認識の間隔に関係なくなめらかに）
+        const follow = 1 - Math.exp(-dt * 12);
+        const stepY = holo.aimY * follow;
+        const stepX = holo.aimX * follow;
+        holo.aimY -= stepY;
+        holo.aimX -= stepX;
+        root.rotation.y += holo.spinY + stepY;
+        root.rotation.x = Math.max(-1.3, Math.min(1.3, root.rotation.x + holo.spinX + stepX));
         const decay = Math.pow(0.9, dt * 60);
         holo.spinX *= decay;
         holo.spinY *= decay;
@@ -566,7 +572,7 @@ function HoloStage({ open }: { open: boolean }) {
           </aside>
         )}
         <div className="holo-stage__actions">
-          <button type="button" className="ghost-btn" aria-pressed={handOn} onClick={toggleHand}>
+          <button type="button" className="ghost-btn" aria-pressed={handOn} onPointerEnter={() => void warmHands()} onClick={toggleHand}>
             HAND {handOn ? "ON" : "OFF"}
           </button>
           <button type="button" className="ghost-btn" onClick={() => setHoloExpanded(false)}>
