@@ -4,6 +4,7 @@
  */
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
+import type { NowPlaying } from "@/integrations/spotify";
 import type { Reminder } from "@/integrations/reminders";
 import type { TasksOverview } from "@/integrations/tasks";
 import type { WeatherReport } from "@/integrations/weather";
@@ -36,6 +37,8 @@ export interface PersonaInput {
   mailDraft?: boolean;
   /** 最新の発言にカメラの映像（静止画 1 枚）が付いている */
   camera?: boolean;
+  /** 音楽の話のとき：Spotify の接続状態といま流れている曲 */
+  music?: MusicContext;
   /** SNS の投稿づくり・トレンドの相談（SNS AI） */
   sns?: boolean;
   /** 返答の長さの好み（SETTINGS） */
@@ -43,6 +46,12 @@ export interface PersonaInput {
   /** 振り返り（week）・日記（day）の材料。material が null なら読み込めなかった */
   review?: { kind: "week" | "day"; material: string | null } | null | false;
 }
+
+/** 音楽の話のときの Spotify の状態（音楽の話でなければ null） */
+export type MusicContext =
+  | { connected: false; configured: boolean }
+  | { connected: true; now?: NowPlaying; error?: string }
+  | null;
 
 /** 未読メール（読まなかったときは null、読めなかったときは error） */
 export type MailData = { list: MailSummary[] } | { error: string } | null;
@@ -83,6 +92,7 @@ export function buildSystemInstruction({
   mail,
   mailDraft,
   camera,
+  music,
   review,
   replyLength,
   sns,
@@ -138,6 +148,7 @@ export function buildSystemInstruction({
   if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
   if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
   if (camera) out += CAMERA_RULES;
+  if (music) out += musicSection(music);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
   if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
@@ -325,6 +336,34 @@ ${upcoming}
   現在は ${current}。「30分後」「18時に」「明日の朝8時」などは現在を基準に正しい日時に直す。時刻が曖昧なら聞き返す。
   時間になると画面が声と通知で知らせる（F.R.I.D.A.Y. の画面を開いている間）。
 - タグは見えず、脳のノートに保存される。本文では「〇〇を ToDo に入れておきます」「18時にお知らせします」と自然に一言だけ伝える。`;
+}
+
+/** 音楽（Spotify）の操作 */
+function musicSection(music: NonNullable<MusicContext>): string {
+  if (!music.connected) {
+    return `
+
+# 音楽（Spotify）
+- Spotify には${music.configured ? "まだ接続されていない。音楽をかけてと頼まれたら「SETTINGS の SPOTIFY から接続すると操作できます」と短く伝える" : "接続できない（サーバーに Spotify の設定が無い）。音楽の操作を頼まれたら、まだできないと短く伝える"}。`;
+  }
+  const now = music.now;
+  const state = music.error
+    ? `- 今の状態は読めなかった：${music.error}`
+    : now?.title
+      ? `- いま${now.playing ? "流れている" : "止まっている"}曲：「${now.title}」${now.artist ? `（${now.artist}）` : ""}${now.device ? `／${now.device}` : ""}${now.volume !== undefined ? `／音量 ${now.volume}%` : ""}${now.shuffle ? "／シャッフル中" : ""}`
+      : "- いまは何も再生していない。";
+  return `
+
+# 音楽（Spotify・接続済み）
+${state}
+- 音楽の操作を頼まれたら、返答の最後に次のタグを 1 つ書く（画面にも読み上げにも出ず、Spotify が実行する）：
+  <music>{"action":"play","query":"探す言葉","kind":"playlist"}</music>
+  kind は playlist（気分・用途：「作業用」「集中」「リラックス」「朝」「ドライブ」など）・track（曲名）・artist（歌手名）・album。
+  query は Spotify で見つかりやすい言葉にする（例：「作業用の音楽」→ "作業用 BGM"、「YOASOBI かけて」→ kind:"artist","query":"YOASOBI"）。
+  止める：{"action":"pause"}　続きから：{"action":"resume"}　次：{"action":"next"}　前：{"action":"previous"}
+  音量：{"action":"volume","value":30}（「上げて」「下げて」は "up" / "down"）　シャッフル：{"action":"shuffle","on":true}
+- タグの外では「作業用のプレイリストをかけます」のように一言だけ。曲を聞かれたら上の「いま流れている曲」で答える。
+- 音は、開いている Spotify アプリ（パソコン・スマホ）から出る。再生の操作には Spotify Premium が必要。`;
 }
 
 /** カメラの映像を見せて聞かれたとき */

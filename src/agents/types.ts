@@ -5,6 +5,7 @@
 import type { AgentId, ChatMessage } from "@/core/types";
 import type { CalendarAccess } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
+import type { SpotifyAccess } from "@/integrations/spotify";
 import type { NewsSettings } from "@/integrations/news";
 import type { LongTermMemory } from "@/memory/long-term";
 
@@ -21,6 +22,10 @@ export interface AgentContext {
   mailRecent?: () => Promise<MailSummary[]>;
   /** Gmail に下書きを作る許可があるか */
   mailCanDraft?: () => Promise<boolean>;
+  /** Spotify（この端末で接続済みの場合だけ） */
+  spotify?: SpotifyAccess;
+  /** Spotify のサーバー側の設定があるか */
+  spotifyConfigured?: boolean;
   /** ニュースの設定と、今回ニュースをまとめて伝えるか（scheduled: 決まった時間 / asked: 頼まれた） */
   news?: { settings: NewsSettings; deliver: false | "scheduled" | "asked"; canSave: boolean };
   /** 現在時刻とタイムゾーン */

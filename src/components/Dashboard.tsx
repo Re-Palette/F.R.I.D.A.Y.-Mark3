@@ -25,6 +25,7 @@ import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tab
 import { useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
+import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -33,14 +34,23 @@ const CALENDAR_NOTICE: Record<string, string> = {
   "not-configured": "Google カレンダーの設定（GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET）がまだありません。",
 };
 
-/** Google から戻ってきたとき（?calendar=…）の結果を一度だけ表示する */
+const SPOTIFY_NOTICE: Record<string, string> = {
+  connected: "Spotify に接続しました。「フライデー、作業用の音楽かけて」「次の曲」「音量下げて」のように話しかけてみてください（Spotify アプリを開いておいてください）。",
+  denied: "Spotify への接続がキャンセルされました。",
+  failed: "Spotify に接続できませんでした。Spotify の開発者ダッシュボードのリダイレクト URI と、ユーザー登録（User Management）を確認してください。",
+  "not-configured": "Spotify の設定（SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET）がまだありません。",
+};
+
+/** Google・Spotify から戻ってきたとき（?calendar=… / ?spotify=…）の結果を一度だけ表示する */
 function useCalendarNotice() {
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
     const url = new URL(window.location.href);
+    const spotify = url.searchParams.get("spotify");
     const result = url.searchParams.get("calendar");
-    if (!result) return;
-    setNotice(CALENDAR_NOTICE[result] ?? null);
+    if (!result && !spotify) return;
+    setNotice(spotify ? (SPOTIFY_NOTICE[spotify] ?? null) : (CALENDAR_NOTICE[result!] ?? null));
+    url.searchParams.delete("spotify");
     url.searchParams.delete("calendar");
     url.searchParams.delete("reason");
     window.history.replaceState(null, "", url.pathname + url.search + url.hash);
@@ -73,6 +83,7 @@ function useAgentStatus() {
   const [voiceSpeed, setVoiceSpeed] = useState(1.15);
   const [automation, setAutomation] = useState<StatusResponse["automation"]>({ diary: false });
   const [hologramLibrary, setHologramLibrary] = useState(false);
+  const [spotify, setSpotify] = useState<StatusResponse["spotify"]>({ configured: false, connected: false });
 
   const refresh = useCallback(async () => {
     try {
@@ -94,6 +105,7 @@ function useAgentStatus() {
       if (typeof json.voiceSpeed === "number") setVoiceSpeed(json.voiceSpeed);
       if (json.automation) setAutomation(json.automation);
       setHologramLibrary(Boolean(json.hologram?.library));
+      if (json.spotify) setSpotify(json.spotify);
     } catch {
       setStatus("offline");
       setReason("サーバーに接続できません");
@@ -111,7 +123,7 @@ function useAgentStatus() {
     };
   }, [refresh]);
 
-  return { status, model, maxContext, reason, tts, brain, calendar, news, voiceSpeed, automation, hologramLibrary, refresh, setStatus };
+  return { status, model, maxContext, reason, tts, brain, calendar, news, voiceSpeed, automation, hologramLibrary, spotify, refresh, setStatus };
 }
 
 export function Dashboard() {
@@ -220,6 +232,14 @@ export function Dashboard() {
   const [brainNoticeClosed, setBrainNoticeClosed] = useState(false);
   const ttsNotice =
     voice.state !== "off" && agent.tts.reason && !ttsNoticeClosed ? `${agent.tts.reason}（今はブラウザの声で読み上げます）` : null;
+
+  // 音声モードの間は、マイクの声の大きさを測って HOME のコアと波形を揺らす（音は録音・送信しない）
+  useEffect(() => {
+    if (voice.state === "off") stopVoiceLevel();
+    else void startVoiceLevel();
+    voiceLevel.speaking = voice.state === "speaking";
+  }, [voice.state]);
+  useEffect(() => () => stopVoiceLevel(), []);
 
   // 聞き取りを始めたら Gemini / ElevenLabs への接続を温めておく（話し終わった瞬間に速く返すため）
   useEffect(() => {
@@ -363,6 +383,7 @@ export function Dashboard() {
               tts: agent.tts,
               automation: agent.automation,
               hologramLibrary: agent.hologramLibrary,
+              spotify: agent.spotify,
             }}
           />
           <Conversation
@@ -459,7 +480,7 @@ export function Dashboard() {
 
         {calendarNotice && (
           <div className="banner" role="status">
-            <b>CALENDAR</b>
+            <b>{calendarNotice.startsWith("Spotify") ? "SPOTIFY" : "CALENDAR"}</b>
             <span>{calendarNotice}</span>
             <button type="button" className="ghost-btn" onClick={closeCalendarNotice}>
               閉じる

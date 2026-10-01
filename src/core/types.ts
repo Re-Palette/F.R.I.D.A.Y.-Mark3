@@ -57,6 +57,8 @@ export type StreamEvent =
   | { type: "browser"; action: "close"; target: "last" | "all" }
   /** 3D ホログラムを作る（subject）・消す（null）。設計は画面が /api/hologram に頼む */
   | { type: "hologram"; subject: string | null }
+  /** Spotify を操作した結果（再生・一時停止・次の曲・音量など） */
+  | { type: "music"; ok: boolean; label: string; error?: string }
   /** Gmail に返信・メールの下書きを保存した結果（送信はしない） */
   | { type: "mail-draft"; ok: boolean; to: string; subject: string; error?: string }
   /** いま何をしているか（外部の情報を集めている／検索している／考えている） */
@@ -74,6 +76,8 @@ export interface StatusResponse {
   brain: { configured: boolean; connected: boolean; notes?: number; reason?: string };
   /** Google カレンダー（configured: サーバー側の設定あり / connected: この端末が接続済み） */
   calendar: { configured: boolean; connected: boolean; gmail?: boolean; gmailDraft?: boolean };
+  /** Spotify（configured: サーバー側の設定あり / connected: この端末が接続済み） */
+  spotify?: { configured: boolean; connected: boolean };
   /** ホログラムに使う既存の 3D モデル集（Poly Pizza の API キーがあるか） */
   hologram?: { library: boolean };
   /** Web 検索（auto: 必要なときだけ / always / off） */

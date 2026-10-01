@@ -100,6 +100,15 @@ const Message = memo(function Message({
           ))}
         </ul>
       )}
+      {msg.music && msg.music.length > 0 && (
+        <ul className="msg__memories" aria-label="Spotify の操作">
+          {msg.music.map((m, i) => (
+            <li key={`${m.label}-${i}`} className="memory-chip memory-chip--music" data-failed={!m.ok || undefined} title={m.error}>
+              <Icon name="music" size={12} /> <span>{m.ok ? "SPOTIFY" : "SPOTIFY FAILED"}</span> {m.label}
+            </li>
+          ))}
+        </ul>
+      )}
       {msg.drafts && msg.drafts.length > 0 && (
         <ul className="msg__memories" aria-label="Gmail に保存した下書き">
           {msg.drafts.map((d, i) => (

@@ -11,6 +11,7 @@ import { AGENT_CARDS } from "@/data/agents";
 import { TASKS_CHANGED, type ChatPhase, type LastRunStats, type UiMessage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import type { WeatherReport } from "@/integrations/weather";
+import { voiceLevel } from "@/lib/voice-level";
 import { Icon } from "../icons";
 import type { CoreMode } from "./ParticleCore";
 import { agentOnline, useIncoming, useJson, type ChatAgentStatus } from "./panels";
@@ -311,6 +312,29 @@ const WAVE_B = wavePath(10, 1.7);
 
 export function VoiceActivity({ state }: { state: VoiceState }) {
   const ratio = useVoiceActivity(state);
+  // 音声モードの間は、波の高さを実際の声の大きさに合わせて毎フレーム変える（測れないときは状態ごとの動き）
+  const ampRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ampRef.current;
+    if (!el || state === "off") return;
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      if (!voiceLevel.live && !voiceLevel.speaking) {
+        el.style.transform = "";
+        el.style.transition = "";
+        return;
+      }
+      el.style.transition = "none";
+      el.style.transform = `scaleY(${(0.06 + voiceLevel.value * 0.94).toFixed(3)})`;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.style.transform = "";
+      el.style.transition = "";
+    };
+  }, [state]);
   return (
     <section className="hbox hvoice" data-voice={state}>
       <h3 className="hblock__title">
@@ -322,7 +346,7 @@ export function VoiceActivity({ state }: { state: VoiceState }) {
       </h3>
       {/* 波は SVG の中を動かさず、外側の箱ごと横に流す（描き直しを起こさず軽い） */}
       <div className="hvoice__wave" aria-hidden="true">
-        <div className="hvoice__amp">
+        <div className="hvoice__amp" ref={ampRef}>
           <div className="hvoice__flow hvoice__flow--b">
             <svg viewBox="0 0 400 40" preserveAspectRatio="none">
               <path d={WAVE_B} />

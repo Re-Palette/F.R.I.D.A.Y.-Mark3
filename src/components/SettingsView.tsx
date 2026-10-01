@@ -32,6 +32,8 @@ export interface SettingsStatus {
   automation: StatusResponse["automation"];
   /** ホログラムに既存の 3D モデル集（Poly Pizza）を使えるか */
   hologramLibrary?: boolean;
+  /** Spotify の設定・接続の状態 */
+  spotify?: { configured: boolean; connected: boolean };
 }
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
@@ -349,6 +351,12 @@ export const SettingsView = memo(function SettingsView({
     }
   };
 
+  const disconnectSpotify = async () => {
+    await fetch("/api/spotify/disconnect", { method: "POST" }).catch(() => {});
+    setMessage({ ok: true, text: "この端末の Spotify 接続を解除しました。" });
+    onChanged();
+  };
+
   const disconnectGoogle = async () => {
     await fetch("/api/calendar/disconnect", { method: "POST" }).catch(() => {});
     setMessage({ ok: true, text: "この端末の Google 接続を解除しました。" });
@@ -537,6 +545,28 @@ export const SettingsView = memo(function SettingsView({
               state={status.tts.provider === "elevenlabs" ? "ok" : status.tts.reason ? "warn" : "off"}
               detail={status.tts.provider === "elevenlabs" ? "使用中" : (status.tts.reason ?? "未設定（ブラウザの声）")}
             />
+            <Row
+              label="Spotify"
+              state={status.spotify?.connected ? "ok" : status.spotify?.configured ? "warn" : "off"}
+              detail={
+                status.spotify?.connected
+                  ? "この端末で接続中（再生の操作は Premium が必要）"
+                  : status.spotify?.configured
+                    ? "未接続"
+                    : "SPOTIFY_CLIENT_ID / SECRET 未設定"
+              }
+            >
+              {status.spotify?.configured &&
+                (status.spotify.connected ? (
+                  <button type="button" className="ghost-btn" onClick={() => void disconnectSpotify()}>
+                    解除
+                  </button>
+                ) : (
+                  <a className="ghost-btn" href="/api/spotify/connect">
+                    接続
+                  </a>
+                ))}
+            </Row>
             <Row
               label="3D モデル"
               state={status.hologramLibrary ? "ok" : "off"}

@@ -17,6 +17,8 @@ import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
 import { BROWSER_TAGS, toBrowserEvent } from "./browser-actions";
 import { GMAIL_TAGS, runGmailActions } from "./gmail-actions";
+import { MUSIC_TAGS, runMusicActions } from "./music-actions";
+import type { SpotifyAccess } from "@/integrations/spotify";
 import type { DraftInput } from "@/integrations/gmail";
 import { saveDocument, toFolder } from "@/integrations/documents";
 
@@ -92,6 +94,10 @@ export async function* handleConversation(
     mailCanDraft?: AgentContext["mailCanDraft"];
     /** Gmail に下書きを作る（送信はしない） */
     draft?: (input: DraftInput) => Promise<{ to: string; subject: string }>;
+    /** この端末で接続済みの Spotify */
+    spotify?: SpotifyAccess;
+    /** Spotify のサーバー側の設定があるか（未接続なら接続の仕方を伝える） */
+    spotifyConfigured?: boolean;
   } = {},
 ): AsyncGenerator<StreamEvent> {
   let turn: SaveTurnInput | null = null;
@@ -111,7 +117,7 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
       document: 30_000,
       "gmail-draft": 8000,
     });
@@ -143,6 +149,8 @@ export async function* handleConversation(
       mail: options.mail,
       mailRecent: options.mailRecent,
       mailCanDraft: options.mailCanDraft,
+      spotify: options.spotify,
+      spotifyConfigured: options.spotifyConfigured,
       signal,
     })) {
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
@@ -179,6 +187,15 @@ export async function* handleConversation(
     }
     // ToDo・進捗・リマインダーを脳に書く（失敗したら本文でも知らせる）
     for await (const { event, note } of runBrainActions(tags.captures, memory.connected, signal)) {
+      yield event;
+      if (note) {
+        const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;
+        reply += text;
+        yield { type: "delta", text };
+      }
+    }
+    // 頼まれた音楽の操作（Spotify。失敗したら本文でも知らせる）
+    for await (const { event, note } of runMusicActions(tags.captures, options.spotify, signal)) {
       yield event;
       if (note) {
         const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;

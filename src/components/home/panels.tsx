@@ -312,6 +312,11 @@ export function ResponsePanel({
                 </button>
               </p>
             )}
+            {reply?.music?.map((m, i) => (
+              <p key={`${m.label}-${i}`} className="rpanel__docs" data-failed={!m.ok || undefined}>
+                <Icon name="music" size={12} /> {m.ok ? m.label : `Spotify を操作できませんでした：${m.error ?? ""}`}
+              </p>
+            ))}
             {reply?.drafts?.map((d, i) => (
               <p key={`${d.subject}-${i}`} className="rpanel__docs" data-failed={!d.ok || undefined}>
                 <Icon name="mail" size={12} /> {d.ok ? `下書きを保存：${d.to}「${d.subject}」` : `下書きを保存できませんでした：${d.error ?? ""}`}

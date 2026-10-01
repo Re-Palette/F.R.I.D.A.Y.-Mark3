@@ -49,6 +49,8 @@ export interface UiMessage {
   newsSettings?: { ok: boolean; time?: string; topics?: string[]; error?: string };
   /** カメラで見せた 1 枚（画面に出す小さい版の data URL） */
   image?: string;
+  /** Spotify を操作した結果 */
+  music?: { ok: boolean; label: string; error?: string }[];
   /** Gmail に保存した下書き（送信はしていない） */
   drafts?: { ok: boolean; to: string; subject: string; error?: string }[];
 }
@@ -385,6 +387,11 @@ export function useChat() {
               case "sources": {
                 const { sources } = event;
                 patch(assistantId, (m) => ({ ...m, sources }));
+                break;
+              }
+              case "music": {
+                const { ok, label, error } = event;
+                patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), { ok, label, error }] }));
                 break;
               }
               case "mail-draft": {

@@ -174,6 +174,25 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   返答の下に「DRAFT SAVED」と GMAIL ↗ のリンクが出ます。メールの中身は保存しません。削除・既読にもしません。
 - Google Cloud で **Gmail API を有効** にする必要があります（OAuth 同意画面がテスト中なら、テストユーザーのアカウントで使えます）。
 
+### 音楽（Spotify）
+
+- 「作業用の音楽かけて」「YOASOBI かけて」「次の曲」「音量下げて」「止めて」「今何の曲？」→ 返答の隠しタグ
+  `<music>{"action":"play","query":"…","kind":"playlist"}</music>` をサーバーが Spotify Web API で実行します。
+  曲・プレイリスト・アーティスト・アルバムを探して再生、一時停止・再開・次・前・音量・シャッフル。
+  音は開いている Spotify アプリ（パソコン・スマホ）から出ます（再生中の端末が無ければ、開いている Spotify に切り替えます）。
+- **Spotify Premium が必要**です（再生の操作、および 2026 年 2 月以降は開発者アプリの持ち主にも Premium が必要）。
+- 設定：
+  1. [Spotify for Developers](https://developer.spotify.com/dashboard) でアプリを作る（Web API にチェック）。
+  2. Redirect URI に `https://<サイトのドメイン>/api/spotify/callback` を登録。User Management に自分の Spotify のメールアドレスを追加。
+  3. Vercel の環境変数に `SPOTIFY_CLIENT_ID` と `SPOTIFY_CLIENT_SECRET` を入れて再デプロイ。
+  4. SETTINGS の LINKS →「Spotify」の「接続」。更新用トークンは暗号化して Cookie（その端末だけ）に保存します。
+
+### 声に合わせて動くコア
+
+- 音声モードの間だけマイクを開き、声の大きさ（音量）だけを測って、HOME の中心のコア（明るさ・大きさ・波打ち）と
+  VOICE ACTIVITY の波形の高さを揺らします。音そのものは録音も送信もしません（エコー除去つきで、F.R.I.D.A.Y. 自身の声はほとんど拾いません）。
+- F.R.I.D.A.Y. が話している間は、話し声らしい揺れを作って動かします（読み上げの音は別の経路で鳴るため）。
+
 ### カメラで見せて聞く
 
 - 入力欄の「CAMERA」を押すとカメラが開き、画面の右下に小窓で映ります（スマホは外側のカメラ）。

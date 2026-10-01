@@ -4,9 +4,11 @@
  * コアの中心：光る太陽と、線でつながった光の点の網（canvas 2D）。F.R.I.D.A.Y. の状態で動きが変わる。
  *   待機：ゆっくり回って呼吸する／聞き取り中：網が波打つ／考え中：速く渦を巻く
  *   検索中：光の帯が上下に走査する／処理中：縮んで広がる／返事中：中心から光の波が広がる
+ * 音声モードの間は、実際の声の大きさ（voiceLevel）に合わせて明るさ・大きさ・波打ちが変わる。
  * 見えていないとき・タブが裏のときは描かない。動きを減らす設定なら止まった絵を 1 枚だけ描く。
  */
 import { useEffect, useRef } from "react";
+import { voiceLevel } from "@/lib/voice-level";
 
 export type CoreMode = "idle" | "listening" | "connect" | "think" | "search" | "create" | "speaking";
 
@@ -169,12 +171,14 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
       const m = modeRef.current;
       const tune = TUNE[m];
       angle += tune.spin * dt;
-      glow += (tune.glow - glow) * Math.min(1, dt * 3); // 明るさはなめらかに変える
+      // 声の大きさ（音声モードの間だけ。0〜1）。声に合わせて明るく・大きく脈打つ
+      const lv = voiceLevel.value;
+      glow += (tune.glow + lv * 0.35 - glow) * Math.min(1, dt * 3); // 明るさはなめらかに変える
       const t = now / 1000;
       const cx = w / 2;
       const cy = h / 2;
       const R = Math.min(w, h) * 0.44;
-      const breath = 1 + Math.sin(t * 1.1) * 0.02;
+      const breath = 1 + Math.sin(t * 1.1) * 0.02 + lv * 0.07;
       const scan = Math.sin(t * 1.6); // 検索中の光の帯の高さ
       const wave = (t * 0.9) % 1; // 返事中の光の波
 
@@ -202,7 +206,8 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
           const d = Math.sin(tw);
           [x, z] = [x * c - z * d, x * d + z * c];
         } else if (m === "listening") {
-          s *= 1 + 0.07 * Math.sin(t * 6 + y0 * 5 + x * 3);
+          // 聞いている間は、声が大きいほど表面が大きく波打つ
+          s *= 1 + (0.03 + lv * 0.2) * Math.sin(t * 6 + y0 * 5 + x * 3);
         } else if (m === "connect") {
           s *= 0.9 + 0.1 * Math.sin(t * 3);
         }
@@ -250,7 +255,7 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
       // 中心の太陽（描いておいた絵を脈に合わせて拡大して貼る。ここだけ光を足し合わせる）
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = Math.min(1, glow);
-      const ss = sun.width * (1 + Math.sin(t * 2.2) * 0.04 * glow);
+      const ss = sun.width * (1 + Math.sin(t * 2.2) * 0.04 * glow + lv * 0.25);
       ctx.drawImage(sun, cx - ss / 2, cy - ss / 2, ss, ss);
       ctx.globalAlpha = 1;
     };

@@ -7,6 +7,7 @@ import { asksForSns, asksForTrend, needsSearch } from "@/agents/search/needs-sea
 import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { readNewsSettings } from "@/integrations/news";
 import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
+import { asksForMusic } from "@/integrations/spotify";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
@@ -15,7 +16,7 @@ import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MemoryRecord } from "@/memory/long-term";
-import { buildSystemInstruction, type MailData } from "./persona";
+import { buildSystemInstruction, type MailData, type MusicContext } from "./persona";
 
 /**
  * 脳・カレンダー・天気を集めるのに待てる時間。間に合わなければ無しで返答する（返答の速さ優先）。
@@ -85,9 +86,19 @@ export const chatAgent: Agent = {
           "review",
         )
       : Promise.resolve(null);
+    // 音楽の話のときだけ、いま流れている曲を Spotify に聞く（接続済みのとき）
+    const musicTalk = asksForMusic(latest);
+    const musicTask: Promise<MusicContext> = !musicTalk
+      ? Promise.resolve(null)
+      : !ctx.spotify
+        ? Promise.resolve({ connected: false, configured: Boolean(ctx.spotifyConfigured) })
+        : ctx.spotify.nowPlaying().then(
+            (now) => ({ connected: true, now }),
+            (err: unknown) => ({ connected: true, error: err instanceof Error ? err.message : "Spotify に接続できませんでした。" }),
+          );
     const canDraftTask: Promise<boolean | undefined> =
       wantsMail && ctx.mailCanDraft ? ctx.mailCanDraft().catch(() => false) : Promise.resolve(undefined);
-    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft] = await Promise.all([
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -98,6 +109,7 @@ export const chatAgent: Agent = {
       within<MailData>(mailTask, budget + 600, wantsMail ? { error: "メールの読み込みが間に合いませんでした。" } : null, "mail"),
       reviewTask,
       within<boolean | undefined>(canDraftTask, budget + 600, undefined, "mail-draft"),
+      within<MusicContext>(musicTask, budget + 600, musicTalk && ctx.spotify ? { connected: true, error: "Spotify の応答が間に合いませんでした。" } : null, "music"),
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -155,6 +167,7 @@ export const chatAgent: Agent = {
         reminders,
         mail,
         mailDraft: mailCanDraft,
+        music,
         camera,
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         replyLength: settings.replyLength,
