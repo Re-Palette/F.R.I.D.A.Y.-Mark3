@@ -28,9 +28,10 @@ const opened: Window[] = [];
 /** 拡張機能を使わずに開いて、閉じられなくなったタブの数 */
 let lost = 0;
 
-type ExtReply = { ok?: boolean; closed?: number; version?: number; error?: string };
+export type ExtReply = { ok?: boolean; closed?: number; version?: number; error?: string; [key: string]: unknown };
 
-function askExtension(message: Record<string, unknown>, timeoutMs: number): Promise<ExtReply | null> {
+/** 拡張機能に頼みごとをして、返事を待つ（返事が無ければ null） */
+export function askExtension(message: Record<string, unknown>, timeoutMs: number): Promise<ExtReply | null> {
   if (typeof window === "undefined") return Promise.resolve(null);
   const id = Math.random().toString(36).slice(2);
   return new Promise((resolve) => {
@@ -60,6 +61,25 @@ export async function hasExtension(): Promise<boolean> {
   if (document.documentElement.dataset.fridayTabs) return (found = true);
   found = Boolean((await askExtension({ type: "ping" }, 500))?.ok);
   return found;
+}
+
+/** Amazon Music の操作に必要な拡張機能の版 */
+export const MUSIC_EXTENSION_VERSION = "1.2.0";
+
+/** 入っている拡張機能の版（分からなければ undefined） */
+export function extensionVersion(): string | undefined {
+  return typeof document === "undefined" ? undefined : document.documentElement.dataset.fridayTabs || undefined;
+}
+
+/** 版 a が b 以上か（"1.10.0" > "1.2.0" のように数字で比べる） */
+export function versionAtLeast(a: string | undefined, b: string): boolean {
+  if (!a) return false;
+  const x = a.split(".").map(Number);
+  const y = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  }
+  return true;
 }
 
 /** 開けたら true（拡張機能なしでポップアップが止められたら false） */

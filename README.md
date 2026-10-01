@@ -174,10 +174,18 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   返答の下に「DRAFT SAVED」と GMAIL ↗ のリンクが出ます。メールの中身は保存しません。削除・既読にもしません。
 - Google Cloud で **Gmail API を有効** にする必要があります（OAuth 同意画面がテスト中なら、テストユーザーのアカウントで使えます）。
 
-### 音楽（Spotify）
+### 音楽（Amazon Music。Spotify も可）
 
-- 「作業用の音楽かけて」「YOASOBI かけて」「次の曲」「音量下げて」「止めて」「今何の曲？」→ 返答の隠しタグ
-  `<music>{"action":"play","query":"…","kind":"playlist"}</music>` をサーバーが Spotify Web API で実行します。
+- 「作業用の音楽かけて」「YOASOBI かけて」「次の曲」「音量下げて」「止めて」「続きから」「今何の曲？」→ 返答の隠しタグ
+  `<music>{"action":"play","query":"…","kind":"playlist"}</music>` で操作します。
+- **Amazon Music（標準）**：Amazon Music には個人で使える公開 API が無い（Web API は企業向けの限定ベータ）ため、
+  Chrome 拡張機能（v1.2.0 以降）が Chrome で開いている `music.amazon.co.jp` の Web プレーヤーを操作します。
+  - 「〇〇かけて」→ Amazon Music の検索ページを開き（タブが無ければ裏で新しく開く）、最初の結果の再生ボタンを押します。
+    うまく押せなかったときは、検索ページを開いたままにして「再生ボタンを押してください」と伝えます。
+  - 一時停止・再開・次・前は Web プレーヤーの再生操作（Media Session）を、音量はページの音量を直接変えます。
+  - 音楽の話のときだけ、拡張機能から「いま流れている曲」を読み取ってサーバーに渡します（保存はしません）。
+  - Amazon Music にはあらかじめ Chrome でログインしておきます（聴ける曲はプランによります）。
+- **Spotify（任意）**：SETTINGS で Spotify に接続しているときは、Spotify Web API で操作します（以下）。
   曲・プレイリスト・アーティスト・アルバムを探して再生、一時停止・再開・次・前・音量・シャッフル。
   音は開いている Spotify アプリ（パソコン・スマホ）から出ます（再生中の端末が無ければ、開いている Spotify に切り替えます）。
 - **Spotify Premium が必要**です（再生の操作、および 2026 年 2 月以降は開発者アプリの持ち主にも Premium が必要）。
@@ -323,6 +331,7 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   SETTINGS → BROWSER の「拡張機能をダウンロード」（`npm run build` の前に `scripts/pack-extension.mjs` が ZIP を作成）→
   `chrome://extensions` でデベロッパー モードをオン →「パッケージ化されていない拡張機能を読み込む」で展開したフォルダを選びます。
   拡張機能は F.R.I.D.A.Y. のサイト（`f-r-i-d-a-y-mark3.vercel.app` と localhost）からの依頼だけを受け、自分で開いたタブだけを閉じます。
+  Amazon Music の操作には v1.2.0 以降が必要です（古い版が入っているときは SETTINGS → BROWSER に入れ直しの案内が出ます）。
   別の URL で公開する場合は `extension/manifest.json` の `matches` を書き換えてください。
 
 ### プッシュ通知（アプリを閉じていても通知）

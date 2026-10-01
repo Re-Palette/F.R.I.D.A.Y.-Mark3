@@ -8,6 +8,9 @@
  * - クライアント ID / シークレット・トークンはブラウザに渡さない。
  */
 import { readCookie, seal, unseal } from "@/lib/secure-cookie";
+import type { MusicCommand, MusicKind, NowPlaying } from "@/lib/music";
+
+export type { MusicCommand, MusicKind, NowPlaying };
 
 export const SPOTIFY_COOKIE = "friday_spotify";
 export const SPOTIFY_STATE_COOKIE = "friday_spotify_state";
@@ -105,28 +108,6 @@ async function accessToken(refresh: string): Promise<string> {
 }
 
 /* ---------- 操作 ---------- */
-
-export interface NowPlaying {
-  playing: boolean;
-  title?: string;
-  artist?: string;
-  device?: string;
-  volume?: number;
-  shuffle?: boolean;
-}
-
-export type MusicKind = "track" | "playlist" | "album" | "artist";
-
-export interface MusicCommand {
-  action: "play" | "pause" | "resume" | "next" | "previous" | "volume" | "shuffle";
-  /** play: 探す言葉（無ければ、止めた所から再開） */
-  query?: string;
-  kind?: MusicKind;
-  /** volume: 0〜100、または "up" / "down" */
-  value?: number | "up" | "down";
-  /** shuffle: オン / オフ */
-  on?: boolean;
-}
 
 interface Device {
   id: string;
@@ -258,9 +239,4 @@ export class SpotifyAccess {
     await ok(await this.call("PUT", `/me/player/volume?volume_percent=${v}`));
     return `音量：${v}%`;
   }
-}
-
-/** 音楽について話しているか（「〇〇かけて」「次の曲」「音量」「Spotify」など） */
-export function asksForMusic(text: string): boolean {
-  return /spotify|スポティファイ|音楽|曲|BGM|ＢＧＭ|プレイリスト|アルバム|かけて|流して|再生|一時停止|止めて|音量|ボリューム|シャッフル|スキップ|聴きたい|聞きたい/i.test(text);
 }

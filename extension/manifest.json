@@ -1,16 +1,43 @@
 {
   "manifest_version": 3,
   "name": "F.R.I.D.A.Y. Tabs",
-  "version": "1.1.0",
-  "description": "F.R.I.D.A.Y. Mark3 から、Web ページを開く・閉じる操作をできるようにします。",
-  "permissions": ["storage"],
-  "background": { "service_worker": "background.js" },
+  "version": "1.2.0",
+  "description": "F.R.I.D.A.Y. Mark3 から、Web ページを開く・閉じる操作と、Amazon Music の再生の操作をできるようにします。",
+  "permissions": [
+    "storage",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["https://f-r-i-d-a-y-mark3.vercel.app/*", "http://localhost/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://f-r-i-d-a-y-mark3.vercel.app/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://music.amazon.co.jp/*",
+        "https://music.amazon.com/*"
+      ],
+      "js": [
+        "amazon-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
-  "icons": { "128": "icon-128.png" }
+  "icons": {
+    "128": "icon-128.png"
+  },
+  "host_permissions": [
+    "https://music.amazon.co.jp/*",
+    "https://music.amazon.com/*"
+  ]
 }

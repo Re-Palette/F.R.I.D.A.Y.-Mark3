@@ -98,6 +98,8 @@ export async function* handleConversation(
     spotify?: SpotifyAccess;
     /** Spotify のサーバー側の設定があるか（未接続なら接続の仕方を伝える） */
     spotifyConfigured?: boolean;
+    /** 音楽の話のとき、画面から届いた Amazon Music の状態 */
+    amazon?: AgentContext["amazon"];
   } = {},
 ): AsyncGenerator<StreamEvent> {
   let turn: SaveTurnInput | null = null;
@@ -151,6 +153,7 @@ export async function* handleConversation(
       mailCanDraft: options.mailCanDraft,
       spotify: options.spotify,
       spotifyConfigured: options.spotifyConfigured,
+      amazon: options.amazon,
       signal,
     })) {
       // 候補の先頭以外に自動で切り替わった場合は、実際のモデル名を知らせ直す
@@ -194,8 +197,8 @@ export async function* handleConversation(
         yield { type: "delta", text };
       }
     }
-    // 頼まれた音楽の操作（Spotify。失敗したら本文でも知らせる）
-    for await (const { event, note } of runMusicActions(tags.captures, options.spotify, signal)) {
+    // 頼まれた音楽の操作（Spotify はここで実行、Amazon Music は画面に頼む。失敗したら本文でも知らせる）
+    for await (const { event, note } of runMusicActions(tags.captures, options.spotify, Boolean(options.amazon?.ext), signal)) {
       yield event;
       if (note) {
         const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;

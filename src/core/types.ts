@@ -1,6 +1,7 @@
 /**
  * F.R.I.D.A.Y. Core 全体で共有する型（クライアント／サーバー両用・依存なし）。
  */
+import type { AmazonMusicState, MusicCommand } from "@/lib/music";
 
 /** 将来追加予定のものも含めた Agent ID。今回実装されているのは "chat" のみ。 */
 export type AgentId =
@@ -31,6 +32,8 @@ export interface ChatMessage {
 /** POST /api/chat のリクエストボディ */
 export interface ChatRequestBody {
   messages: ChatMessage[];
+  /** 音楽の話のときだけ：Amazon Music の状態（拡張機能の有無・流れている曲） */
+  music?: AmazonMusicState;
   /** "voice": 音声会話（読み上げ向けの話し言葉で返答） */
   mode?: "text" | "voice";
 }
@@ -57,8 +60,11 @@ export type StreamEvent =
   | { type: "browser"; action: "close"; target: "last" | "all" }
   /** 3D ホログラムを作る（subject）・消す（null）。設計は画面が /api/hologram に頼む */
   | { type: "hologram"; subject: string | null }
-  /** Spotify を操作した結果（再生・一時停止・次の曲・音量など） */
-  | { type: "music"; ok: boolean; label: string; error?: string }
+  /**
+   * 音楽の操作。Spotify はサーバーで実行した結果。
+   * command があるときは Amazon Music の操作で、画面（Chrome 拡張機能）が実行する
+   */
+  | { type: "music"; ok: boolean; label: string; error?: string; command?: MusicCommand }
   /** Gmail に返信・メールの下書きを保存した結果（送信はしない） */
   | { type: "mail-draft"; ok: boolean; to: string; subject: string; error?: string }
   /** いま何をしているか（外部の情報を集めている／検索している／考えている） */

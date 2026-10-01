@@ -314,7 +314,7 @@ export function ResponsePanel({
             )}
             {reply?.music?.map((m, i) => (
               <p key={`${m.label}-${i}`} className="rpanel__docs" data-failed={!m.ok || undefined}>
-                <Icon name="music" size={12} /> {m.ok ? m.label : `Spotify を操作できませんでした：${m.error ?? ""}`}
+                <Icon name="music" size={12} /> {m.ok ? m.label : `音楽を操作できませんでした：${m.error ?? ""}`}
               </p>
             ))}
             {reply?.drafts?.map((d, i) => (

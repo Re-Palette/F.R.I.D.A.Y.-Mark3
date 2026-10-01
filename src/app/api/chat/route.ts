@@ -8,6 +8,7 @@ import type { StreamEvent } from "@/core/types";
 import { CalendarAccess, hasComposeScope, refreshTokenFrom } from "@/integrations/google-calendar";
 import { createDraft, recentMail, unreadMail } from "@/integrations/gmail";
 import { isSpotifyConfigured, SpotifyAccess, spotifyTokenFrom } from "@/integrations/spotify";
+import type { AmazonMusicState } from "@/lib/music";
 import { asksForNews, localNow, NEWS_COOKIE, peekNewsSettings } from "@/integrations/news";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { cookieHeader, readCookie } from "@/lib/secure-cookie";
@@ -27,10 +28,12 @@ function errorResponse(err: unknown): Response {
 export async function POST(req: Request): Promise<Response> {
   let history;
   let voice = false;
+  let amazon: AmazonMusicState | undefined;
   try {
-    const body = (await req.json()) as { messages?: unknown; mode?: unknown };
+    const body = (await req.json()) as { messages?: unknown; mode?: unknown; music?: unknown };
     history = sanitizeHistory(body?.messages);
     voice = body?.mode === "voice";
+    amazon = toAmazonState(body?.music);
     preflight();
   } catch (err) {
     if (err instanceof SyntaxError) {
@@ -79,6 +82,7 @@ export async function POST(req: Request): Promise<Response> {
     draft,
     spotify: spotifyToken ? new SpotifyAccess(spotifyToken) : undefined,
     spotifyConfigured: isSpotifyConfigured(),
+    amazon,
   });
 
   const stream = new ReadableStream<Uint8Array>({
@@ -107,6 +111,25 @@ export async function POST(req: Request): Promise<Response> {
   });
   if (news.markDelivered) headers.append("Set-Cookie", cookieHeader(NEWS_COOKIE, news.markDelivered, 60 * 60 * 48));
   return new Response(stream, { headers });
+}
+
+/** 画面から届いた Amazon Music の状態を検証する（形の違うものは捨てる・文字は短く切る） */
+function toAmazonState(v: unknown): AmazonMusicState | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const { ext, now } = v as { ext?: unknown; now?: unknown };
+  if (typeof ext !== "boolean") return undefined;
+  if (!now || typeof now !== "object") return { ext, now: now === null ? null : undefined };
+  const n = now as Record<string, unknown>;
+  const text = (x: unknown) => (typeof x === "string" ? x.replace(/[\r\n]+/g, " ").slice(0, 120) : undefined);
+  return {
+    ext,
+    now: {
+      playing: n.playing === true,
+      title: text(n.title),
+      artist: text(n.artist),
+      volume: typeof n.volume === "number" && n.volume >= 0 && n.volume <= 100 ? Math.round(n.volume) : undefined,
+    },
+  };
 }
 
 /** ニュースを今回伝えるか。返答を待たせないよう、設定は前回読んだものを使う（最新は裏で読み直す） */

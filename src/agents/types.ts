@@ -6,6 +6,7 @@ import type { AgentId, ChatMessage } from "@/core/types";
 import type { CalendarAccess } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
 import type { SpotifyAccess } from "@/integrations/spotify";
+import type { AmazonMusicState } from "@/lib/music";
 import type { NewsSettings } from "@/integrations/news";
 import type { LongTermMemory } from "@/memory/long-term";
 
@@ -26,6 +27,8 @@ export interface AgentContext {
   spotify?: SpotifyAccess;
   /** Spotify のサーバー側の設定があるか */
   spotifyConfigured?: boolean;
+  /** 音楽の話のとき、画面から届いた Amazon Music の状態（拡張機能の有無・流れている曲） */
+  amazon?: AmazonMusicState;
   /** ニュースの設定と、今回ニュースをまとめて伝えるか（scheduled: 決まった時間 / asked: 頼まれた） */
   news?: { settings: NewsSettings; deliver: false | "scheduled" | "asked"; canSave: boolean };
   /** 現在時刻とタイムゾーン */

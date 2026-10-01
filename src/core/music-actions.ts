@@ -6,7 +6,8 @@
  *   <music>{"action":"shuffle","on":true}</music>
  */
 import type { StreamEvent } from "@/core/types";
-import { SpotifyError, type MusicCommand, type SpotifyAccess } from "@/integrations/spotify";
+import { SpotifyError, type SpotifyAccess } from "@/integrations/spotify";
+import type { MusicCommand } from "@/lib/music";
 
 export const MUSIC_TAGS = ["music"] as const;
 export type MusicTag = (typeof MUSIC_TAGS)[number];
@@ -30,17 +31,25 @@ function parse(raw: string): MusicCommand | null {
   }
 }
 
-/** 1 つずつ実行し、結果（と失敗時に本文へ足す一言）を返す */
+/**
+ * 1 つずつ実行し、結果（と失敗時に本文へ足す一言）を返す。
+ * Spotify に接続していればここで実行し、していなければ Amazon Music の操作として画面に渡す（拡張機能が実行する）。
+ */
 export async function* runMusicActions(
   captures: Record<MusicTag, string[]>,
   spotify: SpotifyAccess | undefined,
+  amazonExt: boolean,
   signal?: AbortSignal,
 ): AsyncGenerator<{ event: MusicEvent; note?: string }> {
   for (const raw of captures.music.slice(0, 2)) {
     if (signal?.aborted) return;
     const cmd = parse(raw);
+    if (cmd && !spotify && amazonExt) {
+      yield { event: { type: "music", ok: true, label: cmd.query ?? cmd.action, command: cmd } };
+      continue;
+    }
     let error: string;
-    if (!spotify) error = "Spotify に接続されていません（SETTINGS の SPOTIFY から接続できます）。";
+    if (!spotify) error = "Amazon Music を操作するには、F.R.I.D.A.Y. の拡張機能（SETTINGS の BROWSER）が必要です。";
     else if (!cmd) error = "音楽の操作を読み取れませんでした。";
     else {
       try {

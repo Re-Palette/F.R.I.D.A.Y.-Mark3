@@ -4,7 +4,7 @@
  */
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
-import type { NowPlaying } from "@/integrations/spotify";
+import type { NowPlaying } from "@/lib/music";
 import type { Reminder } from "@/integrations/reminders";
 import type { TasksOverview } from "@/integrations/tasks";
 import type { WeatherReport } from "@/integrations/weather";
@@ -49,8 +49,8 @@ export interface PersonaInput {
 
 /** 音楽の話のときの Spotify の状態（音楽の話でなければ null） */
 export type MusicContext =
-  | { connected: false; configured: boolean }
-  | { connected: true; now?: NowPlaying; error?: string }
+  | { kind: "spotify"; now?: NowPlaying; error?: string }
+  | { kind: "amazon"; ext: boolean; now?: NowPlaying | null }
   | null;
 
 /** 未読メール（読まなかったときは null、読めなかったときは error） */
@@ -338,32 +338,42 @@ ${upcoming}
 - タグは見えず、脳のノートに保存される。本文では「〇〇を ToDo に入れておきます」「18時にお知らせします」と自然に一言だけ伝える。`;
 }
 
-/** 音楽（Spotify）の操作 */
-function musicSection(music: NonNullable<MusicContext>): string {
-  if (!music.connected) {
-    return `
-
-# 音楽（Spotify）
-- Spotify には${music.configured ? "まだ接続されていない。音楽をかけてと頼まれたら「SETTINGS の SPOTIFY から接続すると操作できます」と短く伝える" : "接続できない（サーバーに Spotify の設定が無い）。音楽の操作を頼まれたら、まだできないと短く伝える"}。`;
-  }
-  const now = music.now;
-  const state = music.error
-    ? `- 今の状態は読めなかった：${music.error}`
-    : now?.title
-      ? `- いま${now.playing ? "流れている" : "止まっている"}曲：「${now.title}」${now.artist ? `（${now.artist}）` : ""}${now.device ? `／${now.device}` : ""}${now.volume !== undefined ? `／音量 ${now.volume}%` : ""}${now.shuffle ? "／シャッフル中" : ""}`
-      : "- いまは何も再生していない。";
-  return `
-
-# 音楽（Spotify・接続済み）
-${state}
-- 音楽の操作を頼まれたら、返答の最後に次のタグを 1 つ書く（画面にも読み上げにも出ず、Spotify が実行する）：
+const MUSIC_TAG_RULES = `- 音楽の操作を頼まれたら、返答の最後に次のタグを 1 つ書く（画面にも読み上げにも出ず、自動で実行される）：
   <music>{"action":"play","query":"探す言葉","kind":"playlist"}</music>
   kind は playlist（気分・用途：「作業用」「集中」「リラックス」「朝」「ドライブ」など）・track（曲名）・artist（歌手名）・album。
-  query は Spotify で見つかりやすい言葉にする（例：「作業用の音楽」→ "作業用 BGM"、「YOASOBI かけて」→ kind:"artist","query":"YOASOBI"）。
+  query は見つかりやすい言葉にする（例：「作業用の音楽」→ "作業用 BGM"、「YOASOBI かけて」→ kind:"artist","query":"YOASOBI"）。
   止める：{"action":"pause"}　続きから：{"action":"resume"}　次：{"action":"next"}　前：{"action":"previous"}
   音量：{"action":"volume","value":30}（「上げて」「下げて」は "up" / "down"）　シャッフル：{"action":"shuffle","on":true}
-- タグの外では「作業用のプレイリストをかけます」のように一言だけ。曲を聞かれたら上の「いま流れている曲」で答える。
+- タグの外では「作業用のプレイリストをかけます」のように一言だけ。曲を聞かれたら「いま流れている曲」で答える。`;
+
+const nowLine = (now: NowPlaying | null | undefined) =>
+  now?.title
+    ? `- いま${now.playing ? "流れている" : "止まっている"}曲：「${now.title}」${now.artist ? `（${now.artist}）` : ""}${now.device ? `／${now.device}` : ""}${now.volume !== undefined ? `／音量 ${now.volume}%` : ""}${now.shuffle ? "／シャッフル中" : ""}`
+    : "- いまは何も再生していない（または曲名が分からない）。";
+
+/** 音楽の操作（Amazon Music、または接続していれば Spotify） */
+function musicSection(music: NonNullable<MusicContext>): string {
+  if (music.kind === "spotify") {
+    return `
+
+# 音楽（Spotify・接続済み）
+${music.error ? `- 今の状態は読めなかった：${music.error}` : nowLine(music.now)}
+${MUSIC_TAG_RULES}
 - 音は、開いている Spotify アプリ（パソコン・スマホ）から出る。再生の操作には Spotify Premium が必要。`;
+  }
+  if (!music.ext) {
+    return `
+
+# 音楽（Amazon Music）
+- Amazon Music を操作するには、この端末の Chrome に F.R.I.D.A.Y. の拡張機能（最新版）が必要。まだ入っていない。
+- 音楽をかけてと頼まれたら「SETTINGS の BROWSER から拡張機能を入れると、Amazon Music を操作できます」と短く伝える。タグは書かない。`;
+  }
+  return `
+
+# 音楽（Amazon Music・Chrome の Web プレーヤーを操作）
+${music.now === null ? "- Amazon Music のタブはまだ開いていない（「〇〇かけて」と頼まれれば、開いて再生する）。" : nowLine(music.now)}
+${MUSIC_TAG_RULES}
+- Amazon Music は Chrome のタブ（music.amazon.co.jp）で鳴る。曲を探して再生するときは、検索結果の最初の曲・プレイリストを再生する（うまく押せなかったときは画面に知らせが出る）。`;
 }
 
 /** カメラの映像を見せて聞かれたとき */

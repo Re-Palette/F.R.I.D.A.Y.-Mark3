@@ -12,6 +12,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatImage, ChatMessage, StreamEvent } from "@/core/types";
+import { amazonMusicState, runAmazonMusic } from "@/lib/amazon-music";
+import { asksForMusic } from "@/lib/music";
 import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
@@ -291,10 +293,13 @@ export function useChat() {
         });
 
       try {
+        // 音楽の話のときだけ、Amazon Music の状態（拡張機能の有無・流れている曲）を一緒に送る
+        const lastUser = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+        const music = asksForMusic(lastUser) ? await amazonMusicState().catch(() => undefined) : undefined;
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: toApiHistory(history), mode: opts.voice ? "voice" : "text" }),
+          body: JSON.stringify({ messages: toApiHistory(history), mode: opts.voice ? "voice" : "text", ...(music ? { music } : {}) }),
           signal: controller.signal,
         });
 
@@ -390,8 +395,13 @@ export function useChat() {
                 break;
               }
               case "music": {
-                const { ok, label, error } = event;
-                patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), { ok, label, error }] }));
+                const { ok, label, error, command } = event;
+                if (command) {
+                  // Amazon Music：拡張機能に頼んで、開いている Web プレーヤーを操作する
+                  void runAmazonMusic(command).then((r) => patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), r] })));
+                } else {
+                  patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), { ok, label, error }] }));
+                }
                 break;
               }
               case "mail-draft": {

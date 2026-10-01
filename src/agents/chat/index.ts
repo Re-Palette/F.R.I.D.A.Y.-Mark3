@@ -7,7 +7,7 @@ import { asksForSns, asksForTrend, needsSearch } from "@/agents/search/needs-sea
 import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { readNewsSettings } from "@/integrations/news";
 import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
-import { asksForMusic } from "@/integrations/spotify";
+import { asksForMusic } from "@/lib/music";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
@@ -88,14 +88,15 @@ export const chatAgent: Agent = {
       : Promise.resolve(null);
     // 音楽の話のときだけ、いま流れている曲を Spotify に聞く（接続済みのとき）
     const musicTalk = asksForMusic(latest);
+    // Spotify に接続していれば Spotify、していなければ Amazon Music（画面の拡張機能が操作する）
     const musicTask: Promise<MusicContext> = !musicTalk
       ? Promise.resolve(null)
-      : !ctx.spotify
-        ? Promise.resolve({ connected: false, configured: Boolean(ctx.spotifyConfigured) })
-        : ctx.spotify.nowPlaying().then(
-            (now) => ({ connected: true, now }),
-            (err: unknown) => ({ connected: true, error: err instanceof Error ? err.message : "Spotify に接続できませんでした。" }),
-          );
+      : ctx.spotify
+        ? ctx.spotify.nowPlaying().then(
+            (now) => ({ kind: "spotify" as const, now }),
+            (err: unknown) => ({ kind: "spotify" as const, error: err instanceof Error ? err.message : "Spotify に接続できませんでした。" }),
+          )
+        : Promise.resolve({ kind: "amazon" as const, ext: Boolean(ctx.amazon?.ext), now: ctx.amazon?.now ?? null });
     const canDraftTask: Promise<boolean | undefined> =
       wantsMail && ctx.mailCanDraft ? ctx.mailCanDraft().catch(() => false) : Promise.resolve(undefined);
     const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music] = await Promise.all([
@@ -109,7 +110,7 @@ export const chatAgent: Agent = {
       within<MailData>(mailTask, budget + 600, wantsMail ? { error: "メールの読み込みが間に合いませんでした。" } : null, "mail"),
       reviewTask,
       within<boolean | undefined>(canDraftTask, budget + 600, undefined, "mail-draft"),
-      within<MusicContext>(musicTask, budget + 600, musicTalk && ctx.spotify ? { connected: true, error: "Spotify の応答が間に合いませんでした。" } : null, "music"),
+      within<MusicContext>(musicTask, budget + 600, musicTalk && ctx.spotify ? { kind: "spotify", error: "Spotify の応答が間に合いませんでした。" } : null, "music"),
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;

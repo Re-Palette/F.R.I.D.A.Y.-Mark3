@@ -6,7 +6,9 @@ window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== location.origin) return;
   const msg = event.data;
   if (!msg || msg.source !== "friday" || typeof msg.id !== "string") return;
-  chrome.runtime.sendMessage({ type: msg.type, url: msg.url, target: msg.target }, (res) => {
+  // 渡すのは決まった項目だけ（開く・閉じる・音楽の操作）
+  const { type, url, target, action, query, value } = msg;
+  chrome.runtime.sendMessage({ type, url, target, action, query, value }, (res) => {
     const error = chrome.runtime.lastError?.message;
     window.postMessage({ source: "friday-ext", id: msg.id, ...(res || {}), ...(error ? { ok: false, error } : {}) }, location.origin);
   });

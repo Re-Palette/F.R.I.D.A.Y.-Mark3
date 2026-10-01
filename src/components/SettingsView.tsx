@@ -7,7 +7,7 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useBargeIn } from "@/hooks/useBargeIn";
-import { hasExtension } from "@/lib/tabs";
+import { extensionVersion, hasExtension, MUSIC_EXTENSION_VERSION, versionAtLeast } from "@/lib/tabs";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -243,20 +243,36 @@ function PushControls({ hidden }: { hidden: boolean }) {
 /** Web ページを開く・閉じるための Chrome 拡張機能 */
 function BrowserControls({ hidden }: { hidden: boolean }) {
   const [installed, setInstalled] = useState<boolean | null>(null);
+  const [version, setVersion] = useState<string | undefined>();
   useEffect(() => {
-    if (!hidden) void hasExtension().then(setInstalled);
+    if (hidden) return;
+    void hasExtension().then((ok) => {
+      setInstalled(ok);
+      setVersion(extensionVersion());
+    });
   }, [hidden]);
+  // 古い版は「開く・閉じる」だけ。Amazon Music の操作には入れ直しが要る
+  const old = installed === true && !versionAtLeast(version, MUSIC_EXTENSION_VERSION);
 
   return (
     <>
       <p className="settings__note">
         拡張機能：
-        {installed === null ? "確認中…" : installed ? <b style={{ color: "var(--cyan)" }}>接続済み（開く・閉じるが使えます）</b> : "未導入"}
+        {installed === null ? (
+          "確認中…"
+        ) : installed && !old ? (
+          <b style={{ color: "var(--cyan)" }}>接続済み（開く・閉じる・Amazon Music の操作が使えます）</b>
+        ) : installed ? (
+          <b style={{ color: "var(--cyan)" }}>古い版（{version ?? "?"}）。入れ直すと Amazon Music を操作できます</b>
+        ) : (
+          "未導入"
+        )}
       </p>
-      {installed === false && (
+      {(installed === false || old) && (
         <>
           <p className="settings__note">
-            入れると「〇〇開いて」でポップアップが止められずに開き、YouTube や Google のページも「閉じて」で閉じられます（パソコンの Chrome / Edge 用）。
+            入れると「〇〇開いて」でポップアップが止められずに開き、YouTube や Google のページも「閉じて」で閉じられます。
+            さらに、Chrome で開いた Amazon Music（music.amazon.co.jp）を「作業用の音楽かけて」「次の曲」「止めて」「音量下げて」で操作できます（パソコンの Chrome / Edge 用）。
           </p>
           <div className="settings__actions">
             <a className="ghost-btn" href="/friday-extension.zip" download>
@@ -266,9 +282,10 @@ function BrowserControls({ hidden }: { hidden: boolean }) {
           <ol className="settings__note">
             <li>ダウンロードした ZIP を右クリック →「すべて展開」</li>
             <li>アドレスバーに chrome://extensions（Edge は edge://extensions）と入れて開く</li>
+            {old && <li>前に入れた「F.R.I.D.A.Y. Tabs」を「削除」する</li>}
             <li>右上（Edge は左下）の「デベロッパー モード」をオン</li>
             <li>「パッケージ化されていない拡張機能を読み込む」→ 展開した「friday-extension」フォルダを選ぶ</li>
-            <li>この画面を再読み込み</li>
+            <li>この画面と、開いている Amazon Music のタブを再読み込み</li>
           </ol>
         </>
       )}
