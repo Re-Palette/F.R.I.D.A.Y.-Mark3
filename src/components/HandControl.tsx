@@ -24,8 +24,10 @@ const BONES = [
 
 type Status = "off" | "loading" | "ready" | "error";
 
-/** 手の認識の間隔（ミリ秒）。約 15 回/秒で手の操作には十分。描画はホログラム側でなめらかに補う */
-const FRAME_MS = 66;
+/** 手の認識の間隔の下限（ミリ秒）。最大で約 30 回/秒。前の認識が終わってから次を送るので、遅い端末では自然に減る */
+const FRAME_MS = 33;
+/** CPU での認識がこれより遅い（ミリ秒・平均）端末では、GPU に切り替える */
+const SLOW_INFER_MS = 55;
 
 /** 認識用の Worker（public/hand-worker.mjs）を起動して、準備ができたら返す */
 function startWorker(): Promise<Worker> {
@@ -74,11 +76,18 @@ if (typeof window !== "undefined") {
   });
 }
 
+interface WorkerResult {
+  landmarks: Point[][];
+  /** 認識にかかった時間（ミリ秒） */
+  ms?: number;
+  delegate?: "CPU" | "GPU";
+}
+
 /** 1 コマ送って、手の 21 点を受け取る */
-function askWorker(worker: Worker, bitmap: ImageBitmap, time: number): Promise<Point[][]> {
+function askWorker(worker: Worker, bitmap: ImageBitmap, time: number): Promise<WorkerResult> {
   return new Promise((resolve) => {
-    worker.onmessage = (e: MessageEvent<{ type: string; landmarks?: Point[][] }>) => {
-      if (e.data.type === "result") resolve(e.data.landmarks ?? []);
+    worker.onmessage = (e: MessageEvent<{ type: string } & Partial<WorkerResult>>) => {
+      if (e.data.type === "result") resolve({ landmarks: e.data.landmarks ?? [], ms: e.data.ms, delegate: e.data.delegate });
     };
     worker.postMessage({ type: "frame", bitmap, time }, [bitmap]);
   });
@@ -107,6 +116,8 @@ export function HandControl({ hidden }: { hidden: boolean }) {
   const [status, setStatus] = useState<Status>("off");
   const [message, setMessage] = useState("");
   const [hands, setHands] = useState(0);
+  /** 1 秒あたりの手の認識回数 */
+  const [rate, setRate] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stopRef = useRef<() => void>(() => {});
 
@@ -115,6 +126,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
     stopRef.current = () => {};
     holo.cursors = [];
     setHands(0);
+    setRate(0);
     setStatus("off");
     setMessage("");
   }, []);
@@ -168,6 +180,9 @@ export function HandControl({ hidden }: { hidden: boolean }) {
 
       const tracker = new GestureTracker();
       let lastCount = 0;
+      // 最新の認識結果（小窓の描画は、これを毎フレームなめらかに追いかけて描く）
+      let latest: Point[][] = [];
+      let pinching: boolean[] = [];
       const apply = (landmarks: Point[][]) => {
         const now = performance.now();
         for (const ev of tracker.update(landmarks, now)) {
@@ -176,14 +191,47 @@ export function HandControl({ hidden }: { hidden: boolean }) {
           else resetView();
         }
         holo.cursors = tracker.cursors;
+        latest = landmarks;
+        pinching = tracker.cursors.map((c) => c.pinching);
         if (landmarks.length !== lastCount) {
           lastCount = landmarks.length;
           setHands(lastCount);
         }
-        draw(canvasRef.current, video, landmarks, tracker.cursors.map((c) => c.pinching));
       };
 
-      // 1 秒に約 15 回。前の認識が終わってから次のコマを送る（重なって溜まらないように）
+      // 小窓：カメラの映像は毎フレーム描き、手の骨格は認識と認識の間をなめらかにつなぐ
+      let shown: Point[][] = [];
+      let lastDraw = performance.now();
+      let raf = 0;
+      const paint = (now: number) => {
+        if (stopped) return;
+        raf = requestAnimationFrame(paint);
+        const dt = Math.min(0.1, (now - lastDraw) / 1000);
+        lastDraw = now;
+        const k = 1 - Math.exp(-dt * 22);
+        if (shown.length !== latest.length) shown = latest.map((h) => h.map((p) => ({ ...p })));
+        else
+          shown = shown.map((h, i) =>
+            h.map((p, j) => {
+              const q = latest[i]?.[j] ?? p;
+              return { x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k };
+            }),
+          );
+        draw(canvasRef.current, video, shown, pinching);
+      };
+      raf = requestAnimationFrame(paint);
+      const stopLoops = stopRef.current;
+      stopRef.current = () => {
+        cancelAnimationFrame(raf);
+        stopLoops();
+      };
+
+      // 認識：前の認識が終わってから次のコマを送る（重なって溜まらないように）。最大で約 30 回/秒
+      let avgMs = 0;
+      let samples = 0;
+      let switched = false;
+      let count = 0;
+      let rateFrom = performance.now();
       const next = (wait: number) => {
         if (!stopped) timer = window.setTimeout(tick, wait);
       };
@@ -193,11 +241,28 @@ export function HandControl({ hidden }: { hidden: boolean }) {
         if (worker) {
           const bitmap = await createImageBitmap(video, { resizeWidth: 256, resizeHeight: 192 }).catch(() => null);
           if (!bitmap || stopped) return next(FRAME_MS);
-          const landmarks = await askWorker(worker, bitmap, began);
+          const result = await askWorker(worker, bitmap, began);
           if (stopped) return;
-          apply(landmarks);
+          apply(result.landmarks);
+          // CPU での認識が遅すぎる端末では、GPU に切り替える（1 回だけ）
+          if (result.ms !== undefined) {
+            avgMs = samples ? avgMs * 0.85 + result.ms * 0.15 : result.ms;
+            samples++;
+            if (!switched && samples > 20 && result.delegate === "CPU" && avgMs > SLOW_INFER_MS) {
+              switched = true;
+              worker.postMessage({ type: "delegate", value: "GPU" });
+            }
+          }
         } else if (landmarker) {
           apply(landmarker.detectForVideo(video, began).landmarks);
+        }
+        // 1 秒あたりの認識回数（小窓に表示）
+        count++;
+        const span = performance.now() - rateFrom;
+        if (span >= 1000) {
+          setRate(Math.round((count * 1000) / span));
+          count = 0;
+          rateFrom = performance.now();
         }
         next(Math.max(0, FRAME_MS - (performance.now() - began)));
       };
@@ -252,7 +317,9 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       {on && (
         <div className="hand__view">
           <canvas ref={canvasRef} width={176} height={132} />
-          <span className="hand__tag">{status === "ready" ? (hands ? `HAND ×${hands}` : "NO HAND") : "LOADING"}</span>
+          <span className="hand__tag">
+            {status === "ready" ? `${hands ? `HAND ×${hands}` : "NO HAND"}${rate ? ` · ${rate}/s` : ""}` : "LOADING"}
+          </span>
         </div>
       )}
       {status === "ready" && (
@@ -301,7 +368,7 @@ function draw(canvas: HTMLCanvasElement | null, video: HTMLVideoElement, hands: 
   const sorted = [...hands].sort((a, b) => b[0].x - a[0].x);
   sorted.forEach((lm, i) => {
     const hot = pinching[i];
-    g.strokeStyle = hot ? "#2ee6ff" : "rgba(255,160,70,0.9)";
+    g.strokeStyle = hot ? "#fff1dd" : "rgba(255,160,70,0.9)";
     g.lineWidth = 1.5;
     g.beginPath();
     for (const [a, b] of BONES) {
@@ -309,7 +376,7 @@ function draw(canvas: HTMLCanvasElement | null, video: HTMLVideoElement, hands: 
       g.lineTo(lm[b].x * w, lm[b].y * h);
     }
     g.stroke();
-    g.fillStyle = hot ? "#2ee6ff" : "#ffd9a0";
+    g.fillStyle = hot ? "#fff1dd" : "#ffd9a0";
     for (const p of lm) g.fillRect(p.x * w - 1.5, p.y * h - 1.5, 3, 3);
     if (hot) {
       g.beginPath();
