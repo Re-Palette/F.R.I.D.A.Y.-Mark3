@@ -153,8 +153,8 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       // カメラの起動と、認識の準備を同時に進める（順番に待たない）
       const cameraReady = navigator.mediaDevices
         // コマ数が多いほど、手を動かしてから届くまでが短い（暗い所ではカメラが自動で減らすことがある）
-        .getUserMedia({ video: { width: 320, height: 240, frameRate: { ideal: 60, min: 24 }, facingMode: "user" }, audio: false })
-        .catch(() => navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: "user" }, audio: false }))
+        .getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60, min: 24 }, facingMode: "user" }, audio: false })
+        .catch(() => navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }, audio: false }))
         .then(async (s) => {
           stream = s;
           if (stopped) s.getTracks().forEach((t) => t.stop());
@@ -185,13 +185,12 @@ export function HandControl({ hidden }: { hidden: boolean }) {
 
       const tracker = new GestureTracker();
       let lastCount = 0;
-      // 最新の認識結果と、その 1 つ前（小窓では、手が動いている向きに少し先読みして描き、認識の遅れを目立たせない）
-      let latest: Point[][] = [];
-      let prev: Point[][] = [];
-      let latestAt = 0;
-      let gap = 50;
+      // 認識結果（撮った時刻つき）。小窓では、映像と骨格を同じ時刻にそろえて描く
+      const results: { at: number; hands: Point[][] }[] = [];
       let pinching: boolean[] = [];
-      const apply = (landmarks: Point[][]) => {
+      /** 撮ってから結果が届くまで（ミリ秒・平均）。小窓の映像はこの分だけ遅らせて骨格とそろえる */
+      let delay = 60;
+      const apply = (landmarks: Point[][], capturedAt: number) => {
         const now = performance.now();
         for (const ev of tracker.update(landmarks, now)) {
           if (ev.type === "rotate") steerBy(ev.dx, ev.dy);
@@ -199,10 +198,9 @@ export function HandControl({ hidden }: { hidden: boolean }) {
           else resetView();
         }
         holo.cursors = tracker.cursors;
-        prev = latest.length === landmarks.length ? latest : landmarks;
-        gap = latestAt ? Math.min(150, now - latestAt) : gap;
-        latest = landmarks;
-        latestAt = now;
+        results.push({ at: capturedAt, hands: landmarks });
+        if (results.length > 6) results.shift();
+        delay = delay * 0.8 + Math.min(250, now - capturedAt) * 0.2;
         pinching = tracker.cursors.map((c) => c.pinching);
         if (landmarks.length !== lastCount) {
           lastCount = landmarks.length;
@@ -210,19 +208,48 @@ export function HandControl({ hidden }: { hidden: boolean }) {
         }
       };
 
-      // 小窓：カメラの映像は毎フレーム描き、手の骨格は前回からの動きを延ばして今の位置を予想する（最大で認識 1 回分）
+      // 小窓：カメラの映像を少しの間とっておき、骨格の結果と同じ時刻のコマを描く。
+      // 骨格は前後 2 回の認識の間をつないで、映像と同じ時刻の位置に置く（映像はなめらか・骨格はずれない）
+      const W = 176;
+      const H = 132;
+      const frames = Array.from({ length: 16 }, () => {
+        const c = document.createElement("canvas");
+        c.width = W;
+        c.height = H;
+        return { at: -1, canvas: c };
+      });
+      let slot = 0;
       let raf = 0;
+      const handsAt = (t: number): Point[][] => {
+        if (!results.length) return [];
+        const last = results[results.length - 1];
+        if (t >= last.at) return last.hands;
+        for (let i = results.length - 1; i > 0; i--) {
+          const r1 = results[i];
+          const r0 = results[i - 1];
+          if (t < r0.at) continue;
+          if (r0.hands.length !== r1.hands.length) return r1.hands;
+          const k = (t - r0.at) / Math.max(1, r1.at - r0.at);
+          return r1.hands.map((h, a) => h.map((p, j) => {
+            const q = r0.hands[a]?.[j] ?? p;
+            return { x: q.x + (p.x - q.x) * k, y: q.y + (p.y - q.y) * k };
+          }));
+        }
+        return results[0].hands;
+      };
       const paint = (now: number) => {
         if (stopped) return;
         raf = requestAnimationFrame(paint);
-        const ahead = Math.min(1, (now - latestAt) / Math.max(16, gap)) * 0.8;
-        const shown = latest.map((h, i) =>
-          h.map((p, j) => {
-            const q = prev[i]?.[j] ?? p;
-            return { x: p.x + (p.x - q.x) * ahead, y: p.y + (p.y - q.y) * ahead };
-          }),
-        );
-        draw(canvasRef.current, video, shown, pinching);
+        // 今のコマをとっておく
+        const f = frames[slot];
+        f.canvas.getContext("2d")!.drawImage(video, 0, 0, W, H);
+        f.at = now;
+        slot = (slot + 1) % frames.length;
+        // 骨格の結果に合わせた時刻のコマを選んで描く
+        const want = now - delay;
+        let pick = f;
+        for (const fr of frames) if (fr.at >= 0 && fr.at <= want && (pick.at > want || fr.at > pick.at)) pick = fr;
+        draw(canvasRef.current, pick.canvas, handsAt(pick.at), pinching);
       };
       raf = requestAnimationFrame(paint);
       const stopLoops = stopRef.current;
@@ -246,11 +273,11 @@ export function HandControl({ hidden }: { hidden: boolean }) {
         const began = performance.now();
         if (video.readyState < 2) return next(FRAME_MS);
         if (worker) {
-          const bitmap = await createImageBitmap(video, { resizeWidth: 256, resizeHeight: 192 }).catch(() => null);
+          const bitmap = await createImageBitmap(video, { resizeWidth: 384, resizeHeight: 288, resizeQuality: "medium" }).catch(() => null);
           if (!bitmap || stopped) return next(FRAME_MS);
           const result = await askWorker(worker, bitmap, began);
           if (stopped) return;
-          apply(result.landmarks);
+          apply(result.landmarks, began);
           lag = lag ? lag * 0.8 + (performance.now() - began) * 0.2 : performance.now() - began;
           // CPU での認識が遅すぎる端末では、GPU に切り替える（1 回だけ）
           if (result.ms !== undefined) {
@@ -262,7 +289,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
             }
           }
         } else if (landmarker) {
-          apply(landmarker.detectForVideo(video, began).landmarks);
+          apply(landmarker.detectForVideo(video, began).landmarks, began);
         }
         // 1 秒あたりの認識回数（小窓に表示）
         count++;
@@ -359,7 +386,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
 }
 
 /** カメラの映像（鏡写し・ホログラム風の色）に手の骨格を重ねる */
-function draw(canvas: HTMLCanvasElement | null, video: HTMLVideoElement, hands: Point[][], pinching: boolean[]) {
+function draw(canvas: HTMLCanvasElement | null, video: CanvasImageSource, hands: Point[][], pinching: boolean[]) {
   const g = canvas?.getContext("2d");
   if (!canvas || !g) return;
   const { width: w, height: h } = canvas;

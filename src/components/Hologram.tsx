@@ -432,7 +432,7 @@ export function Hologram({
           if (Math.abs(root.rotation.y) < 0.002 && Math.abs(root.rotation.x - 0.35) < 0.002) returning = false;
         }
         // 手で動かした分は、残りを毎フレーム一定の割合で回す（認識の間隔に関係なくなめらかに）
-        const follow = 1 - Math.exp(-dt * 25);
+        const follow = 1 - Math.exp(-dt * 35);
         const stepY = holo.aimY * follow;
         const stepX = holo.aimX * follow;
         holo.aimY -= stepY;
