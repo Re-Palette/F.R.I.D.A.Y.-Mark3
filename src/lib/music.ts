@@ -41,3 +41,26 @@ export function asksForMusic(text: string): boolean {
     text,
   );
 }
+
+/**
+ * すぐに実行できる、短い音楽の操作（「止めて」「次の曲」「音量下げて」など）。
+ * これだけの発言なら、AI に聞かずに画面で直接 Amazon Music を操作する（声で素早く操作できるように）。
+ * 「止めて」「ストップ」だけのときは、F.R.I.D.A.Y. を止めたいだけかもしれないので、音楽が流れているときだけ使う（ifPlaying）。
+ */
+export function quickMusicCommand(text: string): { cmd: MusicCommand; ifPlaying?: boolean } | null {
+  const s = text
+    .replace(/[\s、。,.!！?？〜~]/g, "")
+    .replace(/(ください|ちょうだい|お願い|おねがい)$/, "")
+    .replace(/^(音楽|曲|BGM|ＢＧＭ|アマゾンミュージック|AmazonMusic)(を|は)?/i, (m) => `${m.replace(/(を|は)$/, "")}:`);
+  const music = s.includes(":");
+  const body = s.replace(/^[^:]*:/, "");
+  if (/^(一時停止|ポーズ)(して)?$/.test(body)) return { cmd: { action: "pause" } };
+  if (/^(止めて|とめて|停止(して)?|ストップ(して)?)$/.test(body)) return { cmd: { action: "pause" }, ifPlaying: !music };
+  if (/^(再開|続きから|続きを?流して|続きを?かけて)(して)?$/.test(body) || (music && /^(再生|流して|かけて)(して)?$/.test(body)))
+    return { cmd: { action: "resume" } };
+  if (/^(次の曲|次|スキップ|曲を?飛ばして|曲を?スキップ)(に|へ)?(して|いって)?$/.test(body)) return { cmd: { action: "next" } };
+  if (/^(前の曲|ひとつ前の曲|一つ前の曲)(に|へ)?(して|戻して|いって)?$|^曲を?戻して$/.test(body)) return { cmd: { action: "previous" } };
+  if (/^(音量|ボリューム|音)を?(上げて|大きくして|大きく)$/.test(body)) return { cmd: { action: "volume", value: "up" } };
+  if (/^(音量|ボリューム|音)を?(下げて|小さくして|小さく)$/.test(body)) return { cmd: { action: "volume", value: "down" } };
+  return null;
+}

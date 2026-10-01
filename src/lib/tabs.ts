@@ -64,7 +64,7 @@ export async function hasExtension(): Promise<boolean> {
 }
 
 /** Amazon Music の操作に必要な拡張機能の版 */
-export const MUSIC_EXTENSION_VERSION = "1.2.0";
+export const MUSIC_EXTENSION_VERSION = "1.3.0";
 
 /** 入っている拡張機能の版（分からなければ undefined） */
 export function extensionVersion(): string | undefined {

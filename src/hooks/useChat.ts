@@ -12,8 +12,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatImage, ChatMessage, StreamEvent } from "@/core/types";
-import { amazonMusicState, runAmazonMusic } from "@/lib/amazon-music";
-import { asksForMusic } from "@/lib/music";
+import { amazonMusicState, musicReply, runAmazonMusic } from "@/lib/amazon-music";
+import { asksForMusic, quickMusicCommand } from "@/lib/music";
 import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
@@ -296,6 +296,26 @@ export function useChat() {
         // 音楽の話のときだけ、Amazon Music の状態（拡張機能の有無・流れている曲）を一緒に送る
         const lastUser = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
         const music = asksForMusic(lastUser) ? await amazonMusicState().catch(() => undefined) : undefined;
+        // 「止めて」「次の曲」などの短い操作は、AI に聞かずにその場で Amazon Music を操作する（声ですぐ効くように）
+        const quick = music?.now ? quickMusicCommand(lastUser) : null;
+        if (quick && (!quick.ifPlaying || music?.now?.playing)) {
+          const r = await runAmazonMusic(quick.cmd);
+          if (r.ok) {
+            ttftMs = Math.round(performance.now() - startedAt);
+            setPhase("streaming");
+            received = musicReply(quick.cmd, r);
+            patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), r] }));
+            finish(() => {
+              const text = received;
+              const totalMs = Math.round(performance.now() - startedAt);
+              patch(assistantId, (m) => ({ ...m, content: text, status: "done", meta: { model: "local", ttftMs, totalMs } }));
+              setLastRun((s) => ({ ...s, ttftMs, totalMs, model: "local" }));
+            });
+            await revealed;
+            if (abortRef.current === controller) abortRef.current = null;
+            return;
+          }
+        }
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -26,7 +26,10 @@ const LABEL: Record<MusicCommand["action"], string> = {
 
 /** 操作して、画面に出す短い説明を返す */
 export async function runAmazonMusic(cmd: MusicCommand): Promise<{ ok: boolean; label: string; error?: string }> {
-  const r = await askExtension({ type: "music", action: cmd.action, query: cmd.query, value: cmd.value ?? cmd.on }, cmd.query ? 25_000 : 5_000);
+  const r = await askExtension(
+    { type: "music", action: cmd.action, query: cmd.query, kind: cmd.kind, value: cmd.value ?? cmd.on },
+    cmd.query ? 60_000 : 5_000,
+  );
   if (!r) return { ok: false, label: LABEL[cmd.action], error: "拡張機能から返事がありませんでした。拡張機能を最新版に入れ直してください。" };
   if (!r.ok) return { ok: false, label: cmd.query ?? LABEL[cmd.action], error: (r.error as string | undefined) ?? "Amazon Music を操作できませんでした。" };
   const label =
@@ -36,4 +39,26 @@ export async function runAmazonMusic(cmd: MusicCommand): Promise<{ ok: boolean; 
         ? `音量：${r.volume}%`
         : LABEL[cmd.action];
   return { ok: true, label };
+}
+
+/** 操作のあとに読み上げる短い返事（AI に聞かずに直接操作したとき） */
+export function musicReply(cmd: MusicCommand, r: { ok: boolean; label: string }): string {
+  if (cmd.action === "pause") return "止めました。";
+  if (cmd.action === "resume") return "再開します。";
+  if (cmd.action === "next") return "次の曲にします。";
+  if (cmd.action === "previous") return "前の曲に戻します。";
+  if (cmd.action === "volume") return `${r.label.replace("音量：", "音量を ")}にしました。`;
+  return "了解です。";
+}
+
+let ducked = false;
+/**
+ * F.R.I.D.A.Y. が聞いている・話している間だけ、Amazon Music の音を小さくする（声を聞き取りやすく・聞こえやすくする）。
+ * 拡張機能が無い・古いときは何もしない。
+ */
+export async function duckMusic(on: boolean): Promise<void> {
+  if (on === ducked) return;
+  if (!versionAtLeast(extensionVersion(), MUSIC_EXTENSION_VERSION)) return;
+  ducked = on;
+  await askExtension({ type: "music", action: "duck", value: on }, 2000);
 }

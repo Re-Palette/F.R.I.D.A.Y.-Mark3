@@ -26,6 +26,7 @@ import { useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
 import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
+import { duckMusic } from "@/lib/amazon-music";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -239,6 +240,12 @@ export function Dashboard() {
     else void startVoiceLevel();
     voiceLevel.speaking = voice.state === "speaking";
   }, [voice.state]);
+
+  // 聞いている・考えている・話している間は、Amazon Music の音を小さくする（呼びかけた瞬間から）
+  const duck = voice.state === "listening" || voice.state === "thinking" || voice.state === "speaking" || voice.interim === "…";
+  useEffect(() => {
+    void duckMusic(duck);
+  }, [duck]);
   useEffect(() => () => stopVoiceLevel(), []);
 
   // 聞き取りを始めたら Gemini / ElevenLabs への接続を温めておく（話し終わった瞬間に速く返すため）
