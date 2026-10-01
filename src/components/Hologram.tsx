@@ -11,9 +11,9 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatPhase } from "@/hooks/useChat";
 import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
-import { clearHologram, getHoloState, setHoloExpanded, subscribeHolo, useHoloState } from "@/lib/hologram-model";
+import { assetFailed, clearHologram, getHoloState, setHoloExpanded, subscribeHolo, useHoloState, type HoloState } from "@/lib/hologram-model";
 import type { HoloModel } from "@/lib/hologram-schema";
-import { buildModel, dotTexture, holoMaterial } from "./hologram-visuals";
+import { buildAsset, buildModel, dotTexture, holoMaterial } from "./hologram-visuals";
 import { toggleHand, useHandStatus } from "./HandControl";
 
 const ORANGE = 0xff8a1f;
@@ -301,7 +301,7 @@ export function Hologram({
 
       // 作った「〇〇のホログラム」を入れ替える・拡大表示の枠へ移す
       let shown: Awaited<ReturnType<typeof buildModel>> | null = null;
-      let shownModel: HoloModel | undefined;
+      let shownModel: HoloModel | HoloState["asset"] | undefined;
       let appear = 1;
       const disposeModel = () => {
         if (!shown) return;
@@ -316,17 +316,26 @@ export function Hologram({
       };
       const sync = () => {
         const st = getHoloState();
-        if (st.model !== shownModel) {
-          shownModel = st.model;
+        // 既存の 3D モデル（asset）か、部品で組み立てた設計図（model）
+        const next = st.asset ?? st.model;
+        if (next !== shownModel) {
+          shownModel = next;
           disposeModel();
-          const wanted = st.model;
+          const wanted = next;
           if (wanted && st.status === "ready") {
-            void buildModel(THREE, wanted, time).then((built) => {
-              if (disposed || shownModel !== wanted) return built.dispose();
-              shown = built;
-              root.add(built.pivot);
-              appear = 0;
-            });
+            const building = st.asset ? buildAsset(THREE, st.asset.buffer, time) : buildModel(THREE, st.model!, time);
+            void building.then(
+              (built) => {
+                if (disposed || shownModel !== wanted) return built.dispose();
+                shown = built;
+                root.add(built.pivot);
+                appear = 0;
+              },
+              // 読み込んだ 3D モデルが描けなかったら、部品で組み立て直す
+              () => {
+                if (!disposed && shownModel === wanted && st.asset) assetFailed();
+              },
+            );
           }
         }
         const target = st.expanded ? document.querySelector<HTMLElement>(".holo-stage__canvas") : el;
@@ -518,10 +527,23 @@ function HoloStage({ open }: { open: boolean }) {
           <span className="holo-stage__label">HOLOGRAM</span>
           <b>{hs.model?.title ?? hs.subject ?? ""}</b>
           {hs.status === "loading" && (
-            <span className="holo-stage__status">{hs.step === "research" ? "見た目を検索で調べています…" : "調べた結果をもとに設計しています…"}</span>
+            <span className="holo-stage__status">
+              {hs.step === "find" ? "3D モデルを探しています…" : hs.step === "research" ? "見た目を検索で調べています…" : "調べた結果をもとに設計しています…"}
+            </span>
           )}
           {hs.status === "error" && <span className="holo-stage__status holo-stage__status--err">{hs.error}</span>}
         </div>
+        {hs.asset && (
+          // 使った 3D モデルの作者とライセンス（CC-BY は表示が必要）
+          <p className="holo-stage__credit">
+            MODEL：
+            <a href={hs.asset.page} target="_blank" rel="noopener noreferrer">
+              {hs.asset.title}
+            </a>
+            {hs.asset.creator && ` by ${hs.asset.creator}`}
+            {hs.asset.license && `（${hs.asset.license}）`} ／ Poly Pizza
+          </p>
+        )}
         <p className="holo-stage__help">ドラッグ・つまんで回す ／ ホイール・両手で拡大 ／ ダブルクリック・グーで元の向き</p>
         <div className="holo-stage__hand" />
         {hs.brief && (

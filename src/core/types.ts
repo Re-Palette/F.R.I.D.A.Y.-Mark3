@@ -74,6 +74,8 @@ export interface StatusResponse {
   brain: { configured: boolean; connected: boolean; notes?: number; reason?: string };
   /** Google カレンダー（configured: サーバー側の設定あり / connected: この端末が接続済み） */
   calendar: { configured: boolean; connected: boolean; gmail?: boolean; gmailDraft?: boolean };
+  /** ホログラムに使う既存の 3D モデル集（Poly Pizza の API キーがあるか） */
+  hologram?: { library: boolean };
   /** Web 検索（auto: 必要なときだけ / always / off） */
   search: "auto" | "always" | "off";
   /** 読み上げの速さ（SETTINGS。ブラウザの声の換算にも使う） */

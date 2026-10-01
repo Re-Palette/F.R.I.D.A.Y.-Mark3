@@ -30,6 +30,8 @@ export interface SettingsStatus {
   calendar: StatusResponse["calendar"];
   tts: StatusResponse["tts"];
   automation: StatusResponse["automation"];
+  /** ホログラムに既存の 3D モデル集（Poly Pizza）を使えるか */
+  hologramLibrary?: boolean;
 }
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
@@ -534,6 +536,11 @@ export const SettingsView = memo(function SettingsView({
               label="ElevenLabs"
               state={status.tts.provider === "elevenlabs" ? "ok" : status.tts.reason ? "warn" : "off"}
               detail={status.tts.provider === "elevenlabs" ? "使用中" : (status.tts.reason ?? "未設定（ブラウザの声）")}
+            />
+            <Row
+              label="3D モデル"
+              state={status.hologramLibrary ? "ok" : "off"}
+              detail={status.hologramLibrary ? "Poly Pizza から探す" : "POLY_PIZZA_API_KEY 未設定（部品で組み立て）"}
             />
             <Row label="自動日記" state={status.automation.diary ? "ok" : "off"} detail={status.automation.diary ? "毎晩 23 時ごろ" : "CRON_SECRET 未設定"} />
             <Row label="通知" state={notify === "granted" ? "ok" : notify === "denied" ? "warn" : "off"} detail={notify === "granted" ? "許可済み" : notify === "denied" ? "ブロック中（ブラウザの設定で許可）" : "未許可"}>

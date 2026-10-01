@@ -3,6 +3,17 @@
  * サーバー（作る側）と画面（描く側）の両方で使うので、ここには型と検証だけを置く。
  */
 
+/** 既存の 3D モデル（Poly Pizza）。url は .glb のダウンロード先。CC-BY のものは作者の表示が必要 */
+export interface HoloAsset {
+  id: string;
+  title: string;
+  url: string;
+  creator: string;
+  license: string;
+  /** モデルのページ（作者・ライセンスの確認用） */
+  page: string;
+}
+
 export const HOLO_SHAPES = ["box", "sphere", "ellipsoid", "cylinder", "cone", "torus", "capsule", "lathe", "tube", "extrude"] as const;
 export const HOLO_COLORS = ["orange", "cyan", "amber", "white"] as const;
 export type HoloShape = (typeof HOLO_SHAPES)[number];

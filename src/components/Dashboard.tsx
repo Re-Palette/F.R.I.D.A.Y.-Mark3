@@ -72,6 +72,7 @@ function useAgentStatus() {
   const [news, setNews] = useState<StatusResponse["news"]>();
   const [voiceSpeed, setVoiceSpeed] = useState(1.15);
   const [automation, setAutomation] = useState<StatusResponse["automation"]>({ diary: false });
+  const [hologramLibrary, setHologramLibrary] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -92,6 +93,7 @@ function useAgentStatus() {
       if (json.news) setNews(json.news);
       if (typeof json.voiceSpeed === "number") setVoiceSpeed(json.voiceSpeed);
       if (json.automation) setAutomation(json.automation);
+      setHologramLibrary(Boolean(json.hologram?.library));
     } catch {
       setStatus("offline");
       setReason("サーバーに接続できません");
@@ -109,7 +111,7 @@ function useAgentStatus() {
     };
   }, [refresh]);
 
-  return { status, model, maxContext, reason, tts, brain, calendar, news, voiceSpeed, automation, refresh, setStatus };
+  return { status, model, maxContext, reason, tts, brain, calendar, news, voiceSpeed, automation, hologramLibrary, refresh, setStatus };
 }
 
 export function Dashboard() {
@@ -360,6 +362,7 @@ export function Dashboard() {
               calendar: agent.calendar,
               tts: agent.tts,
               automation: agent.automation,
+              hologramLibrary: agent.hologramLibrary,
             }}
           />
           <Conversation

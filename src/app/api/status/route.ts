@@ -6,6 +6,7 @@
 import { listAgents } from "@/core/router";
 import type { StatusResponse } from "@/core/types";
 import { getContextConfig, getSearchMode } from "@/lib/config";
+import { isAssetLibraryConfigured } from "@/integrations/hologram-assets";
 import { hasGmailScope, hasComposeScope, isCalendarConfigured, refreshTokenFrom } from "@/integrations/google-calendar";
 import { checkGemini } from "@/llm/health";
 import { isBrainConfigured } from "@/memory/github-brain";
@@ -58,6 +59,7 @@ export async function GET(req: Request): Promise<Response> {
     voiceSpeed: appSettings.voiceSpeed ?? getTtsConfig().speed,
     automation: { diary: Boolean(process.env.CRON_SECRET?.trim()) },
     news: { time: newsSettings.time, topics: newsSettings.topics },
+    hologram: { library: isAssetLibraryConfigured() },
   };
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

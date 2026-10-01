@@ -3432,3 +3432,25 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     width: min(70vw, 260px);
   }
 }
+
+/* ホログラムに使った 3D モデルの作者とライセンス */
+.holo-stage__credit {
+  position: absolute;
+  left: 22px;
+  bottom: 16px;
+  z-index: 3;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 220, 185, 0.7);
+}
+
+.holo-stage__credit a {
+  color: var(--orange-hi);
+  text-decoration: none;
+}
+
+.holo-stage__credit a:hover {
+  text-decoration: underline;
+}

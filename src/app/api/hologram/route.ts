@@ -1,9 +1,11 @@
 /**
  * POST /api/hologram — 「〇〇の 3D ホログラム」
+ *   { subject, step: "find" }     → { ok, asset }   既存の 3D モデルを探す（Poly Pizza。無ければ asset: null）
  *   { subject, step: "research" } → { ok, brief }   見た目を Google 検索で調べる（調べられなければ brief: null）
  *   { subject, notes? }           → { ok, model }   設計図を作る（notes は調べた見た目）
  */
 import { generateHologram, researchHologram } from "@/integrations/hologram";
+import { findHoloAsset } from "@/integrations/hologram-assets";
 import { toFridayError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -15,6 +17,9 @@ export async function POST(req: Request): Promise<Response> {
   const subject = typeof body?.subject === "string" ? body.subject.trim().slice(0, 60) : "";
   if (!subject) return Response.json({ ok: false, error: "何のホログラムを作るか分かりませんでした。" }, { status: 400 });
   const headers = { "Cache-Control": "no-store" };
+  if (body?.step === "find") {
+    return Response.json({ ok: true, asset: await findHoloAsset(subject).catch(() => null) }, { headers });
+  }
   if (body?.step === "research") {
     return Response.json({ ok: true, brief: await researchHologram(subject) }, { headers });
   }

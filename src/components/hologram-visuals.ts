@@ -4,6 +4,7 @@
  *     （走査線を立体に貼ると、回したときに細かい縞がちらつくので画面側に固定する）
  *   - 線：角ばった所の輪郭だけ（なめらかな面は面の光り方で形が分かる）
  *   - 点：表面にまいた光の粒
+ * 形は 2 通り：Gemini が部品で組み立てた設計図（buildModel）か、既存の 3D モデル .glb（buildAsset）。
  */
 import type * as T from "three";
 import type { HoloModel } from "@/lib/hologram-schema";
@@ -154,6 +155,19 @@ export async function buildModel(THREE: Three, model: HoloModel, time: { value: 
     meshes.push({ mesh, color, area: Math.max(1e-4, s.x * s.y + s.y * s.z + s.x * s.z) });
   }
 
+  return finish(THREE, group, meshes, spinners, MeshSurfaceSampler);
+}
+
+type Sampler = typeof import("three/examples/jsm/math/MeshSurfaceSampler.js").MeshSurfaceSampler;
+
+/** 仕上げ：表面に光の粒をまき、大きさと位置をそろえる（部品の設計図・既存の 3D モデル共通） */
+function finish(
+  THREE: Three,
+  group: T.Group,
+  meshes: { mesh: T.Mesh; color: number; area: number }[],
+  spinners: { obj: T.Object3D; axis: "x" | "y" | "z" }[],
+  MeshSurfaceSampler: Sampler,
+) {
   // 表面に光の粒をまく（大きい部品ほど多く）
   group.updateMatrixWorld(true);
   const total = meshes.reduce((n, m) => n + m.area, 0) || 1;
@@ -203,4 +217,73 @@ export async function buildModel(THREE: Three, model: HoloModel, time: { value: 
   pivot.scale.setScalar(fit);
   pivot.userData.fit = fit;
   return { pivot, spinners, dispose: () => dotTex.dispose() };
+}
+
+/** 元の色から、ホログラムのどの色で光らせるかを決める（光る部分・青っぽい所は水色、明るい所は白・琥珀、ほかはオレンジ） */
+function tintOf(THREE: Three, material: T.Material | T.Material[]): keyof typeof COLORS {
+  const m = (Array.isArray(material) ? material[0] : material) as T.MeshStandardMaterial | undefined;
+  const emissive = m?.emissive;
+  if (emissive && emissive.r + emissive.g + emissive.b > 0.6) return "cyan";
+  const c = m?.color;
+  if (!c) return "orange";
+  const hsl = { h: 0, s: 0, l: 0 };
+  new THREE.Color(c).getHSL(hsl);
+  // 明るい灰色は HSL の彩度が高めに出るので、色の濃さ（最大−最小）で「はっきり青い」かを見る
+  const chroma = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+  if (chroma > 0.2 && hsl.h > 0.45 && hsl.h < 0.75) return "cyan";
+  if (hsl.l > 0.82) return "white";
+  if (hsl.l > 0.55) return "amber";
+  return "orange";
+}
+
+/** 既存の 3D モデル（.glb）を、ホログラムの見た目（光る面・輪郭線・光の粒）にする */
+export async function buildAsset(THREE: Three, buffer: ArrayBuffer, time: { value: number }) {
+  const [{ GLTFLoader }, { MeshSurfaceSampler }] = await Promise.all([
+    import("three/examples/jsm/loaders/GLTFLoader.js"),
+    import("three/examples/jsm/math/MeshSurfaceSampler.js"),
+  ]);
+  const gltf = await new GLTFLoader().parseAsync(buffer, "");
+  gltf.scene.updateMatrixWorld(true);
+  const sources: T.Mesh[] = [];
+  gltf.scene.traverse((o) => {
+    if ((o as T.Mesh).isMesh) sources.push(o as T.Mesh);
+  });
+  if (!sources.length) throw new Error("no mesh");
+
+  const group = new THREE.Group();
+  const faceMats = new Map<string, T.ShaderMaterial>();
+  const lineMats = new Map<string, T.LineBasicMaterial>();
+  const meshes: { mesh: T.Mesh; color: number; area: number }[] = [];
+  const triangles = sources.reduce((n, m) => n + (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3, 0);
+  // 細かすぎるモデルは輪郭線を間引く（重くならないように）
+  const edgeAngle = triangles > 60_000 ? null : triangles > 20_000 ? 40 : 28;
+  for (const src of sources) {
+    // 位置・回転・大きさを形そのものに焼き込む（入れ子の変形をたどらずに済む）
+    const geo = src.geometry.clone() as Geo;
+    geo.applyMatrix4(src.matrixWorld);
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    const tint = tintOf(THREE, src.material);
+    const color = COLORS[tint];
+    if (!faceMats.has(tint)) {
+      faceMats.set(tint, holoMaterial(THREE, color, time, 0.75));
+      lineMats.set(tint, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+    }
+    const mesh = new THREE.Mesh(geo, faceMats.get(tint));
+    group.add(mesh);
+    if (edgeAngle !== null) group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, edgeAngle), lineMats.get(tint)));
+    geo.computeBoundingBox();
+    const sz = geo.boundingBox!.getSize(new THREE.Vector3());
+    meshes.push({ mesh, color, area: Math.max(1e-6, sz.x * sz.y + sz.y * sz.z + sz.x * sz.z) });
+  }
+  // 元のモデルの材質・画像はもう使わないので片付ける
+  gltf.scene.traverse((o) => {
+    const m = o as T.Mesh;
+    if (!m.isMesh) return;
+    m.geometry.dispose();
+    for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+      for (const v of Object.values(mat)) if (v && typeof v === "object" && (v as T.Texture).isTexture) (v as T.Texture).dispose();
+      mat.dispose();
+    }
+  });
+  return finish(THREE, group, meshes, [], MeshSurfaceSampler);
 }
