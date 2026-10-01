@@ -59,13 +59,16 @@ export function Hologram({
       if (disposed) return;
       let renderer: InstanceType<typeof THREE.WebGLRenderer>;
       try {
-        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" });
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
       } catch {
         setFailed(true);
         return;
       }
       // 高解像度の画面でも描く点の数を抑える（拡大表示は面積が大きいのでさらに控えめに）
-      const pixelRatio = () => Math.min(window.devicePixelRatio || 1, getHoloState().expanded ? 1.25 : 1.5);
+      // 描画が追いつかない端末では、quality を下げて解像度を落とす（2: 標準 → 1: 1 倍 → 0: 0.75 倍）
+      let quality = 2;
+      const pixelRatio = () =>
+        quality >= 2 ? Math.min(window.devicePixelRatio || 1, getHoloState().expanded ? 1.25 : 1.5) : quality === 1 ? 1 : 0.75;
       renderer.setPixelRatio(pixelRatio());
       // 光のにじみ（ブルーム）を掛けるため背景は黒で描き、CSS の screen 合成で黒を透かす
       renderer.setClearColor(0x000000, 1);
@@ -266,6 +269,9 @@ export function Hologram({
         renderer.setSize(w, h, false);
         composer.setPixelRatio(renderer.getPixelRatio());
         composer.setSize(w, h);
+        // 光のにじみはぼかしなので、半分の解像度で作っても見た目はほぼ同じ（計算は約 1/4）
+        const pr = renderer.getPixelRatio();
+        bloom.setSize(Math.round((w * pr) / 2), Math.round((h * pr) / 2));
         bloom.resolution.set(w / 2, h / 2);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
@@ -363,6 +369,7 @@ export function Hologram({
       let returning = false;
       let energy = 0; // 考え中・話し中の勢い（0〜1、なめらかに変える）
       let slow = 0.016;
+      let degradedAt = 0;
       let voice = 0;
       let blank = false;
       const frame = (now: number) => {
@@ -387,9 +394,19 @@ export function Hologram({
         last = now;
         t += dt;
         time.value = t;
-        // 重いパソコンでは光のにじみを自動で切る（平均が 1 コマ 45ms を超えたら）
-        slow = slow * 0.97 + raw * 0.03;
-        if (bloomOn && slow > 0.045 && t > 3) bloomOn = false;
+        // なめらかさを保つため、平均が 1 コマ 22ms（約 45 コマ/秒）より遅い状態が続いたら、軽い描き方へ 1 段ずつ下げる：
+        //   光のにじみを切る → 解像度を 1 倍に → 0.75 倍に（下げたら上げ直さない。行ったり来たりでちらつかないように）
+        slow = slow * 0.95 + raw * 0.05;
+        if (slow > 0.022 && t - degradedAt > 1.5 && t > 2) {
+          degradedAt = t;
+          if (bloomOn) bloomOn = false;
+          else if (quality > 0) {
+            quality--;
+            renderer.setPixelRatio(pixelRatio());
+            resize();
+          }
+          slow = 0.016;
+        }
         const hstate = getHoloState();
         const busy = ph !== "idle" || hstate.status === "loading";
         energy += ((busy || talk ? 1 : 0) - energy) * Math.min(1, dt * 3);
