@@ -36,13 +36,6 @@ const VOICE_LABEL: Record<VoiceState, string> = {
   speaking: "SPEAKING",
 };
 
-const VOICE_PLACEHOLDER: Partial<Record<VoiceState, string>> = {
-  standby: "「フライデー」と呼びかけるか、ここに入力…",
-  listening: "どうぞ、話してください…",
-  speaking: "F.R.I.D.A.Y. が話しています…（話しかければ割り込めます）",
-  thinking: "考えています…（話しかければ割り込めます）",
-};
-
 export const Composer = memo(
   forwardRef<ComposerHandle, Props>(function Composer(
     { phase, disabled, onSend, onStop, onTyping, voiceState = "off", voiceInterim, onVoiceToggle, onTalk },
@@ -115,7 +108,7 @@ export const Composer = memo(
             className="composer__input"
             rows={1}
             value={value}
-            placeholder={voiceInterim || VOICE_PLACEHOLDER[voiceState] || "F.R.I.D.A.Y.に話しかけてみてください…"}
+            placeholder={voiceInterim /* 案内の文字は出さず、聞き取り中の言葉だけを見せる */}
             onChange={(e) => {
               setValue(e.target.value);
               resize();
