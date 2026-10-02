@@ -8,6 +8,8 @@ import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { readNewsSettings } from "@/integrations/news";
 import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
 import { asksForMusic } from "@/lib/music";
+import { recentLectures, type LectureDigest } from "@/integrations/brain-notes";
+import { asksForMorning } from "./morning";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
@@ -69,7 +71,7 @@ export const chatAgent: Agent = {
     // メールは頼まれたとき・朝のあいさつ・ニュースのまとめのときだけ読む。
     // 返信・メールの下書きを頼まれたら、直近のメールを本文つきで読み、下書きを作れるかも確かめる
     const drafting = Boolean(ctx.mailRecent) && asksForMailDraft(latest);
-    const wantsMail = drafting || (Boolean(ctx.mail) && (asksForMail(latest) || briefing || /^おはよう/.test(latest.trim())));
+    const wantsMail = drafting || (Boolean(ctx.mail) && (asksForMail(latest) || briefing || asksForMorning(latest)));
     const mailTask: Promise<MailData> = wantsMail
       ? (drafting ? ctx.mailRecent! : ctx.mail!)().then(
           (list) => ({ list }),
@@ -86,6 +88,10 @@ export const chatAgent: Agent = {
           "review",
         )
       : Promise.resolve(null);
+    // 朝のブリーフィング（「おはよう」「今日のことまとめて」）：予定・天気・ToDo に加えて、最近の授業の復習ポイントも集める
+    const morning = asksForMorning(latest);
+    const lectureTask: Promise<LectureDigest[]> =
+      morning && ctx.memory.connected ? within(recentLectures(ctx.timezone, 2, 3), budget, [] as LectureDigest[], "lectures") : Promise.resolve([]);
     // 音楽の話のときだけ、いま流れている曲を Spotify に聞く（接続済みのとき）
     const musicTalk = asksForMusic(latest);
     // Spotify に接続していれば Spotify、していなければ Amazon Music（画面の拡張機能が操作する）
@@ -99,7 +105,7 @@ export const chatAgent: Agent = {
         : Promise.resolve({ kind: "amazon" as const, ext: Boolean(ctx.amazon?.ext), now: ctx.amazon?.now ?? null });
     const canDraftTask: Promise<boolean | undefined> =
       wantsMail && ctx.mailCanDraft ? ctx.mailCanDraft().catch(() => false) : Promise.resolve(undefined);
-    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music] = await Promise.all([
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -111,6 +117,7 @@ export const chatAgent: Agent = {
       reviewTask,
       within<boolean | undefined>(canDraftTask, budget + 600, undefined, "mail-draft"),
       within<MusicContext>(musicTask, budget + 600, musicTalk && ctx.spotify ? { kind: "spotify", error: "Spotify の応答が間に合いませんでした。" } : null, "music"),
+      lectureTask,
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -149,7 +156,7 @@ export const chatAgent: Agent = {
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
     // ニュースのまとめは長くなるので上限を広げる
     // 短い普通の発言（検索・まとめ以外）も考える量を最小にする（最初の一言が速くなる）
-    const quick = !search && !briefing && !reviewKind && !sns && !drafting && !reading && latest.length < QUICK_REPLY_CHARS;
+    const quick = !search && !briefing && !morning && !reviewKind && !sns && !drafting && !reading && latest.length < QUICK_REPLY_CHARS;
     const runConfig = ctx.voice
       ? {
           ...config,
@@ -182,6 +189,7 @@ export const chatAgent: Agent = {
         music,
         camera,
         files: reading,
+        morning: morning ? { lectures } : null,
         fileNote: Boolean(ctx.messages[ctx.messages.length - 1]?.attached?.length) && ctx.memory.connected,
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         replyLength: settings.replyLength,

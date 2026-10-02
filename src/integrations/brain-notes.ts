@@ -8,7 +8,7 @@
 import type { Lecture } from "@/lib/lecture";
 import { safeName } from "@/lib/brain-paths";
 import { getTimezone } from "@/lib/config";
-import { isBrainConfigured, updateNote } from "@/memory/github-brain";
+import { isBrainConfigured, listNotes, readNote, updateNote, type BrainFile } from "@/memory/github-brain";
 import { addTodo, getTasksOverview } from "@/integrations/tasks";
 
 const day = (d = new Date()) => new Intl.DateTimeFormat("sv-SE", { timeZone: getTimezone() }).format(d);
@@ -167,4 +167,55 @@ export async function saveLectureNote(lecture: Lecture, previous?: string): Prom
     }
   }
   return { path, todos };
+}
+
+/* ---------- 最近の授業の復習ポイント（朝のブリーフィング・クイズ用） ---------- */
+
+
+/** ノートから「## 見出し」の部分を取り出す */
+function section(text: string, heading: string): string {
+  const m = new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |^---\\n\\*F\\.R\\.I\\.D\\.A\\.Y\\.|$(?![\\s\\S]))`, "m").exec(text);
+  return m ? m[1].trim() : "";
+}
+
+export interface LectureDigest {
+  path: string;
+  subject: string;
+  date: string;
+  title: string;
+  key: string;
+  review: string;
+  tasks: string;
+}
+
+/** 授業ノートの一覧（新しい順）。subject を渡すと、その科目（フォルダ名に含まれるもの）だけ */
+export async function listLectureNotes(subject?: string) {
+  const files = (await listNotes()).filter((f) => /^授業\/[^/]+\/\d{4}-\d{2}-\d{2} /.test(f.path));
+  const want = subject?.replace(/\s+/g, "");
+  return files
+    .filter((f) => !want || f.path.split("/")[1].replace(/\s+/g, "").includes(want) || want.includes(f.path.split("/")[1].replace(/\s+/g, "")))
+    .sort((a, b) => b.path.split("/")[2].localeCompare(a.path.split("/")[2]));
+}
+
+/** 授業ノートを要点だけにする */
+export async function lectureDigest(file: BrainFile): Promise<LectureDigest> {
+  const text = await readNote(file);
+  const [, subject, name] = file.path.split("/");
+  return {
+    path: file.path,
+    subject,
+    date: name.slice(0, 10),
+    title: /^# (.+)$/m.exec(text)?.[1] ?? name.replace(/\.md$/, ""),
+    key: section(text, "重要なところ").slice(0, 1200),
+    review: section(text, "復習チェック").slice(0, 600),
+    tasks: section(text, "課題・連絡").slice(0, 600),
+  };
+}
+
+/** 最近（days 日以内）の授業の要点（新しい順・最大 max 件） */
+export async function recentLectures(tz: string, days: number, max = 3): Promise<LectureDigest[]> {
+  if (!isBrainConfigured()) return [];
+  const from = new Intl.DateTimeFormat("sv-SE", { timeZone: tz }).format(new Date(Date.now() - days * 24 * 60 * 60_000));
+  const files = (await listLectureNotes()).filter((f) => f.path.split("/")[2].slice(0, 10) >= from).slice(0, max);
+  return Promise.all(files.map((f) => lectureDigest(f)));
 }

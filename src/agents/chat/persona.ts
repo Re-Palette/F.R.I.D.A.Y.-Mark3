@@ -2,6 +2,8 @@
  * F.R.I.D.A.Y. の人格（system instruction）。
  * 口調・振る舞いを調整したいときはこのファイルだけを編集すればよい。
  */
+import type { LectureDigest } from "@/integrations/brain-notes";
+import { morningSection } from "./morning";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
 import type { NowPlaying } from "@/lib/music";
@@ -41,6 +43,8 @@ export interface PersonaInput {
   files?: boolean;
   /** 最新の発言で新しくファイルを添えた（要点を脳の「資料」に保存する） */
   fileNote?: boolean;
+  /** 朝のブリーフィング（最近の授業ノートの要点） */
+  morning?: { lectures: LectureDigest[] } | null;
   /** 音楽の話のとき：Spotify の接続状態といま流れている曲 */
   music?: MusicContext;
   /** SNS の投稿づくり・トレンドの相談（SNS AI） */
@@ -100,6 +104,7 @@ export function buildSystemInstruction({
   camera,
   files,
   fileNote,
+  morning,
   music,
   review,
   replyLength,
@@ -166,6 +171,7 @@ export function buildSystemInstruction({
   if (camera) out += CAMERA_RULES;
   if (files) out += FILE_RULES;
   if (fileNote) out += FILE_NOTE_RULES;
+  if (morning) out += morningSection(morning, Boolean(voice));
   if (music) out += musicSection(music);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
