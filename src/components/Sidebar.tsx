@@ -4,7 +4,7 @@ import type { ChatAgentStatus } from "./home/panels";
 import { HudFrame } from "./HudFrame";
 import { Icon, type IconName } from "./icons";
 
-export type View = "home" | "chat" | "projects" | "memory" | "tasks" | "calendar" | "files" | "settings";
+export type View = "home" | "chat" | "projects" | "memory" | "tasks" | "calendar" | "files" | "lecture" | "settings";
 
 const NAV: { key: string; label: string; icon: IconName; view?: View }[] = [
   { key: "home", label: "HOME", icon: "home", view: "home" },
@@ -14,6 +14,7 @@ const NAV: { key: string; label: string; icon: IconName; view?: View }[] = [
   { key: "tasks", label: "TASKS", icon: "tasks", view: "tasks" },
   { key: "calendar", label: "CALENDAR", icon: "calendar", view: "calendar" },
   { key: "files", label: "FILES", icon: "files", view: "files" },
+  { key: "lecture", label: "LECTURE", icon: "lecture", view: "lecture" },
   { key: "settings", label: "SETTINGS", icon: "settings", view: "settings" },
 ];
 

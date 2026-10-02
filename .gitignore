@@ -21,3 +21,5 @@ npm-debug.log*
 public/friday-extension.zip
 # 手の認識の wasm は build 時に node_modules からコピーする
 public/mediapipe/
+# 授業ノートの PDF 用の日本語フォントは build 時に node_modules からコピーする
+public/fonts/

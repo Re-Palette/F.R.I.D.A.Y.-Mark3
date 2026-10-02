@@ -48,7 +48,7 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return json;
 }
 
-function Page({ title, sub, hidden, message, children }: { title: string; sub: string; hidden: boolean; message?: Msg; children: ReactNode }) {
+export function Page({ title, sub, hidden, message, children }: { title: string; sub: string; hidden: boolean; message?: Msg; children: ReactNode }) {
   return (
     <section className="settings page" data-active={!hidden || undefined} aria-hidden={hidden} inert={hidden} aria-label={title}>
       <header className="settings__bar">
@@ -67,7 +67,7 @@ function Page({ title, sub, hidden, message, children }: { title: string; sub: s
   );
 }
 
-function Card({ title, sub, wide, children }: { title: string; sub?: string; wide?: boolean; children: ReactNode }) {
+export function Card({ title, sub, wide, children }: { title: string; sub?: string; wide?: boolean; children: ReactNode }) {
   return (
     <section className="settings__section hud" data-wide={wide || undefined}>
       <HudFrame cut={14} small={6} ticks={false} />
@@ -80,7 +80,7 @@ function Card({ title, sub, wide, children }: { title: string; sub?: string; wid
   );
 }
 
-type Msg = { ok: boolean; text: string } | undefined;
+export type Msg = { ok: boolean; text: string } | undefined;
 
 /** 画面を開いている間の読み込み・再読み込み（イベントでも読み直す） */
 function useLoad<T>(hidden: boolean, url: string, events: string[] = []) {
@@ -104,7 +104,7 @@ function useLoad<T>(hidden: boolean, url: string, events: string[] = []) {
   return { data, setData, message, setMessage, load };
 }
 
-const Empty = ({ children }: { children: ReactNode }) => <p className="settings__note">{children}</p>;
+export const Empty = ({ children }: { children: ReactNode }) => <p className="settings__note">{children}</p>;
 
 function TodoItem({ t, onToggle }: { t: Task; onToggle: (t: Task) => void }) {
   return (

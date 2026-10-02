@@ -19,6 +19,7 @@ import { ScreenFrame } from "./home/ScreenFrame";
 import type { ChatAgentStatus } from "./home/panels";
 import { RightPanel } from "./RightPanel";
 import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./Pages";
+import { LecturePage } from "./LecturePage";
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
 import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
@@ -305,6 +306,16 @@ export function Dashboard() {
     composerRef.current?.focus();
   }, []);
 
+  // 授業の文字起こしを始めたら、音声会話は止める（ブラウザの音声認識は同時に 1 つしか動かないため）
+  const voiceStateRef = useRef(voice.state);
+  voiceStateRef.current = voice.state;
+  const voiceToggle = voice.toggle;
+  const onLectureRecording = useCallback(
+    (on: boolean) => {
+      if (on && voiceStateRef.current !== "off") voiceToggle();
+    },
+    [voiceToggle],
+  );
   const navigate = useCallback((v: View) => (v === "chat" ? openChat() : setView(v)), [openChat]);
   const backToHub = useCallback(() => setView("home"), []);
 
@@ -379,6 +390,7 @@ export function Dashboard() {
           <CalendarPage hidden={view !== "calendar"} />
           <MemoryPage hidden={view !== "memory"} />
           <FilesPage hidden={view !== "files"} />
+          <LecturePage hidden={view !== "lecture"} onRecording={onLectureRecording} />
           <SettingsView
             hidden={view !== "settings"}
             onChanged={agent.refresh}

@@ -19,6 +19,7 @@ const paths = {
   analysis: <><path d="M4 20h16" /><path d="M7 17V11M11 17V7M15 17v-4M19 17V5" /></>,
   share: <><circle cx="17" cy="6" r="2.5" /><circle cx="7" cy="12" r="2.5" /><circle cx="17" cy="18" r="2.5" /><path d="M9.2 10.8l5.6-3.3M9.2 13.2l5.6 3.3" /></>,
   brain: <><path d="M9 4a3 3 0 00-3 3v.5A3 3 0 004 10.5a3 3 0 001 2.2A3 3 0 006 18a3 3 0 003 2h1V4z" /><path d="M15 4a3 3 0 013 3v.5a3 3 0 012 3 3 3 0 01-1 2.2 3 3 0 01-1 5.3 3 3 0 01-3 2h-1V4z" /><path d="M10 9H8M14 9h2M10 14H8M14 14h2" /></>,
+  lecture: <><path d="M3 9l9-4 9 4-9 4z" /><path d="M7 11v4c0 1.5 2.5 3 5 3s5-1.5 5-3v-4M21 9v5" /></>,
   mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0014 0M12 18v3" /></>,
   wifi: <><path d="M2 8.5a15 15 0 0120 0M5 12a10 10 0 0114 0M8.5 15.5a5 5 0 017 0" /><circle cx="12" cy="19" r="1" /></>,
   chevrons: <><path d="M6 6l6 6-6 6M13 6l6 6-6 6" /></>,
