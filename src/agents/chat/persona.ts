@@ -39,6 +39,8 @@ export interface PersonaInput {
   camera?: boolean;
   /** 会話に添えたファイル（写真・PDF・文書）がある */
   files?: boolean;
+  /** 最新の発言で新しくファイルを添えた（要点を脳の「資料」に保存する） */
+  fileNote?: boolean;
   /** 音楽の話のとき：Spotify の接続状態といま流れている曲 */
   music?: MusicContext;
   /** SNS の投稿づくり・トレンドの相談（SNS AI） */
@@ -95,6 +97,7 @@ export function buildSystemInstruction({
   mailDraft,
   camera,
   files,
+  fileNote,
   music,
   review,
   replyLength,
@@ -152,6 +155,7 @@ export function buildSystemInstruction({
   if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
   if (camera) out += CAMERA_RULES;
   if (files) out += FILE_RULES;
+  if (fileNote) out += FILE_NOTE_RULES;
   if (music) out += musicSection(music);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
@@ -390,6 +394,14 @@ const FILE_RULES = `
 - ファイルに書かれていることと、自分の知識で補ったことは区別する。数字・日付・名前は書かれているとおりに答え、読めない・見つからないときは正直に言う。
 - 長い資料の要約は、見出しと箇条書きで全体像 → 重要なところの順に。表の中身を答えるときは、どの行・列かが分かるように。
 - 写真に人の顔が写っていても、その人が誰かを特定・推測しない。`;
+
+const FILE_NOTE_RULES = `
+- 最新の発言で添えられたファイルは、ユーザーの Obsidian（脳）の「資料」フォルダに要点のメモとして保存される。
+  返答の最後に、次のタグで資料の題と要点を必ず書く（画面には表示されず、読み上げもされない）。
+  <file-note title="資料の内容が分かる短い題（20 字以内。例：第3四半期 売上報告）">
+  - この資料に書かれている要点を箇条書きで 3〜8 行（数字・日付・名前は書かれているとおりに）
+  </file-note>
+  写真なら、何が写っているか・読める文字を要点にする。タグの中では、ファイルに無いことを書かない。`;
 
 const CAMERA_RULES = `
 

@@ -4,6 +4,8 @@
  *   ユーザー → Core → Router → Agent（Chat / Search / ...）→ Core → ユーザー
  */
 import type { ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
+import { isAttachmentPath } from "@/lib/brain-paths";
+import { saveFileNote } from "@/integrations/brain-notes";
 import { routeRequest } from "@/core/router";
 import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/lib/config";
 import { FridayError, toFridayError } from "@/lib/errors";
@@ -89,6 +91,15 @@ export function sanitizeHistory(input: unknown): ChatMessage[] {
       const image = i === all.length - 1 && m.role === "user" ? toImage((m as { image?: unknown }).image) : undefined;
       return image ? { ...out, image } : out;
     });
+  // この発言で新しく添えたファイルの名前と原本の場所（最新の発言だけ）
+  const lastRaw = input[input.length - 1] as { attached?: unknown } | undefined;
+  if (Array.isArray(lastRaw?.attached)) {
+    const attached = lastRaw.attached
+      .slice(0, 8)
+      .filter((a): a is { name: string; path?: unknown } => !!a && typeof (a as { name?: unknown }).name === "string")
+      .map((a) => ({ name: a.name.slice(0, 120), ...(typeof a.path === "string" && isAttachmentPath(a.path) ? { path: a.path } : {}) }));
+    if (attached.length) messages[messages.length - 1] = { ...messages[messages.length - 1], attached };
+  }
   // 添えたファイルは、ファイルの付いた最後のユーザー発言のものだけ受け取る（直近 10 件以内）
   const raw = input.slice(-MAX_HISTORY_ITEMS) as { role?: unknown; content?: unknown; files?: unknown }[];
   for (let i = raw.length - 1, j = messages.length - 1; i >= 0 && j >= 0 && messages.length - j <= 10; i--) {
@@ -162,9 +173,10 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
       document: 30_000,
       "gmail-draft": 8000,
+      "file-note": 6000,
     });
     const sources: { title: string; uri: string }[] = [];
     // ページを開く・閉じるは待たせたくないので、タグが閉じた時点ですぐ画面に送る
@@ -269,6 +281,19 @@ export async function* handleConversation(
       } catch (err) {
         const error = err instanceof Error ? err.message : "脳に保存できませんでした。";
         yield { type: "document", ok: false, title, content, error };
+      }
+    }
+    // 添えたファイルの要点を脳の「資料」に保存（原本は画面から「添付」に保存済み）
+    const latest = window.messages[window.messages.length - 1];
+    if (latest?.attached?.length && memory.connected && reply.trim()) {
+      const attrs = tags.attrs["file-note"][0] ?? {};
+      const points = tags.captures["file-note"][0] ?? "";
+      const title = attrs.title || latest.attached[0].name.replace(/\.[^.]+$/, "");
+      try {
+        const saved = await saveFileNote({ title, points, question: latest.content, answer: reply, files: latest.attached });
+        yield { type: "document", ok: true, title: saved.title, path: saved.path };
+      } catch (err) {
+        yield { type: "document", ok: false, title, error: err instanceof Error ? err.message : "資料を脳に保存できませんでした。" };
       }
     }
     if (sources.length) yield { type: "sources", sources: sources.slice(0, 8) };

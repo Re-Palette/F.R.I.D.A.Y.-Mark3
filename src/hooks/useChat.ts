@@ -72,7 +72,7 @@ export interface SendOptions {
   /** カメラで撮った 1 枚（送る用と、画面に出す小さい版） */
   image?: { full: string; thumb: string };
   /** 添えたファイル（送る中身と、画面に出す名前など） */
-  files?: { files: ChatFile[]; shown: { name: string; kind: string; thumb?: string }[] };
+  files?: { files: ChatFile[]; shown: { name: string; kind: string; thumb?: string }[]; attached?: { name: string; path?: string }[] };
 }
 
 export type ChatPhase = "idle" | "waiting" | "streaming";
@@ -109,6 +109,8 @@ function toChatImage(dataUrl: string | undefined): ChatImage | undefined {
  * 続けて「この表の合計は？」などと聞けるよう、ファイルを添えた最後の発言の分は、その後の質問でも送り直す（直近 10 件まで）。
  */
 const fullFiles = new Map<string, ChatFile[]>();
+/** その発言で新しく添えたファイルの名前と、脳に保存した原本の場所（要点を「資料」に保存するため。その発言の送信のときだけ渡す） */
+const attachedFiles = new Map<string, { name: string; path?: string }[]>();
 
 function toApiHistory(messages: UiMessage[]): ChatMessage[] {
   const list = messages.filter((m) => m.status !== "error" && m.content.trim());
@@ -124,6 +126,7 @@ function toApiHistory(messages: UiMessage[]): ChatMessage[] {
     const image = i === list.length - 1 && m.role === "user" ? toChatImage(fullImages.get(m.id)) : undefined;
     if (image) out.image = image;
     if (i === withFiles) out.files = fullFiles.get(m.id);
+    if (i === list.length - 1 && attachedFiles.has(m.id)) out.attached = attachedFiles.get(m.id);
     return out;
   });
 }
@@ -561,6 +564,10 @@ export function useChat() {
         fullFiles.set(id, opts.files.files);
         // 古いファイルは持ち続けない（送り直すのは最後に添えた分だけ）
         while (fullFiles.size > 3) fullFiles.delete(fullFiles.keys().next().value!);
+        if (opts.files.attached?.length) {
+          attachedFiles.set(id, opts.files.attached);
+          while (attachedFiles.size > 3) attachedFiles.delete(attachedFiles.keys().next().value!);
+        }
       }
       enqueue(
         (current) => [

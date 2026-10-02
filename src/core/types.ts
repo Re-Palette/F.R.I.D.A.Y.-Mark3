@@ -40,6 +40,8 @@ export interface ChatMessage {
   image?: ChatImage;
   /** 添えたファイル（最後にファイルを添えたユーザー発言にだけ付く。続けて質問しても読めるように送り直す） */
   files?: ChatFile[];
+  /** この発言で新しく添えたファイル（名前と、脳に保存した原本の場所）。要点を脳の「資料」に保存するのに使う */
+  attached?: { name: string; path?: string }[];
 }
 
 /** POST /api/chat のリクエストボディ */

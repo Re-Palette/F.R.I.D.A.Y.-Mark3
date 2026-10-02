@@ -41,6 +41,8 @@ export interface Lecture {
   duration: number;
   segments: LectureSegment[];
   summary?: LectureSummary;
+  /** 脳（Obsidian）に保存した場所（保存し直すときは、ここを書き直す） */
+  brainPath?: string;
 }
 
 const KEY = "friday.lectures.v1";

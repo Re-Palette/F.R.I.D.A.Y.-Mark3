@@ -187,6 +187,23 @@ export async function updateNote(path: string, update: (current: string | null) 
   }
 }
 
+/**
+ * 写真・PDF などをそのまま保存する（data は base64）。同じ場所にもうあれば何もしない（同じファイルを 2 回送ったとき）。
+ * GitHub の API は 1 ファイル数 MB までなら問題なく受け付ける。
+ */
+export async function putBinary(path: string, data: string, message: string): Promise<{ created: boolean }> {
+  const c = getBrainConfig();
+  const url = `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`;
+  const res = await gh(c, url, { method: "PUT", body: JSON.stringify({ message, content: data }) }, 30_000);
+  if (res.ok) {
+    markTreeStale();
+    return { created: true };
+  }
+  // 既にある（sha を付けずに作ろうとすると 422）
+  if (res.status === 422) return { created: false };
+  throw explain(res.status);
+}
+
 async function deleteFile(path: string, sha: string, message: string): Promise<void> {
   const c = getBrainConfig();
   const res = await gh(c, `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {

@@ -28,7 +28,7 @@ import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, use
 import { CameraView } from "./CameraView";
 import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
 import { duckMusic } from "@/lib/amazon-music";
-import { addFiles, takeAttachments } from "@/lib/attachments";
+import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -170,6 +170,8 @@ export function Dashboard() {
   // 話しかけても画面は切り替えない（HOME では中央下のパネルにやり取りを表示する）
   // カメラがオンなら、話しかけた瞬間の 1 枚を添える。オフでも「これ何？」「これ見て」なら先にカメラを開く
   const { send: chatSendRaw } = chat;
+  const brainOn = useRef(false);
+  brainOn.current = Boolean(agent.brain.connected);
   const send = useCallback(
     (text: string, opts: SendOptions = {}) => {
       // 読み込み済みの添付ファイルも一緒に送る（文字が無ければ「読んで」と頼む）
@@ -177,7 +179,12 @@ export function Dashboard() {
       if (!text.trim() && !atts.length) return false;
       const content = text.trim() || "この添付ファイルを読んで、内容を教えて。";
       const files = atts.length
-        ? { files: atts.flatMap((a) => a.files ?? []), shown: atts.map((a) => ({ name: a.name, kind: a.kind, thumb: a.thumb })) }
+        ? {
+            files: atts.flatMap((a) => a.files ?? []),
+            shown: atts.map((a) => ({ name: a.name, kind: a.kind, thumb: a.thumb })),
+            // 脳（Obsidian）が使えるときは、原本を「添付」フォルダに裏で保存し、要点は返答と一緒に「資料」に保存する
+            attached: brainOn.current ? saveOriginals(atts) : undefined,
+          }
         : undefined;
       void (async () => {
         if (!files && !getCameraState().on && asksToLook(content)) await openCamera();

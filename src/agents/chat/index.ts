@@ -182,6 +182,7 @@ export const chatAgent: Agent = {
         music,
         camera,
         files: reading,
+        fileNote: Boolean(ctx.messages[ctx.messages.length - 1]?.attached?.length) && ctx.memory.connected,
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         replyLength: settings.replyLength,
         sns,

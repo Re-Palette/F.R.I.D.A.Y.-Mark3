@@ -11,6 +11,7 @@
  */
 import { useSyncExternalStore } from "react";
 import type { ChatFile } from "@/core/types";
+import { attachmentPath } from "./brain-paths";
 
 export type AttachmentKind = "image" | "pdf" | "doc" | "sheet" | "slides" | "text";
 
@@ -26,6 +27,8 @@ export interface Attachment {
   files?: ChatFile[];
   /** 添えたときの一言（「大きいので文字だけ読みました」など） */
   note?: string;
+  /** 元のファイル（脳に原本を保存するとき使う） */
+  original?: File;
 }
 
 /** 1 回に添えられる数 */
@@ -85,6 +88,7 @@ export function addFiles(list: FileList | File[]): string | null {
     name: f.name || "貼り付けた画像.png",
     kind: kindOf(f),
     status: "reading",
+    original: f,
   }));
   publish([...pending, ...added]);
   added.forEach((a, i) => {
@@ -348,4 +352,45 @@ async function pptxText(file: File): Promise<string> {
       return `--- スライド ${i + 1} ---\n${lines.join("\n")}${noteLines.length ? `\n（ノート）${noteLines.join(" ")}` : ""}`;
     })
     .join("\n\n");
+}
+
+/* ---------- 原本を脳（Obsidian）の「添付」に保存 ---------- */
+
+/** 原本をそのまま保存する大きさの上限（Vercel が 1 回に受け付ける 4.5MB に、base64 で収まる大きさ） */
+const MAX_ORIGINAL_BYTES = 3_000_000;
+
+async function fileBase64(file: Blob): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/**
+ * 送るファイルの原本を、脳の「添付」フォルダに裏で保存する。保存先（またはしなかったこと）をすぐ返す。
+ *   3MB 以下 → 原本そのまま ／ 大きい写真 → 縮めた JPEG ／ 大きい PDF など → 保存しない（Vercel の上限のため）
+ */
+export function saveOriginals(atts: Attachment[], at = new Date()): { name: string; path?: string }[] {
+  return atts.map((a) => {
+    const f = a.original;
+    if (!f) return { name: a.name };
+    let path: string | undefined;
+    let data: Promise<string> | undefined;
+    if (f.size <= MAX_ORIGINAL_BYTES) {
+      path = attachmentPath(a.name, at);
+      data = fileBase64(f);
+    } else if (a.kind === "image" && a.files?.[0]?.data) {
+      path = attachmentPath(a.name.replace(/\.[^.]+$/, "") + ".jpg", at);
+      data = Promise.resolve(a.files[0].data);
+    }
+    if (path && data) {
+      const target = path;
+      void data
+        .then((d) =>
+          fetch("/api/brain/attach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: target, data: d }) }),
+        )
+        .catch(() => {});
+    }
+    return { name: a.name, path };
+  });
 }

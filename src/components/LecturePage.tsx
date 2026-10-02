@@ -3,7 +3,7 @@
 /**
  * LECTURE：授業の文字起こしと、まとめ（全体像・重要なところ）の PDF。
  *   録音を始める → その場で文字になる → 「まとめる」で Gemini が整理 → 「PDF で保存」
- * 文字起こし・まとめは、このブラウザの中にだけ保存する（音声は保存しない）。
+ * 文字起こし・まとめは、このブラウザの中に保存し、まとめたら脳（Obsidian）の「授業」フォルダにも保存する（音声は保存しない）。
  * 録音中にほかの画面へ移っても、録音は続ける。
  */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -46,7 +46,7 @@ export const LecturePage = memo(function LecturePage({
   const [interim, setInterim] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState<Msg>();
-  const [busy, setBusy] = useState<"summary" | "pdf" | null>(null);
+  const [busy, setBusy] = useState<"summary" | "pdf" | "brain" | null>(null);
   const [withTranscript, setWithTranscript] = useState(true);
   const [supported, setSupported] = useState(true);
   const recorder = useRef<LectureRecorder | null>(null);
@@ -172,6 +172,33 @@ export const LecturePage = memo(function LecturePage({
     setLectures(loadLectures());
   };
 
+  /** 脳（Obsidian）の「授業」フォルダに保存する。結果の一言を返す（保存できなければ理由） */
+  const saveToBrain = async (l: Lecture): Promise<{ ok: boolean; text: string }> => {
+    try {
+      const res = await fetch("/api/lecture/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lecture: l, path: l.brainPath }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; path?: string; error?: string };
+      if (!res.ok || !json.path) return { ok: false, text: json.error ?? `Obsidian に保存できませんでした（${res.status}）。` };
+      const next = { ...(currentRef.current?.id === l.id ? currentRef.current : l), brainPath: json.path };
+      if (currentRef.current?.id === l.id) setCurrent(next);
+      persist(next);
+      return { ok: true, text: `Obsidian に保存しました（${json.path}）。` };
+    } catch {
+      return { ok: false, text: "Obsidian に保存できませんでした（通信エラー）。" };
+    }
+  };
+
+  const saveBrainNow = async () => {
+    const l = currentRef.current;
+    if (!l) return;
+    setBusy("brain");
+    setMessage(await saveToBrain(l));
+    setBusy(null);
+  };
+
   const summarize = async () => {
     const l = currentRef.current;
     if (!l) return;
@@ -188,7 +215,13 @@ export const LecturePage = memo(function LecturePage({
       const next = { ...(currentRef.current ?? l), summary: json.summary };
       setCurrent(next);
       persist(next);
-      setMessage({ ok: true, text: "まとめました。「PDF で保存」で書き出せます。" });
+      // まとめたら、Obsidian の「授業」フォルダにも保存する（脳が接続されていなければ、まとめだけ）
+      const saved = await saveToBrain(next);
+      setMessage(
+        saved.ok
+          ? { ok: true, text: `まとめて、${saved.text.replace(/。$/, "")}。「PDF で保存」で書き出せます。` }
+          : { ok: true, text: `まとめました。「PDF で保存」で書き出せます。（${saved.text.replace(/。$/, "")}）` },
+      );
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : "まとめを作れませんでした。" });
     } finally {
@@ -273,7 +306,7 @@ export const LecturePage = memo(function LecturePage({
               <br />
               先生の声が届きやすい席で、パソコンの画面は開いたままにしてください（録音中は画面が消えないようにします）。
               <br />
-              音声は保存しません。文字にしたものは、このブラウザの中にだけ保存します。
+              音声は保存しません。文字にしたものはこのブラウザの中に保存し、「まとめる」と Obsidian の「授業」フォルダにも保存します。
             </p>
           )}
         </div>
@@ -282,6 +315,15 @@ export const LecturePage = memo(function LecturePage({
             <span className="lecture__meta">{chars.toLocaleString()} 文字</span>
             <button type="button" className="ghost-btn" onClick={() => void summarize()} disabled={busy !== null || chars < 20}>
               {busy === "summary" ? "まとめ中…" : s ? "まとめ直す" : "まとめる"}
+            </button>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => void saveBrainNow()}
+              disabled={busy !== null || chars < 1}
+              title={current.brainPath ? `保存先：${current.brainPath}` : "Obsidian（脳）の「授業」フォルダに保存"}
+            >
+              <Icon name="brain" size={13} /> {busy === "brain" ? "保存中…" : current.brainPath ? "Obsidian に保存し直す" : "Obsidian に保存"}
             </button>
             <label className="lecture__check">
               <input type="checkbox" checked={withTranscript} onChange={(e) => setWithTranscript(e.target.checked)} /> 文字起こし全文も入れる
