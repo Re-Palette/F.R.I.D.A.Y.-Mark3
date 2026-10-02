@@ -23,3 +23,5 @@ public/friday-extension.zip
 public/mediapipe/
 # 授業ノートの PDF 用の日本語フォントは build 時に node_modules からコピーする
 public/fonts/
+# 添付した PDF を読む pdf.js は build 時に node_modules からコピーする
+public/pdfjs/

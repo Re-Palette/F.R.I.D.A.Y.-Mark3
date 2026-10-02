@@ -28,6 +28,7 @@ import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, use
 import { CameraView } from "./CameraView";
 import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
 import { duckMusic } from "@/lib/amazon-music";
+import { addFiles, takeAttachments } from "@/lib/attachments";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -171,16 +172,59 @@ export function Dashboard() {
   const { send: chatSendRaw } = chat;
   const send = useCallback(
     (text: string, opts: SendOptions = {}) => {
-      if (!text.trim()) return false;
+      // 読み込み済みの添付ファイルも一緒に送る（文字が無ければ「読んで」と頼む）
+      const atts = takeAttachments();
+      if (!text.trim() && !atts.length) return false;
+      const content = text.trim() || "この添付ファイルを読んで、内容を教えて。";
+      const files = atts.length
+        ? { files: atts.flatMap((a) => a.files ?? []), shown: atts.map((a) => ({ name: a.name, kind: a.kind, thumb: a.thumb })) }
+        : undefined;
       void (async () => {
-        if (!getCameraState().on && asksToLook(text)) await openCamera();
+        if (!files && !getCameraState().on && asksToLook(content)) await openCamera();
         const image = getCameraState().on ? await captureFrame() : null;
-        chatSendRaw(text, image ? { ...opts, image } : opts);
+        chatSendRaw(content, { ...opts, ...(image ? { image } : {}), ...(files ? { files } : {}) });
       })();
       return true;
     },
     [chatSendRaw],
   );
+
+  // 画面のどこにファイルをドロップしても添付する
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      setDropping(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) setDropping(false);
+    };
+    const over = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDropping(false);
+      if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
   const camera = useCameraState();
 
   // 入力中に Gemini への接続を温める（サーバー側でも間引くが、ここでも 2 秒に 1 回まで）
@@ -323,6 +367,11 @@ export function Dashboard() {
 
   return (
     <div className="app" data-view={view}>
+      {dropping && (
+        <div className="drop-overlay" aria-hidden="true">
+          <span>ここにドロップして添付（写真・PDF・Word / Excel / PowerPoint・テキスト）</span>
+        </div>
+      )}
       <div className="bg" aria-hidden="true">
         <div className="bg__circuit" />
         <div className="bg__scan" />

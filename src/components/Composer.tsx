@@ -5,12 +5,16 @@
  * Enter で送信 / Shift+Enter で改行 / Esc で応答を停止。日本語 IME の変換確定 Enter では送信しない。
  * 応答中でも次の発言を入力・送信できる（今の応答を止めて次へ進む）。
  * 入力中は onTyping を呼び、サーバー側で Gemini への接続を温めておく。
+ * ファイル添付：クリップのボタン・貼り付け（写真）・画面へのドロップ（Dashboard）。添えたファイルは入力欄の上に並ぶ。
  */
-import { forwardRef, memo, useImperativeHandle, useRef, useState, type KeyboardEvent } from "react";
+import { forwardRef, memo, useImperativeHandle, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { addFiles, removeAttachment, useAttachments, type AttachmentKind } from "@/lib/attachments";
 import type { ChatPhase } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import { HudFrame } from "./HudFrame";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
+
+const KIND_ICON: Record<AttachmentKind, IconName> = { image: "image", pdf: "doc", doc: "doc", sheet: "analysis", slides: "doc", text: "doc" };
 
 export interface ComposerHandle {
   focus: () => void;
@@ -45,6 +49,19 @@ export const Composer = memo(
     ref,
   ) {
   const [value, setValue] = useState("");
+  const attachments = useAttachments();
+  const [attachMsg, setAttachMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const reading = attachments.some((a) => a.status === "reading");
+  const hasReady = attachments.some((a) => a.status === "ready");
+  const canSend = (Boolean(value.trim()) || hasReady) && !reading;
+  const attach = (files: FileList | File[]) => setAttachMsg(addFiles(files));
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = [...e.clipboardData.files];
+    if (!files.length) return;
+    e.preventDefault();
+    attach(files);
+  };
   const [pulse, setPulse] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const busy = phase !== "idle";
@@ -59,7 +76,7 @@ export const Composer = memo(
   };
 
   const submit = () => {
-    if (disabled || !value.trim()) return;
+    if (disabled || !canSend) return;
     if (onSend(value)) {
       setValue("");
       setPulse((p) => p + 1);
@@ -105,6 +122,26 @@ export const Composer = memo(
         <Icon name="mic" size={24} strokeWidth={1.8} />
       </button>
       <div className="composer__main">
+        {(attachments.length > 0 || attachMsg) && (
+          <div className="composer__files" aria-label="添付するファイル">
+            {attachments.map((a) => (
+              <span key={a.id} className="attach" data-status={a.status} title={a.error ?? a.note ?? a.name}>
+                {a.thumb ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={a.thumb} alt="" />
+                ) : (
+                  <Icon name={KIND_ICON[a.kind]} size={14} />
+                )}
+                <span className="attach__name">{a.name}</span>
+                <span className="attach__state">{a.status === "reading" ? "読み込み中…" : a.status === "error" ? a.error : a.note ?? ""}</span>
+                <button type="button" className="attach__x" onClick={() => removeAttachment(a.id)} aria-label={`${a.name} を外す`}>
+                  ×
+                </button>
+              </span>
+            ))}
+            {attachMsg && <span className="attach__msg">{attachMsg}</span>}
+          </div>
+        )}
         <div className="composer__row">
           <textarea
             ref={taRef}
@@ -118,10 +155,11 @@ export const Composer = memo(
               onTyping?.();
             }}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             aria-label="F.R.I.D.A.Y. へのメッセージ"
             autoFocus
           />
-          {busy && !value.trim() ? (
+          {busy && !value.trim() && !hasReady ? (
             <button type="button" className="composer__send composer__send--stop" onClick={onStop} title="応答を停止 (Esc)">
               <Icon name="stop" size={18} />
             </button>
@@ -131,8 +169,8 @@ export const Composer = memo(
               type="button"
               className="composer__send"
               onClick={submit}
-              disabled={!value.trim() || disabled}
-              title="送信 (Enter / Shift+Enter で改行)"
+              disabled={!canSend || disabled}
+              title={reading ? "ファイルを読み込み中…" : "送信 (Enter / Shift+Enter で改行)"}
             >
               <Icon name="chevrons" size={20} strokeWidth={2.4} />
             </button>
@@ -142,11 +180,29 @@ export const Composer = memo(
           <button type="button" className="tool-btn" data-voice-control onClick={onTalk} title="押して話す">
             <Icon name="mic" size={14} /> 音声入力
           </button>
-          <button type="button" className="tool-btn" disabled title="今後対応">
-            <Icon name="clip" size={14} /> ファイル添付
-          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            hidden
+            accept="image/*,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.tsv,.json,.html,.xml,.yaml,.yml,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.sql,.sh,.log,.tex"
+            onChange={(e) => {
+              if (e.target.files) attach(e.target.files);
+              e.target.value = "";
+            }}
+          />
           <button type="button" className="tool-btn" disabled title="今後対応">
             <Icon name="image" size={14} /> 画像生成
+          </button>
+          <button
+            type="button"
+            className="composer__attach"
+            data-on={attachments.length > 0 || undefined}
+            onClick={() => fileRef.current?.click()}
+            title="ファイルを添えて聞く（写真・PDF・Word / Excel / PowerPoint・テキスト。画面にドロップ・貼り付けでも添えられます）"
+          >
+            <Icon name="clip" size={14} />
+            FILE
           </button>
           {onCameraToggle && (
             <button

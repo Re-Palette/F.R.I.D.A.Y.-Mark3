@@ -3,7 +3,7 @@
  *
  *   ユーザー → Core → Router → Agent（Chat / Search / ...）→ Core → ユーザー
  */
-import type { ChatImage, ChatMessage, StreamEvent } from "@/core/types";
+import type { ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { routeRequest } from "@/core/router";
 import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/lib/config";
 import { FridayError, toFridayError } from "@/lib/errors";
@@ -37,6 +37,37 @@ function toImage(v: unknown): ChatImage | undefined {
   return { mimeType: mimeType as ChatImage["mimeType"], data };
 }
 
+/** 添えたファイルの上限（画像・PDF の base64 の合計・文字の合計・数） */
+const MAX_FILE_DATA_CHARS = 3_400_000;
+const MAX_FILE_TEXT_CHARS = 260_000;
+const MAX_FILES = 16;
+const FILE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain"]);
+
+/** 添えたファイルが正しい形か（種類・大きさ・base64 の文字だけか）。合計が上限を超える分は捨てる */
+function toFiles(v: unknown): ChatFile[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  let data = 0;
+  let text = 0;
+  const out: ChatFile[] = [];
+  for (const f of v.slice(0, MAX_FILES)) {
+    if (!f || typeof f !== "object") continue;
+    const { name, mimeType, data: d, text: t } = f as Record<string, unknown>;
+    if (typeof mimeType !== "string" || !FILE_TYPES.has(mimeType)) continue;
+    const file: ChatFile = { name: typeof name === "string" ? name.slice(0, 120) : "ファイル", mimeType: mimeType as ChatFile["mimeType"] };
+    if (mimeType === "text/plain") {
+      if (typeof t !== "string" || !t.trim() || text + t.length > MAX_FILE_TEXT_CHARS) continue;
+      file.text = t;
+      text += t.length;
+    } else {
+      if (typeof d !== "string" || !d || data + d.length > MAX_FILE_DATA_CHARS || !/^[A-Za-z0-9+/]+={0,2}$/.test(d)) continue;
+      file.data = d;
+      data += d.length;
+    }
+    out.push(file);
+  }
+  return out.length ? out : undefined;
+}
+
 /** クライアントから来た履歴を検証・正規化する */
 export function sanitizeHistory(input: unknown): ChatMessage[] {
   if (!Array.isArray(input)) {
@@ -58,6 +89,18 @@ export function sanitizeHistory(input: unknown): ChatMessage[] {
       const image = i === all.length - 1 && m.role === "user" ? toImage((m as { image?: unknown }).image) : undefined;
       return image ? { ...out, image } : out;
     });
+  // 添えたファイルは、ファイルの付いた最後のユーザー発言のものだけ受け取る（直近 10 件以内）
+  const raw = input.slice(-MAX_HISTORY_ITEMS) as { role?: unknown; content?: unknown; files?: unknown }[];
+  for (let i = raw.length - 1, j = messages.length - 1; i >= 0 && j >= 0 && messages.length - j <= 10; i--) {
+    const m = raw[i];
+    if (!m || typeof m.content !== "string" || !m.content.trim() || (m.role !== "user" && m.role !== "assistant")) continue;
+    if (m.role === "user" && m.files !== undefined) {
+      const files = toFiles(m.files);
+      if (files) messages[j] = { ...messages[j], files };
+      break;
+    }
+    j--;
+  }
 
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     throw new FridayError("BAD_REQUEST", "送信するメッセージがありません。", 400);
@@ -265,7 +308,9 @@ export async function* handleConversation(
     if (memory.save && memory.healthy !== false) for (const text of facts) yield { type: "memory", text };
     turn = {
       // カメラの映像を見せたことだけ記録する（画像そのものは保存しない）
-      user: `${window.messages[window.messages.length - 1]?.content ?? ""}${window.messages[window.messages.length - 1]?.image ? "（カメラの映像つき）" : ""}`,
+      user: `${window.messages[window.messages.length - 1]?.content ?? ""}${window.messages[window.messages.length - 1]?.image ? "（カメラの映像つき）" : ""}${
+        window.messages[window.messages.length - 1]?.files ? `（添付：${[...new Set(window.messages[window.messages.length - 1].files!.map((f) => f.name.replace(/（\d+ ページ）$/, "")))].join("、")}）` : ""
+      }`,
       assistant: reply.trim(),
       memories: memory.save ? facts : [],
       voice: options.voice ?? false,

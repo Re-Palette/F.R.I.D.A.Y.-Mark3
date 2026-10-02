@@ -22,11 +22,24 @@ export interface ChatImage {
   data: string;
 }
 
+/**
+ * 会話に添えたファイル（写真・PDF・Word などから画面側で読み込んだもの）。
+ * data（base64）は画像・PDF をそのまま渡すとき、text はファイルから取り出した文字を渡すとき。
+ */
+export interface ChatFile {
+  name: string;
+  mimeType: "image/jpeg" | "image/png" | "image/webp" | "application/pdf" | "text/plain";
+  data?: string;
+  text?: string;
+}
+
 export interface ChatMessage {
   role: Role;
   content: string;
   /** 最新のユーザー発言にだけ付く（カメラの映像を見せて聞くとき） */
   image?: ChatImage;
+  /** 添えたファイル（最後にファイルを添えたユーザー発言にだけ付く。続けて質問しても読めるように送り直す） */
+  files?: ChatFile[];
 }
 
 /** POST /api/chat のリクエストボディ */

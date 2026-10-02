@@ -121,7 +121,9 @@ export const chatAgent: Agent = {
     // ニュースをまとめるときは検索する（FRIDAY_SEARCH=off のときだけは検索しない）
     const sns = asksForSns(latest);
     // カメラの映像を見せたときは、画像から答える（「調べて」と言われたときだけ検索する）
-    const looking = Boolean(ctx.messages[ctx.messages.length - 1]?.image);
+    // 添えたファイルを読んで答えるときも同じ（中身はファイルにあるので、検索しない）
+    const reading = ctx.messages.some((m) => m.files?.length);
+    const looking = Boolean(ctx.messages[ctx.messages.length - 1]?.image) || Boolean(ctx.messages[ctx.messages.length - 1]?.files?.length);
     const search =
       mode !== "off" &&
       (mode === "always" || briefing || (looking ? /調べ|検索|ググ/.test(latest) : needsSearch(latest) || asksForTrend(latest)));
@@ -129,16 +131,25 @@ export const chatAgent: Agent = {
     yield { text: "", stage: search ? "search" : "think" };
 
     // カメラの映像（最新の発言にだけ付く）は、文字の前に画像として渡す
-    const camera = looking;
+    const camera = Boolean(ctx.messages[ctx.messages.length - 1]?.image);
     const contents: GeminiContent[] = ctx.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
-      parts: m.image ? [{ inlineData: { mimeType: m.image.mimeType, data: m.image.data } }, { text: m.content }] : [{ text: m.content }],
+      parts: [
+        // 添えたファイル（画像・PDF はそのまま、取り出した文字は区切りを付けて）
+        ...(m.files ?? []).map((f) =>
+          f.data
+            ? { inlineData: { mimeType: f.mimeType, data: f.data } }
+            : { text: `【添付ファイル「${f.name}」の中身ここから】\n${f.text ?? ""}\n【添付ファイル「${f.name}」ここまで】` },
+        ),
+        ...(m.image ? [{ inlineData: { mimeType: m.image.mimeType, data: m.image.data } }] : []),
+        { text: m.files?.length ? `（添付：${[...new Set(m.files.map((f) => f.name.replace(/（\d+ ページ）$/, "")))].join("、")}）\n${m.content}` : m.content },
+      ],
     }));
 
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
     // ニュースのまとめは長くなるので上限を広げる
     // 短い普通の発言（検索・まとめ以外）も考える量を最小にする（最初の一言が速くなる）
-    const quick = !search && !briefing && !reviewKind && !sns && !drafting && latest.length < QUICK_REPLY_CHARS;
+    const quick = !search && !briefing && !reviewKind && !sns && !drafting && !reading && latest.length < QUICK_REPLY_CHARS;
     const runConfig = ctx.voice
       ? {
           ...config,
@@ -146,7 +157,7 @@ export const chatAgent: Agent = {
           // 文書・振り返りは本文を隠しタグに書くので長く、読み上げは短い
           maxOutputTokens: briefing ? 1200 : reviewKind || sns || drafting || /企画書|レポート|報告書|文書|原稿|下書き/.test(latest) ? 5000 : Math.min(config.maxOutputTokens, 400),
         }
-      : briefing || reviewKind || sns || drafting || /企画書|レポート|報告書|文書|原稿|下書き|書いて|作成して/.test(latest)
+      : briefing || reviewKind || sns || drafting || reading || /企画書|レポート|報告書|文書|原稿|下書き|書いて|作成して/.test(latest)
         ? { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, 6000) }
         : quick
           ? { ...config, thinkingLevel: "minimal" as const }
@@ -170,6 +181,7 @@ export const chatAgent: Agent = {
         mailDraft: mailCanDraft,
         music,
         camera,
+        files: reading,
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         replyLength: settings.replyLength,
         sns,

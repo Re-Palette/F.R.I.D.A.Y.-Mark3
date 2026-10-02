@@ -37,6 +37,8 @@ export interface PersonaInput {
   mailDraft?: boolean;
   /** 最新の発言にカメラの映像（静止画 1 枚）が付いている */
   camera?: boolean;
+  /** 会話に添えたファイル（写真・PDF・文書）がある */
+  files?: boolean;
   /** 音楽の話のとき：Spotify の接続状態といま流れている曲 */
   music?: MusicContext;
   /** SNS の投稿づくり・トレンドの相談（SNS AI） */
@@ -92,6 +94,7 @@ export function buildSystemInstruction({
   mail,
   mailDraft,
   camera,
+  files,
   music,
   review,
   replyLength,
@@ -148,6 +151,7 @@ export function buildSystemInstruction({
   if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
   if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
   if (camera) out += CAMERA_RULES;
+  if (files) out += FILE_RULES;
   if (music) out += musicSection(music);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
@@ -377,6 +381,16 @@ ${MUSIC_TAG_RULES}
 }
 
 /** カメラの映像を見せて聞かれたとき */
+const FILE_RULES = `
+
+# 添付ファイル
+- ユーザーは写真・PDF・Word / Excel / PowerPoint・テキストなどのファイルを添えている（画像・PDF はそのまま、文書は取り出した文字が【添付ファイル「名前」の中身ここから】〜【ここまで】で入っている）。
+- 「これ」「この資料」「このファイル」は添付ファイルを指す。中身を読んで、聞かれたことに直接答える（要約・説明・翻訳・問題の解き方・表の集計・誤字の確認など）。
+- 何も聞かれず添付だけのときは、何のファイルかを一言で言い、要点を短くまとめ、何をしてほしいか（要約・解説・翻訳など）を聞く。
+- ファイルに書かれていることと、自分の知識で補ったことは区別する。数字・日付・名前は書かれているとおりに答え、読めない・見つからないときは正直に言う。
+- 長い資料の要約は、見出しと箇条書きで全体像 → 重要なところの順に。表の中身を答えるときは、どの行・列かが分かるように。
+- 写真に人の顔が写っていても、その人が誰かを特定・推測しない。`;
+
 const CAMERA_RULES = `
 
 # カメラの映像

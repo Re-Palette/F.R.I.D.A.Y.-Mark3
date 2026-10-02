@@ -11,7 +11,7 @@
  *   何件を Gemini に渡すかはサーバー側（src/memory/context.ts）が上限をかけて決める。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatImage, ChatMessage, StreamEvent } from "@/core/types";
+import type { ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { amazonMusicState, musicReply, runAmazonMusic } from "@/lib/amazon-music";
 import { asksForMusic, quickMusicCommand } from "@/lib/music";
 import { clearHologram, requestHologram } from "@/lib/hologram-model";
@@ -51,6 +51,8 @@ export interface UiMessage {
   newsSettings?: { ok: boolean; time?: string; topics?: string[]; error?: string };
   /** カメラで見せた 1 枚（画面に出す小さい版の data URL） */
   image?: string;
+  /** 添えたファイル（画面に出す名前・種類・小さな画像） */
+  files?: { name: string; kind: string; thumb?: string }[];
   /** Spotify を操作した結果 */
   music?: { ok: boolean; label: string; error?: string }[];
   /** Gmail に保存した下書き（送信はしていない） */
@@ -69,6 +71,8 @@ export interface SendOptions {
   voice?: boolean;
   /** カメラで撮った 1 枚（送る用と、画面に出す小さい版） */
   image?: { full: string; thumb: string };
+  /** 添えたファイル（送る中身と、画面に出す名前など） */
+  files?: { files: ChatFile[]; shown: { name: string; kind: string; thumb?: string }[] };
 }
 
 export type ChatPhase = "idle" | "waiting" | "streaming";
@@ -100,11 +104,27 @@ function toChatImage(dataUrl: string | undefined): ChatImage | undefined {
   return m ? { mimeType: m[1] as ChatImage["mimeType"], data: m[2] } : undefined;
 }
 
+/**
+ * 添えたファイルの中身（送る用）。会話の保存（sessionStorage）には入れず、ここに持つ。
+ * 続けて「この表の合計は？」などと聞けるよう、ファイルを添えた最後の発言の分は、その後の質問でも送り直す（直近 10 件まで）。
+ */
+const fullFiles = new Map<string, ChatFile[]>();
+
 function toApiHistory(messages: UiMessage[]): ChatMessage[] {
   const list = messages.filter((m) => m.status !== "error" && m.content.trim());
+  let withFiles = -1;
+  for (let i = list.length - 1; i >= Math.max(0, list.length - 10); i--) {
+    if (list[i].role === "user" && fullFiles.has(list[i].id)) {
+      withFiles = i;
+      break;
+    }
+  }
   return list.map((m, i) => {
+    const out: ChatMessage = { role: m.role, content: m.content };
     const image = i === list.length - 1 && m.role === "user" ? toChatImage(fullImages.get(m.id)) : undefined;
-    return image ? { role: m.role, content: m.content, image } : { role: m.role, content: m.content };
+    if (image) out.image = image;
+    if (i === withFiles) out.files = fullFiles.get(m.id);
+    return out;
   });
 }
 
@@ -537,10 +557,23 @@ export function useChat() {
         // 古い画像は持ち続けない（送るのは最新の 1 枚だけ）
         while (fullImages.size > 3) fullImages.delete(fullImages.keys().next().value!);
       }
+      if (opts.files?.files.length) {
+        fullFiles.set(id, opts.files.files);
+        // 古いファイルは持ち続けない（送り直すのは最後に添えた分だけ）
+        while (fullFiles.size > 3) fullFiles.delete(fullFiles.keys().next().value!);
+      }
       enqueue(
         (current) => [
           ...current,
-          { id, role: "user", content, createdAt: Date.now(), status: "done", ...(opts.image ? { image: opts.image.thumb } : {}) },
+          {
+            id,
+            role: "user",
+            content,
+            createdAt: Date.now(),
+            status: "done",
+            ...(opts.image ? { image: opts.image.thumb } : {}),
+            ...(opts.files?.shown.length ? { files: opts.files.shown } : {}),
+          },
         ],
         opts,
       );

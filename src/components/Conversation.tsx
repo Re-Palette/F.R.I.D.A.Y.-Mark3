@@ -42,6 +42,21 @@ const Message = memo(function Message({
           // eslint-disable-next-line @next/next/no-img-element
           <img className="msg__image" src={msg.image} alt="カメラで見せた映像" />
         )}
+        {msg.files && msg.files.length > 0 && (
+          <div className="msg__files" aria-label="添付したファイル">
+            {msg.files.map((f, i) => (
+              <span key={`${f.name}-${i}`} className="attach attach--sent">
+                {f.thumb ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={f.thumb} alt="" />
+                ) : (
+                  <Icon name={f.kind === "image" ? "image" : f.kind === "sheet" ? "analysis" : "doc"} size={14} />
+                )}
+                <span className="attach__name">{f.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="msg__bubble hud">
           <HudFrame cut={10} small={4} ticks={false} />
           {msg.content}
