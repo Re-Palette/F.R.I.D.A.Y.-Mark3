@@ -27,8 +27,36 @@ type Status = "off" | "loading" | "ready" | "error";
 
 /** 手の認識に送る間隔の下限（ミリ秒）。最大で約 30 回/秒。各 Worker は前の認識が終わってから次を受け取るので、遅い端末では自然に減る */
 const FRAME_MS = 33;
-/** CPU での認識がこれより遅い（ミリ秒・平均）端末では、GPU に切り替える */
-const SLOW_INFER_MS = 35;
+/** CPU での認識がこれより遅い（ミリ秒・平均）端末では、GPU も試してみる */
+const SLOW_INFER_MS = 45;
+
+type Delegate = "CPU" | "GPU";
+/**
+ * この端末で速かった方（CPU / GPU）を覚えておく。GPU が速いかどうかは端末しだいで、
+ * 遅い端末では CPU の何十倍もかかる（1 秒に 1 回しか認識できなくなる）ので、必ず測って決める。
+ */
+const PICK_KEY = "friday.hand.delegate.v1";
+interface Pick {
+  pick: Delegate;
+  /** 試して遅かった・使えなかった */
+  gpuBad?: boolean;
+}
+function savedPick(): Pick {
+  try {
+    const v = JSON.parse(localStorage.getItem(PICK_KEY) || "null") as Pick | null;
+    if (v && (v.pick === "CPU" || v.pick === "GPU")) return v;
+  } catch {
+    /* 使えない環境 */
+  }
+  return { pick: "CPU" };
+}
+function savePick(v: Pick) {
+  try {
+    localStorage.setItem(PICK_KEY, JSON.stringify(v));
+  } catch {
+    /* noop */
+  }
+}
 
 /** 認識用の Worker（public/hand-worker.mjs）を起動して、準備ができたら返す */
 function startWorker(): Promise<Worker> {
@@ -54,7 +82,7 @@ function startWorker(): Promise<Worker> {
         resolve(worker);
       } else if (e.data.type === "error") fail(new Error(e.data.message));
     };
-    worker.postMessage({ type: "init", model: MODEL });
+    worker.postMessage({ type: "init", model: MODEL, delegate: savedPick().pick });
   });
 }
 
@@ -73,7 +101,8 @@ export function warmHands(): Promise<Worker | null> {
 /** 2 つ目の認識（CPU のコアに余裕がある端末だけ）。1 つ目と交互にコマを受け持つ */
 let second: Promise<Worker | null> | null = null;
 function warmSecond(): Promise<Worker | null> {
-  if ((navigator.hardwareConcurrency || 2) < 4) return Promise.resolve(null);
+  // GPU を使う端末では 2 つにしても速くならない（GPU を取り合うだけ）
+  if ((navigator.hardwareConcurrency || 2) < 4 || savedPick().pick === "GPU") return Promise.resolve(null);
   second ??= startWorker().catch(() => {
     second = null;
     return null;
@@ -92,7 +121,7 @@ interface WorkerResult {
   landmarks: Point[][];
   /** 認識にかかった時間（ミリ秒） */
   ms?: number;
-  delegate?: "CPU" | "GPU";
+  delegate?: Delegate;
 }
 
 /** 1 コマ送って、手の 21 点を受け取る */
@@ -132,6 +161,8 @@ export function HandControl({ hidden }: { hidden: boolean }) {
   const [rate, setRate] = useState(0);
   /** 手の認識の遅れ（ミリ秒） */
   const [lagMs, setLagMs] = useState(0);
+  /** 認識に使っている方（CPU / GPU）と、1 回にかかる時間 */
+  const [engine, setEngine] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stopRef = useRef<() => void>(() => {});
 
@@ -142,6 +173,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
     setHands(0);
     setRate(0);
     setLagMs(0);
+    setEngine("");
     setStatus("off");
     setMessage("");
   }, []);
@@ -251,11 +283,56 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       // CPU のコアに余裕がある端末では 2 つの Worker が交互にコマを受け持ち、1 秒あたりの認識回数を倍にする。
       // 送る間隔は全体で FRAME_MS 以上あける（最大で約 30 回/秒）
       let nextSend = 0;
-      const run = async (w: Worker) => {
-        let avgMs = 0;
-        let samples = 0;
-        let switched = false;
+      // CPU / GPU の速さを測って、速い方を使う（GPU は試して速いときだけ。遅ければすぐ CPU に戻して覚えておく）
+      const saved = savedPick();
+      const tune = { ...saved, trial: false, trialFrom: 0, cpu: 0, cpuN: 0, gpu: 0, gpuN: 0 };
+      const setPick = (pick: Delegate, w: Worker) => {
+        tune.pick = pick;
+        w.postMessage({ type: "delegate", value: pick });
+      };
+      const decide = (w: Worker, useGpu: boolean) => {
+        tune.trial = false;
+        if (useGpu) savePick({ pick: "GPU" });
+        else {
+          tune.gpuBad = true;
+          savePick({ pick: "CPU", gpuBad: true });
+          if (tune.pick === "GPU") setPick("CPU", w);
+          startSecond();
+        }
+      };
+      const learn = (w: Worker, result: WorkerResult) => {
+        if (result.ms === undefined) return;
+        if (result.delegate === "GPU") {
+          tune.gpu = tune.gpuN ? tune.gpu * 0.7 + result.ms * 0.3 : result.ms;
+          tune.gpuN++;
+        } else {
+          tune.cpu = tune.cpuN ? tune.cpu * 0.85 + result.ms * 0.15 : result.ms;
+          tune.cpuN++;
+        }
+        setEngine(`${result.delegate ?? "CPU"} ${Math.round(result.delegate === "GPU" ? tune.gpu : tune.cpu)}ms`);
+        // GPU の 1 回が明らかに遅い（CPU の 3 倍以上・0.2 秒以上）→ 待たずにすぐ CPU に戻す
+        if (result.delegate === "GPU" && result.ms > Math.max(200, tune.cpu * 3) && (tune.trial || tune.pick === "GPU")) decide(w, false);
+        else if (tune.trial) {
+          // 試し中：GPU が CPU よりはっきり速いときだけ GPU にする。遅い・作れない（CPU のまま）ならすぐやめる
+          if (result.delegate === "GPU" && ((tune.gpuN >= 3 && tune.gpu > tune.cpu * 1.3) || tune.gpuN >= 12)) decide(w, tune.gpu < tune.cpu * 0.8);
+          else if (result.delegate !== "GPU" && tune.cpuN - tune.trialFrom > 15) decide(w, false);
+        } else if (tune.pick === "CPU" && !tune.gpuBad && tune.cpuN > 20 && tune.cpu > SLOW_INFER_MS) {
+          tune.trial = true;
+          tune.trialFrom = tune.cpuN;
+          tune.gpuN = 0;
+          setPick("GPU", w);
+        } else if (tune.pick === "GPU" && tune.gpuN >= 8 && tune.gpu > 90) {
+          // 前は GPU が速かったのに今は遅い（端末の状態が変わった）→ CPU に戻す
+          decide(w, false);
+        }
+      };
+      const run = async (w: Worker, primary: boolean) => {
         while (!stopped) {
+          // 2 つ目は、GPU を試している間・GPU を使う間は休む（取り合って測り間違えないように）
+          if (!primary && (tune.trial || tune.pick === "GPU")) {
+            await new Promise((r) => (timer = window.setTimeout(r, 250)));
+            continue;
+          }
           const wait = nextSend - performance.now();
           if (wait > 0) await new Promise((r) => (timer = window.setTimeout(r, wait)));
           if (stopped) return;
@@ -270,23 +347,21 @@ export function HandControl({ hidden }: { hidden: boolean }) {
           const result = await askWorker(w, bitmap, began);
           if (stopped) return;
           apply(result.landmarks, began);
-          // CPU での認識が遅すぎる端末では、GPU に切り替える（1 回だけ）
-          if (result.ms !== undefined) {
-            avgMs = samples ? avgMs * 0.85 + result.ms * 0.15 : result.ms;
-            samples++;
-            if (!switched && samples > 20 && result.delegate === "CPU" && avgMs > SLOW_INFER_MS) {
-              switched = true;
-              w.postMessage({ type: "delegate", value: "GPU" });
-            }
-          }
+          if (primary) learn(w, result);
         }
       };
-      if (worker) {
-        void run(worker);
-        // 2 つ目は、1 つ目が動き出してから裏で準備する（オンにしてから動き出すまでを遅くしない）
+      let secondStarted = false;
+      // 2 つ目は、1 つ目が動き出してから裏で準備する（オンにしてから動き出すまでを遅くしない）
+      const startSecond = () => {
+        if (secondStarted || tune.pick === "GPU") return;
+        secondStarted = true;
         void warmSecond().then((w2) => {
-          if (w2 && !stopped) void run(w2);
+          if (w2 && !stopped) void run(w2, false);
         });
+      };
+      if (worker) {
+        void run(worker, true);
+        startSecond();
       } else if (landmarker) {
         const lm = landmarker;
         const tick = () => {
@@ -348,7 +423,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
         <div className="hand__view">
           <canvas ref={canvasRef} width={176} height={132} />
           <span className="hand__tag">
-            {status === "ready" ? `${hands ? `HAND ×${hands}` : "NO HAND"}${rate ? ` · ${rate}/s · ${lagMs}ms` : ""}` : "LOADING"}
+            {status === "ready" ? `${hands ? `HAND ×${hands}` : "NO HAND"}${rate ? ` · ${rate}/s · ${lagMs}ms` : ""}${engine ? ` · ${engine}` : ""}` : "LOADING"}
           </span>
         </div>
       )}

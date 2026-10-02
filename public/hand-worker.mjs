@@ -4,7 +4,7 @@
 //
 // 速く・軽くするために：
 //   - 認識は CPU で行う（GPU はホログラムの描画に使っているので、取り合ってカクつかないように）。
-//     CPU で準備できないとき・CPU では遅すぎる端末（画面から "delegate" で頼まれたとき）は GPU を使う。
+//     CPU では遅い端末では、画面が GPU も試して、速かった方を覚えて使う（"delegate" で切り替える）。
 //   - モデル（約 8MB）はブラウザの保存領域（Cache Storage）に入れておき、2 回目からは読み込まない。
 import { FilesetResolver, HandLandmarker } from "/mediapipe/vision_bundle.mjs";
 
@@ -32,9 +32,9 @@ async function loadModel(url) {
   }
 }
 
-function make(which) {
-  delegate = which;
-  return HandLandmarker.createFromOptions(files, {
+/** 認識を作る（作れたら、使っている方を which にする） */
+async function make(which) {
+  const lm = await HandLandmarker.createFromOptions(files, {
     baseOptions: { modelAssetBuffer: model, delegate: which },
     runningMode: "VIDEO",
     numHands: 2,
@@ -43,6 +43,8 @@ function make(which) {
     minHandPresenceConfidence: 0.35,
     minTrackingConfidence: 0.35,
   });
+  delegate = which;
+  return lm;
 }
 
 self.onmessage = async (e) => {
@@ -50,7 +52,9 @@ self.onmessage = async (e) => {
   if (d.type === "init") {
     try {
       [files, model] = await Promise.all([FilesetResolver.forVisionTasks("/mediapipe", true), loadModel(d.model)]);
-      landmarker = await make("CPU").catch(() => make("GPU"));
+      // この端末で速かった方（画面が覚えている）から作る。作れなければもう一方
+      const first = d.delegate === "GPU" ? "GPU" : "CPU";
+      landmarker = await make(first).catch(() => make(first === "GPU" ? "CPU" : "GPU"));
       self.postMessage({ type: "ready", delegate });
     } catch (err) {
       self.postMessage({ type: "error", message: String(err && err.message ? err.message : err) });
@@ -73,14 +77,14 @@ self.onmessage = async (e) => {
     // 認識にかかった時間も返す（遅すぎる端末では GPU に切り替える目安）
     self.postMessage({ type: "result", landmarks, ms: performance.now() - began, delegate, time: d.time });
   } else if (d.type === "delegate") {
-    // CPU では遅すぎる端末：GPU で作り直す（作れなければ CPU のまま）
+    // 画面から頼まれた方（CPU / GPU）で作り直す（作れなければ今のまま）
     if (!files || delegate === d.value) return;
     try {
       const next = await make(d.value);
       landmarker?.close();
       landmarker = next;
     } catch {
-      delegate = "CPU";
+      /* 作れなければ今のまま（結果に今の方を付けて返すので、画面が気づく） */
     }
   } else if (d.type === "close") {
     landmarker?.close();
