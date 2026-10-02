@@ -98,11 +98,12 @@ export function warmHands(): Promise<Worker | null> {
   return warmed;
 }
 
-/** 2 つ目の認識（CPU のコアに余裕がある端末だけ）。1 つ目と交互にコマを受け持つ */
+/** 2 つ目の認識（CPU に十分な余裕がある端末だけ）。1 つ目と交互にコマを受け持つ */
 let second: Promise<Worker | null> | null = null;
 function warmSecond(): Promise<Worker | null> {
   // GPU を使う端末では 2 つにしても速くならない（GPU を取り合うだけ）
-  if ((navigator.hardwareConcurrency || 2) < 4 || savedPick().pick === "GPU") return Promise.resolve(null);
+  // 4 スレッドの端末は実際のコアが 2 つしかないことが多く、画面の描画と取り合ってカクつくので 8 以上だけ
+  if ((navigator.hardwareConcurrency || 2) < 8 || savedPick().pick === "GPU") return Promise.resolve(null);
   second ??= startWorker().catch(() => {
     second = null;
     return null;
@@ -260,9 +261,21 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       // 描画のたびに：先読みした「いま」の手の形で操作を読み取り、小窓に今の映像と骨格を描く。
       // （認識は 1 秒に十数回しか届かず、届いたときには手はもう先へ動いているため、先読みで追いつかせる）
       let raf = 0;
+      let secondStarted = false;
+      /** 画面の描画が重くなったら 2 つ目の認識を止める（認識より画面のなめらかさを優先） */
+      let secondOff = false;
+      let fpsFrom = 0;
+      let fpsFrames = 0;
       const frame = (now: number) => {
         if (stopped) return;
         raf = requestAnimationFrame(frame);
+        fpsFrames++;
+        if (!fpsFrom) fpsFrom = now;
+        else if (now - fpsFrom >= 2000) {
+          if (secondStarted && (fpsFrames * 1000) / (now - fpsFrom) < 40) secondOff = true;
+          fpsFrom = now;
+          fpsFrames = 0;
+        }
         const hands = predictor.at(now);
         for (const ev of tracker.update(hands, now)) {
           if (ev.type === "rotate") steerBy(ev.dx, ev.dy);
@@ -329,6 +342,7 @@ export function HandControl({ hidden }: { hidden: boolean }) {
       const run = async (w: Worker, primary: boolean) => {
         while (!stopped) {
           // 2 つ目は、GPU を試している間・GPU を使う間は休む（取り合って測り間違えないように）
+          if (!primary && secondOff) return;
           if (!primary && (tune.trial || tune.pick === "GPU")) {
             await new Promise((r) => (timer = window.setTimeout(r, 250)));
             continue;
@@ -350,7 +364,6 @@ export function HandControl({ hidden }: { hidden: boolean }) {
           if (primary) learn(w, result);
         }
       };
-      let secondStarted = false;
       // 2 つ目は、1 つ目が動き出してから裏で準備する（オンにしてから動き出すまでを遅くしない）
       const startSecond = () => {
         if (secondStarted || tune.pick === "GPU") return;

@@ -6,6 +6,7 @@
  *   - 認識の遅れの分だけ先に進めるので、実際の手に追いつく
  *   - ほとんど動いていないときは先読みしない（細かい揺れを大きくしない）
  *   - 先読みは長くても MAX_AHEAD_MS まで（手を止めたときに行き過ぎない）
+ *   - 結果が届くたびの「先読みのずれの直し」で点が跳ねないよう、表示する位置は少し遅れて追いかける（SMOOTH_MS）
  */
 import type { Point } from "./hand-gestures";
 
@@ -15,6 +16,8 @@ const MAX_AHEAD_MS = 140;
 const VELOCITY_WEIGHT = 0.65;
 /** これより遅い動き（画面の幅/秒）は先読みしない。これの 3 倍で完全に先読みする */
 const STILL_SPEED = 0.12;
+/** 表示する位置が先読みの位置を追いかける速さ（時定数・ミリ秒）。大きいほどなめらかで、少し遅れる */
+const SMOOTH_MS = 45;
 
 interface Track {
   at: number;
@@ -25,6 +28,9 @@ interface Track {
 
 export class HandPredictor {
   private tracks: Track[] = [];
+  /** 表示している位置（手ごと） */
+  private shown: Point[][] = [];
+  private shownAt = 0;
 
   /** 認識の結果（撮った時刻つき）を受け取る。古い結果（後から届いた前のコマ）は無視する */
   push(hands: Point[][], capturedAt: number): void {
@@ -50,9 +56,9 @@ export class HandPredictor {
     if (!this.tracks.length) this.tracks = [{ at: capturedAt, points: [], v: [] }];
   }
 
-  /** 時刻 now の手の位置（先読み） */
+  /** 時刻 now の手の位置（先読みして、なめらかにつないだもの） */
   at(now: number): Point[][] {
-    return this.tracks
+    const target = this.tracks
       .filter((t) => t.points.length)
       .map((t) => {
         const ahead = Math.min(MAX_AHEAD_MS, Math.max(0, now - t.at));
@@ -61,9 +67,23 @@ export class HandPredictor {
         const k = Math.min(1, Math.max(0, (sp - STILL_SPEED) / (STILL_SPEED * 2)));
         return t.points.map((p, j) => ({ x: p.x + t.v[j].x * ahead * k, y: p.y + t.v[j].y * ahead * k }));
       });
+    const dt = now - this.shownAt;
+    this.shownAt = now;
+    // 手の数が変わった・久しぶり → そのまま出す
+    if (target.length !== this.shown.length || dt <= 0 || dt > 200) {
+      this.shown = target;
+      return target;
+    }
+    const f = 1 - Math.exp(-dt / SMOOTH_MS);
+    this.shown = target.map((h, i) => h.map((p, j) => {
+      const s = this.shown[i][j];
+      return { x: s.x + (p.x - s.x) * f, y: s.y + (p.y - s.y) * f };
+    }));
+    return this.shown;
   }
 
   clear(): void {
     this.tracks = [];
+    this.shown = [];
   }
 }
