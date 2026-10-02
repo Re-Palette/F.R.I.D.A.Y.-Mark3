@@ -7,7 +7,7 @@
  * 入力中は onTyping を呼び、サーバー側で Gemini への接続を温めておく。
  * ファイル添付：クリップのボタン・貼り付け（写真）・画面へのドロップ（Dashboard）。添えたファイルは入力欄の上に並ぶ。
  */
-import { forwardRef, memo, useImperativeHandle, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { addFiles, removeAttachment, useAttachments, type AttachmentKind } from "@/lib/attachments";
 import type { ChatPhase } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
@@ -33,6 +33,9 @@ interface Props {
   /** カメラで見せて聞く（オンの間は、話しかけた瞬間の 1 枚が添えられる） */
   cameraOn?: boolean;
   onCameraToggle?: () => void;
+  /** 画面を見て手伝う（共有している間は、画面について聞いたときにその瞬間の 1 枚が添えられる） */
+  screenOn?: boolean;
+  onScreenToggle?: () => void;
 }
 
 const VOICE_LABEL: Record<VoiceState, string> = {
@@ -45,11 +48,14 @@ const VOICE_LABEL: Record<VoiceState, string> = {
 
 export const Composer = memo(
   forwardRef<ComposerHandle, Props>(function Composer(
-    { phase, disabled, onSend, onStop, onTyping, voiceState = "off", voiceInterim, onVoiceToggle, onTalk, cameraOn = false, onCameraToggle },
+    { phase, disabled, onSend, onStop, onTyping, voiceState = "off", voiceInterim, onVoiceToggle, onTalk, cameraOn = false, onCameraToggle, screenOn = false, onScreenToggle },
     ref,
   ) {
   const [value, setValue] = useState("");
   const attachments = useAttachments();
+  // 画面の共有はパソコンのブラウザだけ（スマホでは出さない）
+  const [canScreen, setCanScreen] = useState(false);
+  useEffect(() => setCanScreen(Boolean(navigator.mediaDevices?.getDisplayMedia) && !/Android|iPhone|iPad/i.test(navigator.userAgent)), []);
   const [attachMsg, setAttachMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const reading = attachments.some((a) => a.status === "reading");
@@ -204,6 +210,19 @@ export const Composer = memo(
             <Icon name="clip" size={14} />
             FILE
           </button>
+          {onScreenToggle && canScreen && (
+            <button
+              type="button"
+              className="composer__attach composer__screen"
+              data-on={screenOn || undefined}
+              onClick={onScreenToggle}
+              aria-pressed={screenOn}
+              title={screenOn ? "画面の共有をやめる" : "画面を共有して聞く（「この画面どういう意味？」と聞いたとき、その瞬間の画面を F.R.I.D.A.Y. に見せます）"}
+            >
+              <Icon name="monitor" size={14} />
+              SCREEN
+            </button>
+          )}
           {onCameraToggle && (
             <button
               type="button"

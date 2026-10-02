@@ -31,6 +31,7 @@ import { duckMusic, runAmazonMusic } from "@/lib/amazon-music";
 import { useNudges } from "@/hooks/useNudges";
 import { FOCUS_END, focusLeft, stopFocus, useFocus, type FocusEnd } from "@/lib/focus";
 import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
+import { asksAboutScreen, captureScreen, getScreenState, toggleScreen, useScreenState } from "@/lib/screen";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -188,10 +189,23 @@ export function Dashboard() {
             attached: brainOn.current ? saveOriginals(atts) : undefined,
           }
         : undefined;
+      // 画面を共有していて、画面について聞かれたら、その瞬間の画面を 1 枚添える（保存はしない）
+      const aboutScreen = asksAboutScreen(content);
+      if (aboutScreen && !getScreenState().on && /画面/.test(content)) {
+        setReminder({ id: `screen-${Date.now()}`, at: Date.now(), label: "", text: "画面を見るには、入力欄の SCREEN を押して、見せたい画面を共有してください。", title: "SCREEN" });
+      }
       void (async () => {
-        if (!files && !getCameraState().on && asksToLook(content)) await openCamera();
-        const image = getCameraState().on ? await captureFrame() : null;
-        chatSendRaw(content, { ...opts, ...(image ? { image } : {}), ...(files ? { files } : {}) });
+        const screen = aboutScreen && getScreenState().on ? await captureScreen() : null;
+        const withScreen = screen
+          ? {
+              files: [...(files?.files ?? []), screen.file],
+              shown: [...(files?.shown ?? []), { name: "画面", kind: "image", thumb: screen.thumb }],
+              attached: files?.attached,
+            }
+          : files;
+        if (!withScreen && !getCameraState().on && asksToLook(content)) await openCamera();
+        const image = !screen && getCameraState().on ? await captureFrame() : null;
+        chatSendRaw(content, { ...opts, ...(image ? { image } : {}), ...(withScreen ? { files: withScreen } : {}) });
       })();
       return true;
     },
@@ -235,6 +249,7 @@ export function Dashboard() {
     };
   }, []);
   const camera = useCameraState();
+  const screen = useScreenState();
 
   // 入力中に Gemini への接続を温める（サーバー側でも間引くが、ここでも 2 秒に 1 回まで）
   const lastWarm = useRef(0);
@@ -681,6 +696,8 @@ export function Dashboard() {
           voiceState={voice.state}
           voiceInterim={voice.interim}
           onVoiceToggle={voice.toggle}
+          screenOn={screen.on}
+          onScreenToggle={toggleScreen}
           onTalk={voice.talkNow}
           onTyping={warm}
           cameraOn={camera.on}
