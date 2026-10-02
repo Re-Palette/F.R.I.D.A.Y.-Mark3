@@ -20,6 +20,8 @@ export interface HoloState {
   brief?: { notes: string; sources: { title: string; uri: string }[] } | null;
   /** 画面いっぱいに大きく表示しているか */
   expanded: boolean;
+  /** ホログラムを見せながらの説明（その返答の文を、拡大表示の画面に字幕のように出す） */
+  explain?: { forId: string; text: string };
 }
 
 let state: HoloState = { status: "idle", expanded: false };
@@ -45,10 +47,20 @@ export function useHoloState(): HoloState {
 }
 
 /** 〇〇のホログラムを作って、大きく表示する */
-export async function requestHologram(subject: string, opts: { skipFind?: boolean } = {}): Promise<void> {
+export async function requestHologram(subject: string, opts: { skipFind?: boolean; explainFor?: string } = {}): Promise<void> {
   const id = ++seq;
   resetView();
-  set({ status: "loading", subject, error: undefined, expanded: true, step: "find", brief: undefined, model: undefined, asset: undefined });
+  set({
+    status: "loading",
+    subject,
+    error: undefined,
+    expanded: true,
+    step: "find",
+    brief: undefined,
+    model: undefined,
+    asset: undefined,
+    ...(opts.skipFind ? {} : { explain: opts.explainFor ? { forId: opts.explainFor, text: "" } : undefined }),
+  });
   const post = (body: object) =>
     fetch("/api/hologram", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   try {
@@ -110,7 +122,13 @@ export function assetFailed(): void {
 export function clearHologram(): void {
   seq++;
   resetView();
-  set({ status: "idle", subject: undefined, model: undefined, asset: undefined, error: undefined, expanded: false, step: undefined, brief: undefined });
+  set({ status: "idle", subject: undefined, model: undefined, asset: undefined, error: undefined, expanded: false, step: undefined, brief: undefined, explain: undefined });
+}
+
+/** ホログラムを頼んだ返答の文を、説明の字幕として渡す（届くたびに呼ぶ） */
+export function setHoloExplain(forId: string, text: string): void {
+  if (state.explain?.forId !== forId || state.explain.text === text) return;
+  set({ explain: { forId, text } });
 }
 
 export function setHoloExpanded(expanded: boolean): void {

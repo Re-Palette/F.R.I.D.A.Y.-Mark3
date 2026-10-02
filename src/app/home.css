@@ -3792,3 +3792,45 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     max-width: 110px;
   }
 }
+
+/* ---------- ホログラムを見せながらの説明（字幕） ---------- */
+.holo-stage__explain {
+  position: absolute;
+  right: calc(100% + 28px);
+  top: 36px;
+  width: min(320px, calc((100vw - 100%) / 2 - 44px));
+  max-height: calc(100% - 60px);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-right: 2px solid rgba(255, 170, 80, 0.5);
+  background: rgba(16, 9, 3, 0.7);
+}
+.holo-stage__explain-body {
+  margin-top: 6px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  font-family: var(--font-jp);
+  font-size: 14px;
+  line-height: 1.8;
+  color: rgba(255, 228, 200, 0.72);
+}
+.holo-stage__explain-body p {
+  margin: 0 0 10px;
+  transition: color 0.4s;
+}
+.holo-stage__explain-body p[data-latest] {
+  color: #fff1dd;
+}
+@media (max-width: 1200px) {
+  .holo-stage__explain {
+    right: 12px;
+    left: 12px;
+    top: auto;
+    bottom: 56px;
+    width: auto;
+    max-height: 34%;
+    border-right: 0;
+    border-top: 2px solid rgba(255, 170, 80, 0.5);
+  }
+}

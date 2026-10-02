@@ -23,7 +23,7 @@ import { LecturePage } from "./LecturePage";
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
 import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
-import { useHoloState } from "@/lib/hologram-model";
+import { setHoloExplain, useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
 import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
@@ -281,6 +281,11 @@ export function Dashboard() {
       else speak({ ...base, text: lastMsg.error?.message ?? "エラーが発生しました。", done: true });
     }
   }, [lastMsg, speak, replyFinished]);
+
+  // ホログラムを見せながらの説明：返答の文を拡大表示の字幕に流す
+  useEffect(() => {
+    if (lastMsg?.role === "assistant" && lastMsg.content) setHoloExplain(lastMsg.id, lastMsg.content);
+  }, [lastMsg]);
 
   // 音声で聞かれて調べものを始めたら、黙って待たせず先に一言（人と話すときのように）
   const { interject } = voice;

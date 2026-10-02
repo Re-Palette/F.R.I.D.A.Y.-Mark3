@@ -588,6 +588,7 @@ function HoloStage({ open }: { open: boolean }) {
             )}
           </aside>
         )}
+        {hs.explain && hs.explain.text.length > 40 && <Explain text={hs.explain.text} />}
         <div className="holo-stage__actions">
           <button type="button" className="ghost-btn" aria-pressed={handOn} onPointerEnter={() => void warmHands()} onClick={toggleHand}>
             HAND {handOn ? "ON" : "OFF"}
@@ -601,5 +602,31 @@ function HoloStage({ open }: { open: boolean }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** ホログラムを見せながらの説明（返答の文を字幕のように出す。新しい文が出たら下まで送る） */
+function Explain({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const paras = text
+    .replace(/[*_`#>]/g, "")
+    .split(/\n{2,}|\n(?=[-・]\s)/)
+    .map((p) => p.replace(/^[-・]\s*/, "").trim())
+    .filter(Boolean);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [text]);
+  return (
+    <aside className="holo-stage__explain" aria-label="説明" aria-live="polite">
+      <span className="holo-stage__label">EXPLAIN</span>
+      <div ref={ref} className="holo-stage__explain-body">
+        {paras.map((p, i) => (
+          <p key={i} data-latest={i === paras.length - 1 || undefined}>
+            {p}
+          </p>
+        ))}
+      </div>
+    </aside>
   );
 }

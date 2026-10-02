@@ -430,7 +430,8 @@ export function useChat() {
                 setStage(event.stage);
                 break;
               case "hologram":
-                if (event.subject) void requestHologram(event.subject);
+                // 返答の文は、ホログラムの拡大表示に説明の字幕として出す
+                if (event.subject) void requestHologram(event.subject, { explainFor: assistantId });
                 else clearHologram();
                 break;
               case "sources": {
