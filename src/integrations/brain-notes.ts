@@ -219,3 +219,28 @@ export async function recentLectures(tz: string, days: number, max = 3): Promise
   const files = (await listLectureNotes()).filter((f) => f.path.split("/")[2].slice(0, 10) >= from).slice(0, max);
   return Promise.all(files.map((f) => lectureDigest(f)));
 }
+
+/* ---------- 集中モードの記録 ---------- */
+
+export const FOCUS_LOG_PATH = "FRIDAY/集中ログ.md";
+
+/** 集中した記録を 1 行書き足す（日付ごとに見出し） */
+export async function appendFocusLog(input: { task: string; minutes: number; startedAt: number; completed: boolean }): Promise<void> {
+  if (!isBrainConfigured()) throw new Error("脳（Obsidian）が接続されていないため保存できません。");
+  const start = new Date(input.startedAt);
+  const end = new Date(input.startedAt + input.minutes * 60_000);
+  const date = day(start);
+  const hm = (d: Date) => hhmm(d).replace(/^(\d\d)/, "$1:");
+  const line = `- ${hm(start)}–${hm(end)}（${input.minutes} 分）${input.task || "集中"}${input.completed ? " ✓" : " （途中で終了）"}`;
+  await updateNote(
+    FOCUS_LOG_PATH,
+    (current) => {
+      const base = current ?? "# 集中ログ\n\nF.R.I.D.A.Y. の集中モードの記録です。\n";
+      const head = `## ${date}`;
+      if (!base.includes(`\n${head}\n`)) return `${base.trimEnd()}\n\n${head}\n${line}\n`;
+      // その日の見出しの下（次の見出しの前）に足す
+      return base.replace(new RegExp(`(\\n${head}\\n(?:- .*\\n)*)`), `$1${line}\n`);
+    },
+    `F.R.I.D.A.Y.: 集中ログ（${date}）`,
+  );
+}

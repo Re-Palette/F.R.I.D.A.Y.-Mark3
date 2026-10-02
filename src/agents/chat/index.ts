@@ -190,6 +190,7 @@ export const chatAgent: Agent = {
         camera,
         files: reading,
         morning: morning ? { lectures } : null,
+        focus: /集中|ポモドーロ|タイマー|フォーカス|勉強(を)?(始め|はじめ|する)|作業(を)?(始め|はじめ)/.test(latest),
         fileNote: Boolean(ctx.messages[ctx.messages.length - 1]?.attached?.length) && ctx.memory.connected,
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         replyLength: settings.replyLength,

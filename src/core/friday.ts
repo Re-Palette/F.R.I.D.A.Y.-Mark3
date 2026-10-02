@@ -6,6 +6,7 @@
 import type { ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { isAttachmentPath } from "@/lib/brain-paths";
 import { saveFileNote } from "@/integrations/brain-notes";
+import { parseFocus } from "@/lib/focus-command";
 import { routeRequest } from "@/core/router";
 import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/lib/config";
 import { FridayError, toFridayError } from "@/lib/errors";
@@ -173,7 +174,7 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", "focus", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
       document: 30_000,
       "gmail-draft": 8000,
       "file-note": 6000,
@@ -260,6 +261,11 @@ export async function* handleConversation(
         reply += text;
         yield { type: "delta", text };
       }
+    }
+    // 集中モード（タイマー・音楽は画面が動かす）
+    for (const raw of tags.captures.focus.slice(0, 1)) {
+      const cmd = parseFocus(raw);
+      if (cmd) yield { type: "focus", ...cmd };
     }
     // 頼まれたメールの下書きを Gmail に保存（送信はしない。失敗したら本文でも知らせる）
     for await (const { event, note } of runGmailActions(tags.captures, tags.attrs, options.draft, signal)) {

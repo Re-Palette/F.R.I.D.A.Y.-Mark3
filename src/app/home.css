@@ -3746,3 +3746,49 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   font-size: 15px;
   color: var(--orange-hi);
 }
+
+/* ---------- 集中モードの残り時間 ---------- */
+.focus-chip {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px 6px 14px;
+  border: 1px solid var(--orange);
+  background: rgba(16, 9, 3, 0.92);
+  box-shadow: 0 0 16px rgba(255, 120, 20, 0.25);
+}
+.focus-chip b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--orange);
+}
+.focus-chip__time {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  letter-spacing: 0.08em;
+  color: #ffe2bf;
+}
+.focus-chip__task {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-jp);
+  font-size: 13px;
+  color: var(--text);
+}
+@media (max-width: 640px) {
+  .focus-chip {
+    top: 104px;
+    gap: 8px;
+  }
+  .focus-chip__task {
+    max-width: 110px;
+  }
+}

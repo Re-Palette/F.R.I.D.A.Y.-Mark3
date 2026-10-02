@@ -27,8 +27,9 @@ import { useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
 import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
-import { duckMusic } from "@/lib/amazon-music";
+import { duckMusic, runAmazonMusic } from "@/lib/amazon-music";
 import { useNudges } from "@/hooks/useNudges";
+import { FOCUS_END, focusLeft, stopFocus, useFocus, type FocusEnd } from "@/lib/focus";
 import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 
 const CALENDAR_NOTICE: Record<string, string> = {
@@ -355,6 +356,33 @@ export function Dashboard() {
     [sayAloud],
   );
   useReminders(announce, agent.brain.configured);
+
+  // 集中モードが終わったら：音楽を止め、声で知らせ、脳に記録する
+  const focus = useFocus();
+  useEffect(() => {
+    const onEnd = (e: Event) => {
+      const { state, completed, minutes } = (e as CustomEvent<FocusEnd>).detail;
+      if (state.music) void runAmazonMusic({ action: "pause" }).catch(() => {});
+      const text = completed
+        ? `${state.minutes}分たちました。お疲れさまです、ボス。${state.minutes >= 40 ? "10分" : "5分"}くらい休憩しましょう。`
+        : `集中モードを止めました。${minutes}分でした。`;
+      setReminder({ id: `focus-${state.startedAt}`, at: Date.now(), label: "", text, title: "FOCUS" });
+      sayAloud(text, { title: "F.R.I.D.A.Y. 集中モード", body: text, tag: `focus-${state.startedAt}`, always: completed });
+      void fetch("/api/focus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task: state.task, minutes, startedAt: state.startedAt, completed }),
+      }).catch(() => {});
+    };
+    window.addEventListener(FOCUS_END, onEnd);
+    return () => window.removeEventListener(FOCUS_END, onEnd);
+  }, [sayAloud]);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!focus) return;
+    const id = window.setInterval(() => tick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [focus]);
   // 先回りの声かけ（予定の 20 分前・今日 / 明日が期限の ToDo・雨の日の傘）。会話中は割り込まない
   const voiceStateNow = useRef(voice.state);
   voiceStateNow.current = voice.state;
@@ -517,6 +545,16 @@ export function Dashboard() {
           </div>
         )}
 
+        {focus && (
+          <div className="focus-chip" role="timer" aria-label="集中モード">
+            <b>FOCUS</b>
+            <span className="focus-chip__time">{focusLeft(focus)}</span>
+            {focus.task && <span className="focus-chip__task">{focus.task}</span>}
+            <button type="button" className="ghost-btn" onClick={() => stopFocus()}>
+              止める
+            </button>
+          </div>
+        )}
         {reminder && (
           <div className="banner banner--reminder" role="alert">
             <b>{reminder.title ?? "REMINDER"}</b>

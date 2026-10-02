@@ -43,6 +43,8 @@ export interface PersonaInput {
   files?: boolean;
   /** 最新の発言で新しくファイルを添えた（要点を脳の「資料」に保存する） */
   fileNote?: boolean;
+  /** 集中モード・タイマーの話（タグの使い方を教える） */
+  focus?: boolean;
   /** 朝のブリーフィング（最近の授業ノートの要点） */
   morning?: { lectures: LectureDigest[] } | null;
   /** 音楽の話のとき：Spotify の接続状態といま流れている曲 */
@@ -105,6 +107,7 @@ export function buildSystemInstruction({
   files,
   fileNote,
   morning,
+  focus,
   music,
   review,
   replyLength,
@@ -172,6 +175,7 @@ export function buildSystemInstruction({
   if (files) out += FILE_RULES;
   if (fileNote) out += FILE_NOTE_RULES;
   if (morning) out += morningSection(morning, Boolean(voice));
+  if (focus) out += FOCUS_RULES;
   if (music) out += musicSection(music);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
@@ -410,6 +414,15 @@ const FILE_RULES = `
 - ファイルに書かれていることと、自分の知識で補ったことは区別する。数字・日付・名前は書かれているとおりに答え、読めない・見つからないときは正直に言う。
 - 長い資料の要約は、見出しと箇条書きで全体像 → 重要なところの順に。表の中身を答えるときは、どの行・列かが分かるように。
 - 写真に人の顔が写っていても、その人が誰かを特定・推測しない。`;
+
+const FOCUS_RULES = `
+
+# 集中モード・タイマー
+- 「集中モード」「〇分集中」「ポモドーロ」「勉強始める」などと頼まれたら、返答の最後に次のタグを付ける（画面には出ない）。画面がタイマーを動かし、作業用の音楽をかけ、終わったら知らせて、Obsidian に記録する。
+  <focus>{"minutes": 分（言われなければ 25）, "task": "何をするか（分かれば。短く）", "music": true}</focus>
+- 「〇分タイマー」「〇分たったら教えて」のように、音楽がいらなそうなときは "music": false にする。
+- 「集中モード止めて」「終わり」と言われたら <focus>{"stop": true}</focus>。
+- タグの外では短く返す（例：「了解です。50分、レポートに集中しましょう。音楽もかけますね」）。`;
 
 const FILE_NOTE_RULES = `
 - 最新の発言で添えられたファイルは、ユーザーの Obsidian（脳）の「資料」フォルダに要点のメモとして保存される。

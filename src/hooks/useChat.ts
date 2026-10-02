@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { amazonMusicState, musicReply, runAmazonMusic } from "@/lib/amazon-music";
 import { asksForMusic, quickMusicCommand } from "@/lib/music";
+import { startFocus, stopFocus } from "@/lib/focus";
 import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
@@ -444,6 +445,15 @@ export function useChat() {
                   void runAmazonMusic(command).then((r) => patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), r] })));
                 } else {
                   patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), { ok, label, error }] }));
+                }
+                break;
+              }
+              case "focus": {
+                // 集中モード：タイマーを動かし、頼まれたら作業用の音楽をかける（Amazon Music の拡張機能があるとき）
+                if (event.stop) stopFocus();
+                else if (event.start) {
+                  const st = startFocus(event.start.minutes, event.start.task ?? "", event.start.music !== false);
+                  if (st.music) void runAmazonMusic({ action: "play", query: "集中 作業用 BGM", kind: "playlist" }).catch(() => {});
                 }
                 break;
               }

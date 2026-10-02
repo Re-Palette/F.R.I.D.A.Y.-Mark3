@@ -80,6 +80,8 @@ export type StreamEvent =
    * command があるときは Amazon Music の操作で、画面（Chrome 拡張機能）が実行する
    */
   | { type: "music"; ok: boolean; label: string; error?: string; command?: MusicCommand }
+  /** 集中モードを始める / 止める（タイマーは画面が動かす） */
+  | { type: "focus"; start?: { minutes: number; task?: string; music?: boolean }; stop?: boolean }
   /** Gmail に返信・メールの下書きを保存した結果（送信はしない） */
   | { type: "mail-draft"; ok: boolean; to: string; subject: string; error?: string }
   /** いま何をしているか（外部の情報を集めている／検索している／考えている） */
