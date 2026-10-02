@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { subject?: unknown; transcript?: unknown; minutes?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { subject?: unknown; transcript?: unknown; minutes?: unknown; date?: unknown } | null;
   const transcript = typeof body?.transcript === "string" ? body.transcript.trim() : "";
   if (transcript.length < 20) {
     return Response.json({ ok: false, error: "文字起こしが短すぎて、まとめられません。" }, { status: 400 });
@@ -22,7 +22,9 @@ export async function POST(req: Request): Promise<Response> {
   try {
     // 長すぎるときは最後の方を残す（授業の終わりの課題・連絡を落とさないように、前半を少し削る）
     const text = transcript.length > MAX_TRANSCRIPT ? `（前半の一部を省略）\n${transcript.slice(-MAX_TRANSCRIPT)}` : transcript;
-    return Response.json({ ok: true, summary: await summarizeLecture({ subject, transcript: text, minutes }) }, { headers });
+    // 授業の日付（締め切りの「来週まで」などを日付に直すため）
+    const date = typeof body?.date === "string" && /^\d{4}-\d{2}-\d{2}/.test(body.date) ? body.date.slice(0, 10) : undefined;
+    return Response.json({ ok: true, summary: await summarizeLecture({ subject, transcript: text, minutes, date }) }, { headers });
   } catch (err) {
     const message = err instanceof Error && err.message.includes("まとめ") ? err.message : toFridayError(err).message;
     return Response.json({ ok: false, error: message }, { status: 502, headers });

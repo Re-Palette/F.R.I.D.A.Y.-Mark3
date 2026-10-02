@@ -18,6 +18,7 @@ import {
   type Lecture,
   type LectureSummary,
 } from "@/lib/lecture";
+import { TASKS_CHANGED } from "@/hooks/useChat";
 import { Icon } from "./icons";
 import { Card, Empty, Page, type Msg } from "./Pages";
 
@@ -180,12 +181,13 @@ export const LecturePage = memo(function LecturePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lecture: l, path: l.brainPath }),
       });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; path?: string; error?: string };
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; path?: string; todos?: number; error?: string };
       if (!res.ok || !json.path) return { ok: false, text: json.error ?? `Obsidian に保存できませんでした（${res.status}）。` };
+      if (json.todos) window.dispatchEvent(new Event(TASKS_CHANGED));
       const next = { ...(currentRef.current?.id === l.id ? currentRef.current : l), brainPath: json.path };
       if (currentRef.current?.id === l.id) setCurrent(next);
       persist(next);
-      return { ok: true, text: `Obsidian に保存しました（${json.path}）。` };
+      return { ok: true, text: `Obsidian に保存しました（${json.path}）${json.todos ? `。課題を ToDo に ${json.todos} 件入れました（締め切りが近づいたら声をかけます）` : ""}。` };
     } catch {
       return { ok: false, text: "Obsidian に保存できませんでした（通信エラー）。" };
     }
@@ -208,7 +210,12 @@ export const LecturePage = memo(function LecturePage({
       const res = await fetch("/api/lecture/summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: l.subject, transcript: transcriptText(l.segments), minutes: l.duration / 60 }),
+        body: JSON.stringify({
+          subject: l.subject,
+          transcript: transcriptText(l.segments),
+          minutes: l.duration / 60,
+          date: new Intl.DateTimeFormat("sv-SE").format(new Date(l.startedAt)),
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; summary?: LectureSummary; error?: string };
       if (!res.ok || !json.summary) throw new Error(json.error ?? `まとめを作れませんでした（${res.status}）。`);

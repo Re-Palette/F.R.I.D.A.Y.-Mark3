@@ -28,6 +28,7 @@ import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, use
 import { CameraView } from "./CameraView";
 import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
 import { duckMusic } from "@/lib/amazon-music";
+import { useNudges } from "@/hooks/useNudges";
 import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 
 const CALENDAR_NOTICE: Record<string, string> = {
@@ -316,14 +317,13 @@ export function Dashboard() {
     if (voice.state === "listening" || voice.interim === "…") warm();
   }, [voice.state, voice.interim, warm]);
 
-  /* ---- リマインダー: 時間になったら音・声・通知で知らせる ---- */
-  const [reminder, setReminder] = useState<DueReminder | null>(null);
+  /* ---- リマインダー・先回りの声かけ: 時間になったら音・声・通知で知らせる ---- */
+  const [reminder, setReminder] = useState<(DueReminder & { title?: string }) | null>(null);
   const cloudTts = agent.tts.provider === "elevenlabs";
-  const announce = useCallback(
-    (r: DueReminder, late: boolean) => {
-      setReminder(r);
+  /** 会話とは別に、F.R.I.D.A.Y. のほうから一言話す（チャイム → 声 → 通知） */
+  const sayAloud = useCallback(
+    (text: string, notify?: { title: string; body: string; tag: string; always?: boolean }) => {
       chime("wake");
-      const text = late ? `${r.label.split(" ")[1]}のお知らせです。${r.text}` : `お知らせです。${r.text}`;
       voiceRef.current?.noteSpoken(text); // 自分で読み上げた言葉を聞き取って返事しないように
       window.setTimeout(() => {
         if (cloudTts) {
@@ -337,8 +337,8 @@ export function Dashboard() {
         }
       }, 450);
       try {
-        if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("F.R.I.D.A.Y. リマインダー", { body: `${r.label} ${r.text}`, tag: r.id });
+        if (notify && (notify.always || document.hidden) && "Notification" in window && Notification.permission === "granted") {
+          new Notification(notify.title, { body: notify.body, tag: notify.tag });
         }
       } catch {
         /* 通知が使えない環境 */
@@ -346,7 +346,28 @@ export function Dashboard() {
     },
     [cloudTts],
   );
+  const announce = useCallback(
+    (r: DueReminder, late: boolean) => {
+      setReminder(r);
+      const text = late ? `${r.label.split(" ")[1]}のお知らせです。${r.text}` : `お知らせです。${r.text}`;
+      sayAloud(text, { title: "F.R.I.D.A.Y. リマインダー", body: `${r.label} ${r.text}`, tag: r.id, always: true });
+    },
+    [sayAloud],
+  );
   useReminders(announce, agent.brain.configured);
+  // 先回りの声かけ（予定の 20 分前・今日 / 明日が期限の ToDo・雨の日の傘）。会話中は割り込まない
+  const voiceStateNow = useRef(voice.state);
+  voiceStateNow.current = voice.state;
+  const phaseNow = useRef(chat.phase);
+  phaseNow.current = chat.phase;
+  useNudges(
+    (text, n) => {
+      setReminder({ id: n.id, at: Date.now(), label: "", text, title: "F.R.I.D.A.Y." });
+      sayAloud(text, { title: "F.R.I.D.A.Y.", body: text, tag: n.id });
+    },
+    () => phaseNow.current !== "idle" || ["listening", "thinking", "speaking"].includes(voiceStateNow.current),
+    agent.status === "online",
+  );
 
   // リマインダーを初めて設定したら、通知を許可してもらう（別のタブを見ていても気づけるように）
   const [askNotify, setAskNotify] = useState(false);
@@ -498,9 +519,10 @@ export function Dashboard() {
 
         {reminder && (
           <div className="banner banner--reminder" role="alert">
-            <b>REMINDER</b>
+            <b>{reminder.title ?? "REMINDER"}</b>
             <span>
-              {reminder.label}　{reminder.text}
+              {reminder.label ? `${reminder.label}　` : ""}
+              {reminder.text}
             </span>
             <button type="button" className="ghost-btn" onClick={() => setReminder(null)}>
               OK

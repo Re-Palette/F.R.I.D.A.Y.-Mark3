@@ -23,6 +23,7 @@ const SYSTEM = `あなたは大学・学校の授業ノートを作るのが得�
  "terms":[{"term":"用語","meaning":"授業での意味（1〜2 文）"}],
  "exam":["テストに出そうなところ・先生が「大事」「試験に出す」などと強調したところ"],
  "notices":["課題・提出物・締め切り・次回の予告・持ち物などの連絡（無ければ空）"],
+ "tasks":[{"text":"やること（課題・提出物・小テストの準備など。短く）","due":"YYYY-MM-DD（締め切りが分かるときだけ。「来週の授業まで」なら授業の日付の 7 日後のように計算する）"}],
  "review":["復習で確かめるとよいこと（問いの形で）"]}
 
 # 量の目安
@@ -60,15 +61,22 @@ export function sanitizeSummary(v: unknown, subject: string): LectureSummary {
     }),
     exam: lines(o.exam),
     notices: lines(o.notices),
+    tasks: list(o.tasks, 10, (x) => {
+      const r = (x ?? {}) as Record<string, unknown>;
+      const text = str(r.text, 120);
+      const due = typeof r.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.due.trim()) ? r.due.trim() : undefined;
+      return text ? { text, ...(due ? { due } : {}) } : null;
+    }),
     review: lines(o.review),
   };
   if (!summary.overview && !summary.keyPoints.length) throw new Error("まとめを作れませんでした。もう一度試してください。");
   return summary;
 }
 
-export async function summarizeLecture(input: { subject: string; transcript: string; minutes: number }): Promise<LectureSummary> {
+export async function summarizeLecture(input: { subject: string; transcript: string; minutes: number; date?: string }): Promise<LectureSummary> {
   const config = getGeminiConfig();
   const ask = `科目：${input.subject || "（未入力）"}
+授業の日付：${input.date ?? "（不明）"}
 授業の長さ：約 ${Math.max(1, Math.round(input.minutes))} 分
 
 # 文字起こし

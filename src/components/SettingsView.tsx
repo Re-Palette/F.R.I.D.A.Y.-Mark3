@@ -8,6 +8,7 @@ import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useBargeIn } from "@/hooks/useBargeIn";
 import { extensionVersion, hasExtension, MUSIC_EXTENSION_VERSION, versionAtLeast } from "@/lib/tabs";
+import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -311,6 +312,8 @@ export const SettingsView = memo(function SettingsView({
   const [speed, setSpeed] = useState(1.15);
   const [notify, setNotify] = useState<string>("default");
   const [bargeIn, setBargeIn] = useBargeIn();
+  const [nudgesOn, setNudgesOn] = useState(true);
+  useEffect(() => setNudgesOn(nudgesEnabled()), []);
 
   const load = useCallback(async () => {
     try {
@@ -437,6 +440,24 @@ export const SettingsView = memo(function SettingsView({
             }}
           />
           <p className="settings__note">F.R.I.D.A.Y. が自分の声を聞き取ってしまうときは「聞かない」にしてください。</p>
+          <span className="settings__label">先回りの声かけ — この端末だけの設定</span>
+          <Choice
+            value={nudgesOn ? "on" : "off"}
+            options={[
+              { value: "on", label: "話しかける" },
+              { value: "off", label: "話しかけない" },
+            ]}
+            onChange={(v) => {
+              setNudgesOn(v === "on");
+              try {
+                localStorage.setItem(NUDGES_KEY, v);
+              } catch {
+                /* noop */
+              }
+              setMessage({ ok: true, text: v === "on" ? "予定の前・締め切り・雨の日に、F.R.I.D.A.Y. から声をかけます。" : "F.R.I.D.A.Y. から話しかけるのをやめます。" });
+            }}
+          />
+          <p className="settings__note">予定の 20 分前・今日 / 明日が締め切りの ToDo・雨の日の朝に、F.R.I.D.A.Y. のほうから一言話します（画面を開いている間だけ）。</p>
         </Section>
 
         <Section title="REPLY" sub="返答">

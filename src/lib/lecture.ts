@@ -28,6 +28,8 @@ export interface LectureSummary {
   exam: string[];
   /** 課題・連絡事項（締め切りなど） */
   notices: string[];
+  /** やること（課題・提出物）。締め切りが分かれば due（YYYY-MM-DD）。ToDo に入れて、締め切りが近づいたら声をかける */
+  tasks?: { text: string; due?: string }[];
   /** 復習で確かめること */
   review: string[];
 }

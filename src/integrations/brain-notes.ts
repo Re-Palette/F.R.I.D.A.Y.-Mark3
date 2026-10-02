@@ -9,6 +9,7 @@ import type { Lecture } from "@/lib/lecture";
 import { safeName } from "@/lib/brain-paths";
 import { getTimezone } from "@/lib/config";
 import { isBrainConfigured, updateNote } from "@/memory/github-brain";
+import { addTodo, getTasksOverview } from "@/integrations/tasks";
 
 const day = (d = new Date()) => new Intl.DateTimeFormat("sv-SE", { timeZone: getTimezone() }).format(d);
 const hhmm = (d: Date) =>
@@ -143,10 +144,27 @@ export function lectureMarkdown(lecture: Lecture): string {
   return lines.join("\n");
 }
 
-/** 授業ノートを保存する（前に保存した場所があれば、そこを書き直す） */
-export async function saveLectureNote(lecture: Lecture, previous?: string): Promise<{ path: string }> {
+/** 授業ノートを保存する（前に保存した場所があれば、そこを書き直す）。課題は ToDo にも入れる（もう入っているものは入れない） */
+export async function saveLectureNote(lecture: Lecture, previous?: string): Promise<{ path: string; todos: number }> {
   if (!isBrainConfigured()) throw new Error("脳（Obsidian）が接続されていないため保存できません。");
   const path = previous ?? lecturePath(lecture);
   await updateNote(path, () => lectureMarkdown(lecture), `F.R.I.D.A.Y.: 授業ノートを保存（${path}）`);
-  return { path };
+  let todos = 0;
+  const tasks = lecture.summary?.tasks ?? [];
+  if (tasks.length) {
+    const norm = (t: string) => t.replace(/\s+/g, "");
+    const existing = new Set([...(await getTasksOverview().catch(() => ({ todos: [] as { text: string }[] }))).todos].map((t) => norm(t.text)));
+    for (const t of tasks) {
+      const text = `【${lecture.subject || "授業"}】${t.text}`;
+      if (existing.has(norm(text))) continue;
+      try {
+        await addTodo({ text, due: t.due });
+        existing.add(norm(text));
+        todos++;
+      } catch {
+        /* 1 件入れられなくても続ける */
+      }
+    }
+  }
+  return { path, todos };
 }
