@@ -280,6 +280,17 @@ export function Dashboard() {
     }
   }, [lastMsg, speak, replyFinished]);
 
+  // 音声で聞かれて調べものを始めたら、黙って待たせず先に一言（人と話すときのように）
+  const { interject } = voice;
+  const fillered = useRef("");
+  useEffect(() => {
+    if (chat.stage !== "search" || !lastMsg || lastMsg.role !== "assistant" || !lastMsg.voice) return;
+    if (lastMsg.status !== "streaming" || lastMsg.content || fillered.current === lastMsg.id) return;
+    fillered.current = lastMsg.id;
+    const lines = ["ちょっと調べますね。", "少し調べてみます。", "確認しますね、少しお待ちを。"];
+    interject({ id: lastMsg.id, createdAt: lastMsg.createdAt, text: lines[Math.floor(Math.random() * lines.length)] });
+  }, [chat.stage, lastMsg, interject]);
+
   // ElevenLabs の設定に問題があるときは、音声会話をオンにした時点で一度だけ知らせる
   const [ttsNoticeClosed, setTtsNoticeClosed] = useState(false);
   const [brainNoticeClosed, setBrainNoticeClosed] = useState(false);

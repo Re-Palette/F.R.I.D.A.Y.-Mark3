@@ -31,9 +31,9 @@ export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speakin
 
 const FOLLOW_UP_MS = 8000;
 /** 聞き取り途中の文字がこの時間変わらなければ「話し終わった」とみなす（ブラウザの確定待ちより速い） */
-const END_OF_SPEECH_MS = 1000;
+const END_OF_SPEECH_MS = 800;
 /** ブラウザが 1 区切りを確定したあと、続きを話し始めるのを待つ時間（息継ぎで途中送信しないため） */
-const AFTER_FINAL_MS = 700;
+const AFTER_FINAL_MS = 450;
 const STORAGE_KEY = "friday.voice.v1";
 
 export interface SpeakInput {
@@ -47,10 +47,19 @@ interface SpeechItem {
   text: string;
   /** ElevenLabs の音声（先読みを始めたら入る。届いた端から再生できる） */
   audio?: HTMLAudioElement;
+  /** 直前に読んだ文（声の抑揚を前の文から自然につなげるため ElevenLabs に渡す） */
+  prev?: string;
 }
 
 /** これより短い文は次の文とまとめて声にする（リクエスト数削減・抑揚も自然に） */
 const MIN_CHUNK = 12;
+/**
+ * まだ声にし始めていない次のかたまりには、届いた文をこの長さまで足していく。
+ * 一文ずつ別々に声にすると、文と文の間に毎回すき間ができ、抑揚も途切れてぶつ切りに聞こえるため。
+ */
+const MAX_CHUNK = 140;
+/** 今の声の残りがこの秒数になったら、次のかたまりの声を作り始める（それまでは文を足し続ける） */
+const PREFETCH_LEAD_S = 1.4;
 
 /** 聞こえた言葉がこれ以上「読み上げ中の文章」と一致していたら自分の声とみなす */
 const ECHO_THRESHOLD = 0.4;
@@ -458,13 +467,14 @@ export function useVoice({
     if (!item || item.audio || !canUseCloud()) return;
     const el = new Audio();
     el.preload = "auto";
-    el.src = `/api/tts?text=${encodeURIComponent(item.text)}`;
+    el.src = `/api/tts?text=${encodeURIComponent(item.text)}${item.prev ? `&prev=${encodeURIComponent(item.prev.slice(-200))}` : ""}`;
+    el.dataset.chars = String(item.text.length);
     item.audio = el;
   }, []);
 
   /** ElevenLabs の音声を再生。再生できなければ false（→ ブラウザの声で代わりに読む） */
   const playCloud = useCallback(
-    (el: HTMLAudioElement, gen: number): Promise<boolean> =>
+    (el: HTMLAudioElement, gen: number, nearEnd?: () => void): Promise<boolean> =>
       new Promise<boolean>((resolve) => {
         if (gen !== speech.current.gen) return resolve(true);
         let done = false;
@@ -474,7 +484,7 @@ export function useVoice({
           done = true;
           clearTimeout(timer);
           speech.current.stopAudio = null;
-          el.onended = el.onerror = el.onplaying = null;
+          el.onended = el.onerror = el.onplaying = el.ontimeupdate = null;
           if (!ok && !started) {
             // 遅れて鳴り出して声が二重にならないよう止めておく
             el.pause();
@@ -490,6 +500,17 @@ export function useVoice({
           started = true;
           cloudFailures.current = 0;
           clearTimeout(timer);
+        };
+        // 残りが少なくなったら次のかたまりの声を作り始める（届きながら再生する音声は長さが分からないことがあるので、文字数から見積もる）
+        const estimate = Math.max(1, (el.dataset.chars ? Number(el.dataset.chars) : 20) / (7.5 * speedRef.current));
+        let lead = false;
+        el.ontimeupdate = () => {
+          if (lead) return;
+          const total = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : estimate;
+          if (total - el.currentTime <= PREFETCH_LEAD_S) {
+            lead = true;
+            nearEnd?.();
+          }
         };
         el.onended = () => finish(true);
         el.onerror = () => finish(false);
@@ -539,7 +560,7 @@ export function useVoice({
     while (sp.queue.length && gen === sp.gen) {
       const item = sp.queue.shift()!;
       ensureFetch(item);
-      ensureFetch(sp.queue[0]); // 次の文を先読み
+      // 次のかたまりは、今の声の残りが少なくなってから作り始める（それまでに届いた文を足して、まとめて自然に話す）
       sp.audible = [sp.audible.slice(-60), item.text, sp.queue[0]?.text ?? ""].join(" ");
       sp.log.push({ text: item.text, at: Date.now() });
       if (stateRef.current !== "off") {
@@ -549,7 +570,7 @@ export function useVoice({
         else stopRec();
       }
       let played = false;
-      if (item.audio) played = await playCloud(item.audio, gen);
+      if (item.audio) played = await playCloud(item.audio, gen, () => ensureFetch(sp.queue[0]));
       if (gen !== sp.gen) return;
       if (!played) await playBrowser(item.text);
       sp.lastSpokeAt = Date.now();
@@ -565,7 +586,16 @@ export function useVoice({
     const sp = speech.current;
     const text = toSpeakable(raw);
     if (!text) return;
-    sp.queue.push({ text });
+    const last = sp.queue[sp.queue.length - 1];
+    // まだ声を作り始めていないかたまりがあれば、そこに足す（つながった文として話す）
+    if (last && !last.audio && last.text.length + text.length <= MAX_CHUNK) {
+      // 区切りの記号が無い（箇条書きの行など）ときは、句点を補って間を空ける
+      last.text = /[。！？!?、,.]$/.test(last.text) ? `${last.text}${text}` : `${last.text}。${text}`;
+      return;
+    }
+    // 同じ返答の中の直前の文（返答の最初の文には付けない）
+    const prev = last?.text ?? (sp.chunks > 0 ? sp.log[sp.log.length - 1]?.text : undefined);
+    sp.queue.push({ text, prev });
     sp.chunks++;
   }, []);
 
@@ -583,16 +613,7 @@ export function useVoice({
         sp.finished = false;
       }
       if (sp.finished) return;
-      const first = sp.chunks === 0 && sp.spokenUpTo === 0 && !sp.carry;
-      // 最初の一言はとにかく早く: 文が終わっていなくても、読点までで十分な長さがあれば話し始める
-      if (first) {
-        const comma = text.search(/[、,]/);
-        const end = text.search(/[。！？!?\n]/);
-        if (comma >= 12 && (end < 0 || comma < end)) {
-          enqueue(text.slice(0, comma + 1));
-          sp.spokenUpTo = comma + 1;
-        }
-      }
+      // 最初の一言も、文の終わりまで待ってから話す（読点で切ると、文の途中で不自然に詰まって聞こえるため）
       const { sentences, next } = takeSentences(text, sp.spokenUpTo);
       sp.spokenUpTo = next;
       for (const sentence of sentences) {
@@ -613,9 +634,32 @@ export function useVoice({
         sp.armedAt = 0;
       }
       if (!sp.speaking) void speakNext();
-      else ensureFetch(sp.queue[0]);
     },
     [enqueue, ensureFetch, speakNext],
+  );
+
+  /**
+   * 返答の文がまだ届かないうちに、先に一言だけ話す（調べものなどで待たせるとき、黙り込まないように）。
+   * その返答をまだ何も話していないときだけ。
+   */
+  const interject = useCallback(
+    ({ id, createdAt, text }: { id: string; createdAt: number; text: string }) => {
+      const sp = speech.current;
+      if (!sp.armedAt || createdAt < sp.armedAt - 100) return;
+      if (sp.id !== id) {
+        sp.id = id;
+        sp.spokenUpTo = 0;
+        sp.queue = [];
+        sp.carry = "";
+        sp.chunks = 0;
+        sp.finished = false;
+      }
+      if (sp.chunks > 0 || sp.finished || sp.speaking) return;
+      sp.queue.push({ text });
+      sp.chunks++;
+      void speakNext();
+    },
+    [speakNext],
   );
 
   const cancelSpeech = useCallback(() => {
@@ -744,6 +788,7 @@ export function useVoice({
     toggle,
     talkNow,
     speak,
+    interject,
     cancelSpeech,
     replyFinished,
     noteSpoken,

@@ -66,6 +66,8 @@ async function mapError(res: Response): Promise<TtsError> {
 let voiceSettings: { key: string; value: Record<string, unknown> } | undefined;
 /** 速さ指定を受け付けなかった（モデル / 声が非対応） */
 let speedRejected = false;
+/** 前の文（previous_text）を受け付けなかった（モデルが非対応） */
+let prevRejected = false;
 
 async function loadVoiceSettings(config: TtsConfig): Promise<Record<string, unknown>> {
   const key = `${config.apiKey}::${config.voiceId}`;
@@ -86,7 +88,7 @@ async function loadVoiceSettings(config: TtsConfig): Promise<Record<string, unkn
 }
 
 /** 文章を音声（MP3）のストリームにする */
-export async function synthesize(text: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+export async function synthesize(text: string, signal?: AbortSignal, previousText?: string): Promise<ReadableStream<Uint8Array>> {
   // 画面の SETTINGS で変えた速さがあればそちらを使う
   const base = getTtsConfig();
   const config = { ...base, speed: peekAppSettings().voiceSpeed ?? base.speed };
@@ -94,8 +96,10 @@ export async function synthesize(text: string, signal?: AbortSignal): Promise<Re
     throw new TtsError("TTS_NOT_CONFIGURED", "ElevenLabs が設定されていません。", 503, true);
   }
   const url = `${config.baseUrl}/v1/text-to-speech/${encodeURIComponent(config.voiceId!)}/stream?output_format=mp3_44100_128`;
-  const send = async (withSpeed: boolean) => {
+  const send = async (withSpeed: boolean, withPrev = !prevRejected) => {
     const body: Record<string, unknown> = { text, model_id: config.model };
+    // 前の文を渡すと、文ごとに分けて作った声でも抑揚がつながる（ElevenLabs の previous_text）
+    if (withPrev && previousText) body.previous_text = previousText;
     if (withSpeed && config.speed !== 1) {
       body.voice_settings = { ...(await loadVoiceSettings(config)), speed: config.speed };
     }
@@ -114,6 +118,12 @@ export async function synthesize(text: string, signal?: AbortSignal): Promise<Re
   };
 
   let res = await send(!speedRejected);
+  // 前の文の指定が原因で拒否されたら、指定なしで送り直し、以後は指定しない
+  if ((res.status === 400 || res.status === 422) && !prevRejected && previousText) {
+    await res.body?.cancel().catch(() => {});
+    res = await send(!speedRejected, false);
+    if (res.ok) prevRejected = true;
+  }
   // 速さ指定が原因で拒否されたら、指定なしで送り直し、以後は指定しない
   if ((res.status === 400 || res.status === 422) && !speedRejected && config.speed !== 1) {
     await res.body?.cancel().catch(() => {});

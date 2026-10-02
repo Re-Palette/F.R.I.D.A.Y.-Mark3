@@ -7,12 +7,14 @@ import { MAX_TTS_CHARS, synthesize, TtsError } from "@/voice/elevenlabs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function respond(req: Request, raw: unknown): Promise<Response> {
+async function respond(req: Request, raw: unknown, prevRaw?: unknown): Promise<Response> {
   const text = typeof raw === "string" ? raw.trim().slice(0, MAX_TTS_CHARS) : "";
   if (!text) return Response.json({ code: "BAD_REQUEST", message: "読み上げる文章がありません。", fatal: false }, { status: 400 });
 
   try {
-    const audio = await synthesize(text, req.signal);
+    // 直前に読んだ文（声の抑揚を前の文から自然につなげる）
+    const prev = typeof prevRaw === "string" ? prevRaw.trim().slice(-300) : undefined;
+    const audio = await synthesize(text, req.signal, prev || undefined);
     return new Response(audio, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });
   } catch (err) {
     const e = err instanceof TtsError ? err : new TtsError("TTS_UPSTREAM", "音声を作れませんでした。", 500, false);
@@ -22,15 +24,16 @@ async function respond(req: Request, raw: unknown): Promise<Response> {
 
 /** GET /api/tts?text=... — <audio> 要素で届いた端から再生（ストリーミング再生）するための入口 */
 export async function GET(req: Request): Promise<Response> {
-  return respond(req, new URL(req.url).searchParams.get("text"));
+  const q = new URL(req.url).searchParams;
+  return respond(req, q.get("text"), q.get("prev"));
 }
 
 export async function POST(req: Request): Promise<Response> {
-  let text: unknown;
+  let body: { text?: unknown; prev?: unknown } = {};
   try {
-    text = ((await req.json()) as { text?: unknown }).text;
+    body = (await req.json()) as { text?: unknown; prev?: unknown };
   } catch {
     /* noop */
   }
-  return respond(req, text);
+  return respond(req, body.text, body.prev);
 }
