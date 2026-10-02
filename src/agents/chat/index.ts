@@ -8,7 +8,8 @@ import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { readNewsSettings } from "@/integrations/news";
 import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
 import { asksForMusic } from "@/lib/music";
-import { recentLectures, type LectureDigest } from "@/integrations/brain-notes";
+import { quizMaterial, recentLectures, recentWeakPoints, type LectureDigest } from "@/integrations/brain-notes";
+import { inQuiz } from "./quiz";
 import { asksForMorning } from "./morning";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
@@ -92,6 +93,16 @@ export const chatAgent: Agent = {
     const morning = asksForMorning(latest);
     const lectureTask: Promise<LectureDigest[]> =
       morning && ctx.memory.connected ? within(recentLectures(ctx.timezone, 2, 3), budget, [] as LectureDigest[], "lectures") : Promise.resolve([]);
+    // クイズ（頼まれたとき・答えている途中）：授業ノートと、前回までの苦手なところを集める
+    const quizAsk = inQuiz(ctx.messages);
+    const quizTask: Promise<{ subject: string | null; notes: LectureDigest[]; weak: string[] } | null> = quizAsk
+      ? within(
+          Promise.all([quizMaterial(quizAsk), recentWeakPoints().catch(() => [])]).then(([m, weak]) => ({ ...m, weak })),
+          budget + 800,
+          { subject: null, notes: [], weak: [] },
+          "quiz",
+        )
+      : Promise.resolve(null);
     // 音楽の話のときだけ、いま流れている曲を Spotify に聞く（接続済みのとき）
     const musicTalk = asksForMusic(latest);
     // Spotify に接続していれば Spotify、していなければ Amazon Music（画面の拡張機能が操作する）
@@ -105,7 +116,7 @@ export const chatAgent: Agent = {
         : Promise.resolve({ kind: "amazon" as const, ext: Boolean(ctx.amazon?.ext), now: ctx.amazon?.now ?? null });
     const canDraftTask: Promise<boolean | undefined> =
       wantsMail && ctx.mailCanDraft ? ctx.mailCanDraft().catch(() => false) : Promise.resolve(undefined);
-    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures] = await Promise.all([
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -118,6 +129,7 @@ export const chatAgent: Agent = {
       within<boolean | undefined>(canDraftTask, budget + 600, undefined, "mail-draft"),
       within<MusicContext>(musicTask, budget + 600, musicTalk && ctx.spotify ? { kind: "spotify", error: "Spotify の応答が間に合いませんでした。" } : null, "music"),
       lectureTask,
+      quizTask,
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -156,7 +168,7 @@ export const chatAgent: Agent = {
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
     // ニュースのまとめは長くなるので上限を広げる
     // 短い普通の発言（検索・まとめ以外）も考える量を最小にする（最初の一言が速くなる）
-    const quick = !search && !briefing && !morning && !reviewKind && !sns && !drafting && !reading && latest.length < QUICK_REPLY_CHARS;
+    const quick = !search && !briefing && !morning && !quiz && !reviewKind && !sns && !drafting && !reading && latest.length < QUICK_REPLY_CHARS;
     const runConfig = ctx.voice
       ? {
           ...config,
@@ -190,6 +202,7 @@ export const chatAgent: Agent = {
         camera,
         files: reading,
         morning: morning ? { lectures } : null,
+        quiz,
         focus: /集中|ポモドーロ|タイマー|フォーカス|勉強(を)?(始め|はじめ|する)|作業(を)?(始め|はじめ)/.test(latest),
         fileNote: Boolean(ctx.messages[ctx.messages.length - 1]?.attached?.length) && ctx.memory.connected,
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },

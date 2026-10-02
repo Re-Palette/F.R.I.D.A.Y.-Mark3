@@ -5,7 +5,7 @@
  */
 import type { ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { isAttachmentPath } from "@/lib/brain-paths";
-import { saveFileNote } from "@/integrations/brain-notes";
+import { appendQuizResult, QUIZ_LOG_PATH, saveFileNote } from "@/integrations/brain-notes";
 import { parseFocus } from "@/lib/focus-command";
 import { routeRequest } from "@/core/router";
 import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/lib/config";
@@ -174,7 +174,7 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", "focus", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", "focus", "quiz-result", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
       document: 30_000,
       "gmail-draft": 8000,
       "file-note": 6000,
@@ -260,6 +260,24 @@ export async function* handleConversation(
         const text = `${reply.endsWith("\n") ? "" : "\n\n"}${note}`;
         reply += text;
         yield { type: "delta", text };
+      }
+    }
+    // クイズの結果を脳の「学習/クイズ記録.md」に残す
+    for (const raw of tags.captures["quiz-result"].slice(0, 1)) {
+      try {
+        const v = JSON.parse(raw.replace(/^```(?:json)?|```$/g, "").trim()) as { subject?: unknown; score?: unknown; total?: unknown; weak?: unknown };
+        const total = Math.max(0, Math.min(50, Number(v.total) || 0));
+        if (!total || !memory.connected) continue;
+        const result = {
+          subject: typeof v.subject === "string" ? v.subject.slice(0, 40) : "",
+          score: Math.max(0, Math.min(total, Number(v.score) || 0)),
+          total,
+          weak: Array.isArray(v.weak) ? v.weak.filter((w): w is string => typeof w === "string").map((w) => w.slice(0, 40)).slice(0, 5) : [],
+        };
+        await appendQuizResult(result);
+        yield { type: "document", ok: true, title: `クイズ記録（${result.score} / ${result.total}）`, path: QUIZ_LOG_PATH };
+      } catch {
+        /* 読めない・保存できなければ記録しない */
       }
     }
     // 集中モード（タイマー・音楽は画面が動かす）

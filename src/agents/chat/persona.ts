@@ -4,6 +4,7 @@
  */
 import type { LectureDigest } from "@/integrations/brain-notes";
 import { morningSection } from "./morning";
+import { quizSection } from "./quiz";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
 import type { NowPlaying } from "@/lib/music";
@@ -43,6 +44,8 @@ export interface PersonaInput {
   files?: boolean;
   /** 最新の発言で新しくファイルを添えた（要点を脳の「資料」に保存する） */
   fileNote?: boolean;
+  /** クイズ（授業ノート・苦手なところ） */
+  quiz?: { subject: string | null; notes: LectureDigest[]; weak: string[] } | null;
   /** 集中モード・タイマーの話（タグの使い方を教える） */
   focus?: boolean;
   /** 朝のブリーフィング（最近の授業ノートの要点） */
@@ -108,6 +111,7 @@ export function buildSystemInstruction({
   fileNote,
   morning,
   focus,
+  quiz,
   music,
   review,
   replyLength,
@@ -176,6 +180,7 @@ export function buildSystemInstruction({
   if (fileNote) out += FILE_NOTE_RULES;
   if (morning) out += morningSection(morning, Boolean(voice));
   if (focus) out += FOCUS_RULES;
+  if (quiz) out += quizSection(quiz, Boolean(voice));
   if (music) out += musicSection(music);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;

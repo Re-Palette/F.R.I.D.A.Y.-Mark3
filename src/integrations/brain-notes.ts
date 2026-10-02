@@ -8,7 +8,7 @@
 import type { Lecture } from "@/lib/lecture";
 import { safeName } from "@/lib/brain-paths";
 import { getTimezone } from "@/lib/config";
-import { isBrainConfigured, listNotes, readNote, updateNote, type BrainFile } from "@/memory/github-brain";
+import { isBrainConfigured, listNotes, readFresh, readNote, updateNote, type BrainFile } from "@/memory/github-brain";
 import { addTodo, getTasksOverview } from "@/integrations/tasks";
 
 const day = (d = new Date()) => new Intl.DateTimeFormat("sv-SE", { timeZone: getTimezone() }).format(d);
@@ -186,6 +186,7 @@ export interface LectureDigest {
   key: string;
   review: string;
   tasks: string;
+  terms: string;
 }
 
 /** 授業ノートの一覧（新しい順）。subject を渡すと、その科目（フォルダ名に含まれるもの）だけ */
@@ -209,6 +210,7 @@ export async function lectureDigest(file: BrainFile): Promise<LectureDigest> {
     key: section(text, "重要なところ").slice(0, 1200),
     review: section(text, "復習チェック").slice(0, 600),
     tasks: section(text, "課題・連絡").slice(0, 600),
+    terms: section(text, "用語").slice(0, 1200),
   };
 }
 
@@ -243,4 +245,40 @@ export async function appendFocusLog(input: { task: string; minutes: number; sta
     },
     `F.R.I.D.A.Y.: 集中ログ（${date}）`,
   );
+}
+
+/* ---------- クイズ ---------- */
+
+export const QUIZ_LOG_PATH = "学習/クイズ記録.md";
+
+/** クイズの材料：頼まれた科目（フォルダ名が発言に含まれるもの）の最近の授業ノート。科目が分からなければ最近の授業ノート */
+export async function quizMaterial(text: string): Promise<{ subject: string | null; notes: LectureDigest[] }> {
+  if (!isBrainConfigured()) return { subject: null, notes: [] };
+  const all = await listLectureNotes();
+  const subjects = [...new Set(all.map((f) => f.path.split("/")[1]))];
+  const plain = text.replace(/\s+/g, "");
+  const subject = subjects.find((s) => plain.includes(s.replace(/\s+/g, ""))) ?? null;
+  const files = (subject ? all.filter((f) => f.path.split("/")[1] === subject) : all).slice(0, 3);
+  return { subject, notes: await Promise.all(files.map((f) => lectureDigest(f))) };
+}
+
+/** クイズの結果を「学習/クイズ記録.md」に書き足す */
+export async function appendQuizResult(r: { subject: string; score: number; total: number; weak: string[] }): Promise<void> {
+  if (!isBrainConfigured()) throw new Error("脳（Obsidian）が接続されていないため保存できません。");
+  const date = day();
+  const line = `- ${date} ${hhmm(new Date()).replace(/^(\d\d)/, "$1:")}｜${r.subject || "クイズ"}｜${r.score} / ${r.total} 問${r.weak.length ? `｜苦手：${r.weak.join("、")}` : ""}`;
+  await updateNote(
+    QUIZ_LOG_PATH,
+    (current) => `${(current ?? "# クイズ記録\n\nF.R.I.D.A.Y. のクイズの結果です。苦手なところは、次のクイズや朝のブリーフィングで優先して復習します。\n").trimEnd()}\n${line}\n`,
+    `F.R.I.D.A.Y.: クイズの結果（${date}）`,
+  );
+}
+
+/** 最近のクイズの苦手なところ（新しい順・最大 8 個） */
+export async function recentWeakPoints(): Promise<string[]> {
+  if (!isBrainConfigured()) return [];
+  // 書いた直後でも読めるよう、一覧（キャッシュ）を通さずに直接読む
+  const text = await readFresh(QUIZ_LOG_PATH);
+  if (!text) return [];
+  return [...new Set(text.split("\n").reverse().flatMap((l) => /苦手：(.+)$/.exec(l)?.[1].split("、") ?? []))].slice(0, 8);
 }
