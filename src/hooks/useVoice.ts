@@ -81,7 +81,7 @@ export function useVoice({
   onCommand,
   onBargeIn,
   cloudVoice = false,
-  speed = 1.15,
+  speed = 0.95,
   bargeIn = true,
 }: {
   onCommand: (text: string) => void;
@@ -535,7 +535,7 @@ export function useVoice({
       if (sp.voice) u.voice = sp.voice;
       // ElevenLabs の 1.15 ≒ ブラウザの 1.25 として換算
       u.rate = Math.min(1.8, Math.max(0.8, (speedRef.current / 1.15) * 1.25));
-      u.pitch = 1;
+      u.pitch = 0.85; // 落ち着いた低めの声
       let ended = false;
       const end = () => {
         if (ended) return;

@@ -31,7 +31,7 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `CHAT_CONTEXT_MAX_CHARS` | | `24000` | Gemini に渡す会話の最大文字数 |
 | `ELEVENLABS_API_KEY` | | — | ElevenLabs の API キー（読み上げを ElevenLabs の声にする場合） |
 | `ELEVENLABS_VOICE_ID` | | — | 使う声の Voice ID |
-| `ELEVENLABS_SPEED` | | `1.15` | 話す速さ（0.7〜1.2） |
+| `ELEVENLABS_SPEED` | | `0.95` | 話す速さ（0.7〜1.2。既定は少しゆっくり） |
 | `ELEVENLABS_MODEL` | | `eleven_flash_v2_5` | 音声モデル（音質重視なら `eleven_multilingual_v2`） |
 | `BRAIN_GITHUB_TOKEN` | | — | Obsidian の脳（GitHub リポジトリ）用のトークン。対象リポジトリのみ・Contents: Read and write |
 | `BRAIN_REPO` | | — | 脳のリポジトリ（`owner/repo`） |
@@ -423,7 +423,11 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
   一文ずつ別々に声にすると、文の間にすき間ができて抑揚も途切れるためです。ElevenLabs には直前の文（`previous_text`）も渡し、抑揚をつなげます。
   文の途中（読点）では区切りません。
 - 調べもの（Web 検索）を始めたときは、黙って待たせず「ちょっと調べますね」と先に一言話します。
-- 話し方は「話し言葉の丁寧語」。結論から短く、定型の前置き・締め・AI らしい言い回しをしないよう指示しています（`src/agents/chat/persona.ts` の「話し方」）。
+- 人格は「陽大の副社長・参謀・秘書」。落ち着いて自信を持って、結論から 3〜5 文で話し、決まり文句（「承知しました」「以下になります」など）は使いません。
+  主なプロジェクト（FRIDAY-Mark3・ARQO・Re-Palette・NEWTONE・大学受験）を常に意識し、曖昧な言い方でも文脈からどの件か推測します。
+  重要な決定・取り消しにくい操作の前は確認を取ります（`src/agents/chat/persona.ts`。名前とプロジェクトは `src/agents/chat/profile.ts`）。
+- 声は落ち着いた秘書のトーンに：ElevenLabs は既定の速さを 0.95（少しゆっくり）にし、安定度を 0.65 以上・style 0（感情の揺れ・強調を抑える）で作ります。
+  ブラウザの声は少し低め（pitch 0.85）。声の高さそのものは ElevenLabs の声（Voice ID）で決まるので、低めの落ち着いた声を選ぶと合います。
 - 読み上げ後 8 秒間は呼びかけなしで続けて話せます。黙っていれば待機に戻ります。
 - **割り込み**: 返答の読み上げ中・考え中でも、話し始めればすぐ読み上げと生成を止めてそちらを聞きます。
   スピーカーから出た自分の声は「いま読み上げている文章」と照合して無視します（ヘッドホンだとより確実）。

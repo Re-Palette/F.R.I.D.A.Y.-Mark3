@@ -73,7 +73,7 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
       at: start - LEAD_MIN * MIN,
       until: start - 2 * MIN,
       eventAt: start,
-      text: `ボス、${spokenTime(ev.timeLabel)}から「${ev.title}」です。あと{left}分ですよ。${ev.location ? `場所は${ev.location}です。` : ""}`,
+      text: `${spokenTime(ev.timeLabel)}から「${ev.title}」です。あと{left}分です。${ev.location ? `場所は${ev.location}です。` : ""}`,
       kind: "calendar",
     });
   }
@@ -97,7 +97,7 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
       id: `todo:tomorrow:${today}`,
       at: localTime(today, "19:00", tz),
       until: localTime(today, "23:30", tz),
-      text: `明日が締め切りのものがあります。${list(dueTomorrow)}。今日のうちに少し進めておくと楽ですよ。`,
+      text: `明日が締め切りのものがあります。${list(dueTomorrow)}。今日のうちに少し進めておくと楽です。`,
       kind: "todo",
     });
   }
@@ -106,7 +106,7 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
       id: `todo:overdue:${today}`,
       at: localTime(today, "10:00", tz),
       until: localTime(today, "22:00", tz),
-      text: `期限を過ぎているものが${overdue.length}件残っています。${list(overdue)}。終わっていたら教えてください、消しておきます。`,
+      text: `期限を過ぎているものが${overdue.length}件残っています。${list(overdue)}。終わっていれば消しておきます。`,
       kind: "todo",
     });
   }
@@ -119,7 +119,7 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
       id: `rain:${today}`,
       at: localTime(today, "06:30", tz),
       until: localTime(today, "14:00", tz),
-      text: `今日は${day.label.includes("雪") ? "雪" : "雨"}が降りそうです。降水確率${day.rain}%なので、傘を持っていってくださいね。`,
+      text: `今日は${day.label.includes("雪") ? "雪" : "雨"}の予報です。降水確率${day.rain}%なので、傘を持って出てください。`,
       kind: "weather",
     });
   }

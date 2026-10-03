@@ -86,7 +86,7 @@ function useAgentStatus() {
   const [brain, setBrain] = useState<StatusResponse["brain"]>({ configured: false, connected: false });
   const [calendar, setCalendar] = useState<StatusResponse["calendar"]>({ configured: false, connected: false });
   const [news, setNews] = useState<StatusResponse["news"]>();
-  const [voiceSpeed, setVoiceSpeed] = useState(1.15);
+  const [voiceSpeed, setVoiceSpeed] = useState(0.95);
   const [automation, setAutomation] = useState<StatusResponse["automation"]>({ diary: false });
   const [hologramLibrary, setHologramLibrary] = useState(false);
   const [spotify, setSpotify] = useState<StatusResponse["spotify"]>({ configured: false, connected: false });
@@ -309,7 +309,7 @@ export function Dashboard() {
     if (chat.stage !== "search" || !lastMsg || lastMsg.role !== "assistant" || !lastMsg.voice) return;
     if (lastMsg.status !== "streaming" || lastMsg.content || fillered.current === lastMsg.id) return;
     fillered.current = lastMsg.id;
-    const lines = ["ちょっと調べますね。", "少し調べてみます。", "確認しますね、少しお待ちを。"];
+    const lines = ["調べます。少しお待ちください。", "確認します。", "少し調べます。"];
     interject({ id: lastMsg.id, createdAt: lastMsg.createdAt, text: lines[Math.floor(Math.random() * lines.length)] });
   }, [chat.stage, lastMsg, interject]);
 
@@ -341,6 +341,8 @@ export function Dashboard() {
   /* ---- リマインダー・先回りの声かけ: 時間になったら音・声・通知で知らせる ---- */
   const [reminder, setReminder] = useState<(DueReminder & { title?: string }) | null>(null);
   const cloudTts = agent.tts.provider === "elevenlabs";
+  const voiceSpeedRef = useRef(agent.voiceSpeed);
+  voiceSpeedRef.current = agent.voiceSpeed;
   /** 会話とは別に、F.R.I.D.A.Y. のほうから一言話す（チャイム → 声 → 通知） */
   const sayAloud = useCallback(
     (text: string, notify?: { title: string; body: string; tag: string; always?: boolean }) => {
@@ -354,6 +356,8 @@ export function Dashboard() {
           const u = new SpeechSynthesisUtterance(text);
           u.lang = "ja-JP";
           u.voice = pickJapaneseVoice(window.speechSynthesis.getVoices());
+          u.rate = Math.min(1.8, Math.max(0.8, (voiceSpeedRef.current / 1.15) * 1.25));
+          u.pitch = 0.85; // 落ち着いた低めの声
           window.speechSynthesis.speak(u);
         }
       }, 450);
@@ -384,7 +388,7 @@ export function Dashboard() {
       const { state, completed, minutes } = (e as CustomEvent<FocusEnd>).detail;
       if (state.music) void runAmazonMusic({ action: "pause" }).catch(() => {});
       const text = completed
-        ? `${state.minutes}分たちました。お疲れさまです、ボス。${state.minutes >= 40 ? "10分" : "5分"}くらい休憩しましょう。`
+        ? `${state.minutes}分経ちました。お疲れさまでした。${state.minutes >= 40 ? "10分" : "5分"}ほど休憩を入れてください。`
         : `集中モードを止めました。${minutes}分でした。`;
       setReminder({ id: `focus-${state.startedAt}`, at: Date.now(), label: "", text, title: "FOCUS" });
       sayAloud(text, { title: "F.R.I.D.A.Y. 集中モード", body: text, tag: `focus-${state.startedAt}`, always: completed });

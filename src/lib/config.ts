@@ -105,7 +105,7 @@ export function getTtsConfig(): TtsConfig {
     // 低遅延・日本語対応のモデル。音質重視なら eleven_multilingual_v2 など
     model: process.env.ELEVENLABS_MODEL?.trim() || "eleven_flash_v2_5",
     baseUrl: (process.env.ELEVENLABS_API_BASE_URL?.trim() || "https://api.elevenlabs.io").replace(/\/+$/, ""),
-    speed: Math.min(1.2, Math.max(0.7, num(process.env.ELEVENLABS_SPEED, 1.15))),
+    speed: Math.min(1.2, Math.max(0.7, num(process.env.ELEVENLABS_SPEED, 0.95))),
   };
 }
 

@@ -309,7 +309,7 @@ export const SettingsView = memo(function SettingsView({
   const [city, setCity] = useState("");
   const [newsTime, setNewsTime] = useState("");
   const [topics, setTopics] = useState("");
-  const [speed, setSpeed] = useState(1.15);
+  const [speed, setSpeed] = useState(0.95);
   const [notify, setNotify] = useState<string>("default");
   const [bargeIn, setBargeIn] = useBargeIn();
   const [nudgesOn, setNudgesOn] = useState(true);
@@ -367,6 +367,7 @@ export const SettingsView = memo(function SettingsView({
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "ja-JP";
       u.rate = Math.min(1.8, Math.max(0.8, (speed / 1.15) * 1.25));
+      u.pitch = 0.85;
       window.speechSynthesis.speak(u);
     }
   };

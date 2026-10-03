@@ -66,6 +66,8 @@ async function mapError(res: Response): Promise<TtsError> {
 let voiceSettings: { key: string; value: Record<string, unknown> } | undefined;
 /** 速さ指定を受け付けなかった（モデル / 声が非対応） */
 let speedRejected = false;
+/** 落ち着いた声にするための安定度の下限（0〜1。高いほど感情の揺れが少ない） */
+const CALM_STABILITY = 0.65;
 /** 前の文（previous_text）を受け付けなかった（モデルが非対応） */
 let prevRejected = false;
 
@@ -100,9 +102,10 @@ export async function synthesize(text: string, signal?: AbortSignal, previousTex
     const body: Record<string, unknown> = { text, model_id: config.model };
     // 前の文を渡すと、文ごとに分けて作った声でも抑揚がつながる（ElevenLabs の previous_text）
     if (withPrev && previousText) body.previous_text = previousText;
-    if (withSpeed && config.speed !== 1) {
-      body.voice_settings = { ...(await loadVoiceSettings(config)), speed: config.speed };
-    }
+    // 落ち着いた秘書の声に：感情の揺れを抑え（安定度を高めに）、演技がかった強調（style）は使わない。速さは少しゆっくり
+    const vs = await loadVoiceSettings(config);
+    const stability = Math.max(typeof vs.stability === "number" ? vs.stability : 0.5, CALM_STABILITY);
+    body.voice_settings = { ...vs, stability, style: 0, ...(withSpeed && config.speed !== 1 ? { speed: config.speed } : {}) };
     try {
       return await fetch(url, {
         method: "POST",
