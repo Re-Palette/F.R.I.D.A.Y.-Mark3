@@ -7,6 +7,7 @@
  *                              ▲                             ▲                   │
  *                              └──── 8 秒沈黙 ────────────────┴──── 読み上げ終了 ◀─ speaking
  *
+ * - 「フライデー」とだけ呼ばれたら「はい、陽大。」などと一言返してから聞く。
  * - 「フライデー、〇〇」と続けて言えば、そのまま〇〇を送る。
  * - 返答の読み上げ中はマイクを止める（自分の声を拾わないため）。
  * - 読み上げ後 8 秒間は呼びかけなしで続けて話せる。
@@ -27,6 +28,7 @@ import {
   type RecognitionLike,
 } from "@/lib/speech";
 import { detectTone } from "@/lib/tone";
+import { pickWakeReply, WAKE_REPLIES } from "@/lib/wake-reply";
 
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
@@ -122,6 +124,11 @@ export function useVoice({
   onBargeInRef.current = onBargeIn;
   /** 割り込み処理（読み上げの停止など。下で定義する関数を後から入れる） */
   const bargeInRef = useRef<() => void>(() => {});
+  /** 「フライデー」とだけ呼ばれたときの一言（下で定義する関数を後から入れる） */
+  const acknowledgeRef = useRef<() => void>(() => {});
+  /** 呼ばれたときの一言の声（先に作っておく。文 → 音声の URL） */
+  const wakeAudio = useRef(new Map<string, string>());
+  const lastWakeAt = useRef(0);
   const cloudRef = useRef(cloudVoice);
   cloudRef.current = cloudVoice;
   /** ElevenLabs が致命的に失敗したら（キー誤り・枠切れ）このセッションでは使わない */
@@ -276,9 +283,8 @@ export function useVoice({
           keepListening();
           hold(command);
         } else {
-          chime("wake");
           setInterim("");
-          listenFor(FOLLOW_UP_MS);
+          acknowledgeRef.current();
         }
       } else if (mode === "listening") {
         // 送る直前にもう一度確かめる（遅れて届いた自分の声の聞き取りを送らない）
@@ -691,6 +697,39 @@ export function useVoice({
     listenFor(FOLLOW_UP_MS);
   };
 
+  /** 「フライデー」とだけ呼ばれたとき：一言返してから聞く（前置きのあいさつはしない） */
+  acknowledgeRef.current = () => {
+    const sp = speech.current;
+    const now = Date.now();
+    const text = pickWakeReply({ now, lastWakeAt: lastWakeAt.current, lastTalkAt: sp.lastSpokeAt });
+    lastWakeAt.current = now;
+    cancelSpeech();
+    const item: SpeechItem = { text };
+    const url = wakeAudio.current.get(text);
+    if (url && canUseCloud()) {
+      const el = new Audio(url);
+      el.preload = "auto";
+      el.dataset.chars = String(text.length);
+      item.audio = el;
+    }
+    sp.queue = [item];
+    sp.finished = true; // 読み終えたら、そのまま聞き取りに移る
+    void speakNext();
+  };
+
+  /** 呼ばれたときの一言の声を先に作っておく（すぐ返せるように。1 回だけ） */
+  const prepareWakeAudio = useCallback(() => {
+    if (!canUseCloud()) return;
+    for (const text of WAKE_REPLIES) {
+      if (wakeAudio.current.has(text)) continue;
+      wakeAudio.current.set(text, "");
+      fetch(`/api/tts?text=${encodeURIComponent(text)}&tone=calm`)
+        .then((r) => (r.ok && (r.headers.get("content-type") ?? "").includes("audio") ? r.blob() : Promise.reject()))
+        .then((b) => wakeAudio.current.set(text, URL.createObjectURL(b)))
+        .catch(() => wakeAudio.current.delete(text));
+    }
+  }, []);
+
   /* ---------- 操作 ---------- */
 
   const enable = useCallback(() => {
@@ -706,7 +745,8 @@ export function useVoice({
       /* noop */
     }
     toStandby();
-  }, [toStandby]);
+    prepareWakeAudio();
+  }, [prepareWakeAudio, toStandby]);
 
   const disable = useCallback(() => {
     clearTimeout(followTimer.current);
