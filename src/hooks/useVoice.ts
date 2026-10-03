@@ -26,6 +26,7 @@ import {
   unlockAudio,
   type RecognitionLike,
 } from "@/lib/speech";
+import { detectTone } from "@/lib/tone";
 
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
@@ -534,8 +535,10 @@ export function useVoice({
       u.lang = "ja-JP";
       if (sp.voice) u.voice = sp.voice;
       // ElevenLabs の 1.15 ≒ ブラウザの 1.25 として換算
-      u.rate = Math.min(1.8, Math.max(0.8, (speedRef.current / 1.15) * 1.25));
-      u.pitch = 0.85; // 落ち着いた低めの声
+      // 落ち着いた低めの声。文の雰囲気で、ほんの少しだけ変える（心配：ゆっくり・低め／前進：少し明るく）
+      const tone = detectTone(text);
+      u.rate = Math.min(1.8, Math.max(0.8, (speedRef.current / 1.15) * 1.25 * (tone === "concern" ? 0.95 : tone === "warm" ? 1.02 : 1)));
+      u.pitch = tone === "warm" ? 0.92 : tone === "curious" ? 0.9 : tone === "concern" ? 0.82 : 0.85;
       let ended = false;
       const end = () => {
         if (ended) return;

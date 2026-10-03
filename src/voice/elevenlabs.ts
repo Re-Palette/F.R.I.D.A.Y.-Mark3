@@ -3,6 +3,7 @@
  */
 import { peekAppSettings } from "@/integrations/settings";
 import { getTtsConfig, settingsHint, type TtsConfig } from "@/lib/config";
+import type { Tone } from "@/lib/tone";
 
 export const MAX_TTS_CHARS = 1000;
 
@@ -66,8 +67,16 @@ async function mapError(res: Response): Promise<TtsError> {
 let voiceSettings: { key: string; value: Record<string, unknown> } | undefined;
 /** 速さ指定を受け付けなかった（モデル / 声が非対応） */
 let speedRejected = false;
-/** 落ち着いた声にするための安定度の下限（0〜1。高いほど感情の揺れが少ない） */
-const CALM_STABILITY = 0.65;
+/**
+ * 文の雰囲気ごとの声の微調整（ふだんは落ち着いて。感情は控えめに、少しだけにじませる）。
+ *   stability … 高いほど揺れが少ない（ふだん 0.65）／ style … 感情の強調（ふだん 0）／ speed … ふだんの速さに掛ける
+ */
+const TONE_SETTINGS: Record<Tone, { stability: number; style: number; speed: number }> = {
+  calm: { stability: 0.65, style: 0, speed: 1 },
+  curious: { stability: 0.55, style: 0.1, speed: 1 },
+  warm: { stability: 0.52, style: 0.15, speed: 1.02 },
+  concern: { stability: 0.62, style: 0.05, speed: 0.95 },
+};
 /** 前の文（previous_text）を受け付けなかった（モデルが非対応） */
 let prevRejected = false;
 
@@ -90,7 +99,7 @@ async function loadVoiceSettings(config: TtsConfig): Promise<Record<string, unkn
 }
 
 /** 文章を音声（MP3）のストリームにする */
-export async function synthesize(text: string, signal?: AbortSignal, previousText?: string): Promise<ReadableStream<Uint8Array>> {
+export async function synthesize(text: string, signal?: AbortSignal, previousText?: string, tone: Tone = "calm"): Promise<ReadableStream<Uint8Array>> {
   // 画面の SETTINGS で変えた速さがあればそちらを使う
   const base = getTtsConfig();
   const config = { ...base, speed: peekAppSettings().voiceSpeed ?? base.speed };
@@ -102,10 +111,11 @@ export async function synthesize(text: string, signal?: AbortSignal, previousTex
     const body: Record<string, unknown> = { text, model_id: config.model };
     // 前の文を渡すと、文ごとに分けて作った声でも抑揚がつながる（ElevenLabs の previous_text）
     if (withPrev && previousText) body.previous_text = previousText;
-    // 落ち着いた秘書の声に：感情の揺れを抑え（安定度を高めに）、演技がかった強調（style）は使わない。速さは少しゆっくり
+    // 落ち着いた秘書の声に：ふだんは感情の揺れを抑え、文の雰囲気（興味・前進・心配）に合わせて、ほんの少しだけ変える
     const vs = await loadVoiceSettings(config);
-    const stability = Math.max(typeof vs.stability === "number" ? vs.stability : 0.5, CALM_STABILITY);
-    body.voice_settings = { ...vs, stability, style: 0, ...(withSpeed && config.speed !== 1 ? { speed: config.speed } : {}) };
+    const t = TONE_SETTINGS[tone];
+    const speed = Math.min(1.2, Math.max(0.7, Math.round(config.speed * t.speed * 100) / 100));
+    body.voice_settings = { ...vs, stability: t.stability, style: t.style, ...(withSpeed && speed !== 1 ? { speed } : {}) };
     try {
       return await fetch(url, {
         method: "POST",
