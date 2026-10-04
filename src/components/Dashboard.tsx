@@ -279,7 +279,8 @@ export function Dashboard() {
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
     cloudVoice: agent.tts.provider === "elevenlabs",
     speed: agent.voiceSpeed,
-    bargeIn,
+    // スマホは話している間マイクを止める（スピーカーの声を拾う・iPhone で再生と聞き取りがぶつかるのを防ぐ）
+    bargeIn: bargeIn && !phone,
     wakeWord: !phone, // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;

@@ -790,7 +790,7 @@ export function useVoice({
 
   /**
    * 呼びかけと同じ（スマホで中央のコアをタップしたとき）。
-   * VOICE MODE がオフならオンにして、「はい、陽大。」などと一言返してから聞く。読み上げ中なら止めて聞く。
+   * VOICE MODE がオフならオンにして聞く（呼びかけを使う画面では「はい、陽大。」などと一言返してから）。読み上げ中なら止めて聞く。
    */
   const wake = useCallback(() => {
     if (!recRef.current) {
@@ -802,8 +802,12 @@ export function useVoice({
     if (stateRef.current === "off") enable();
     const s = stateRef.current;
     if (s === "speaking") bargeInRef.current();
-    else if (s === "standby") acknowledgeRef.current();
-  }, [enable]);
+    // スマホ（呼びかけなし）は一言返さず、タップしたその場で聞き始める
+    // （iPhone などは、タップの操作の中で聞き取りを始めないと音声を拾わないことがあるため）
+    else if (s === "standby") wakeWordOn.current ? acknowledgeRef.current() : listenFor(FOLLOW_UP_MS);
+    // 聞き取り中のタップ：止まっていたらタップの操作の中で聞き取りを始め直す（受付時間も延ばす）
+    else if (s === "listening" && !wakeWordOn.current) listenFor(FOLLOW_UP_MS);
+  }, [enable, listenFor]);
 
   /** 応答がエラー等で終わり、読み上げるものがないとき */
   const replyFinished = useCallback(() => {
