@@ -54,6 +54,22 @@ export interface ChatRequestBody {
 }
 
 /** POST /api/chat のレスポンス（NDJSON: 1行1イベント） */
+/**
+ * 隠しタグで実行した操作の種類。
+ *
+ * 画面側（useChat）も同じものを表示するので、ここを唯一の定義にしてある。
+ * 以前は同じ union が 2 か所に書かれていて、片方に足すともう片方で型が
+ * 合わなくなっていた。
+ */
+export type ActionKind =
+  | "todo-add"
+  | "todo-done"
+  | "project-progress"
+  | "reminder"
+  /** AI 会社（ARQO）への指示・作業の進行 */
+  | "company-instruct"
+  | "company-advance";
+
 export type StreamEvent =
   | { type: "meta"; agent: AgentId; model: string; contextMessages: number }
   | { type: "delta"; text: string }
@@ -64,7 +80,7 @@ export type StreamEvent =
   /** Web 検索で参照したページ */
   | { type: "sources"; sources: { title: string; uri: string }[] }
   /** 脳への書き込み（ToDo の追加・完了、進捗、リマインダー）の結果 */
-  | { type: "action"; kind: "todo-add" | "todo-done" | "project-progress" | "reminder"; ok: boolean; label: string; error?: string }
+  | { type: "action"; kind: ActionKind; ok: boolean; label: string; error?: string }
   /** 文書を脳に保存した結果（content は画面に出す本文） */
   | { type: "document"; ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string }
   /** ニュースの設定（時間・興味のある分野）を変えた結果 */

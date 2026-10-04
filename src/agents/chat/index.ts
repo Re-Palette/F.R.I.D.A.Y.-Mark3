@@ -7,6 +7,12 @@ import { asksForSns, asksForTrend, needsSearch } from "@/agents/search/needs-sea
 import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { readNewsSettings } from "@/integrations/news";
 import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
+import {
+  asksForCompany,
+  companyBrief,
+  companyConnected,
+  type CompanyBrief,
+} from "@/integrations/company";
 import { asksForMusic } from "@/lib/music";
 import { quizMaterial, recentLectures, recentWeakPoints, type LectureDigest } from "@/integrations/brain-notes";
 import { inQuiz } from "./quiz";
@@ -116,7 +122,16 @@ export const chatAgent: Agent = {
         : Promise.resolve({ kind: "amazon" as const, ext: Boolean(ctx.amazon?.ext), now: ctx.amazon?.now ?? null });
     const canDraftTask: Promise<boolean | undefined> =
       wantsMail && ctx.mailCanDraft ? ctx.mailCanDraft().catch(() => false) : Promise.resolve(undefined);
-    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz] = await Promise.all([
+    // AI 会社（ARQO）の状況。会社の話をしているとき・朝のまとめのときだけ集める
+    const wantsCompany = companyConnected() && (asksForCompany(latest) || morning);
+    const companyTask: Promise<CompanyBrief | null> = wantsCompany
+      ? companyBrief(ctx.signal).catch((err: unknown) => ({
+          text: `AI 会社の状況を取れなかった: ${err instanceof Error ? err.message : "不明"}`,
+          needsCeo: 0,
+        }))
+      : Promise.resolve(null);
+
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -130,6 +145,7 @@ export const chatAgent: Agent = {
       within<MusicContext>(musicTask, budget + 600, musicTalk && ctx.spotify ? { kind: "spotify", error: "Spotify の応答が間に合いませんでした。" } : null, "music"),
       lectureTask,
       quizTask,
+      within<CompanyBrief | null>(companyTask, budget + 600, wantsCompany ? { text: "AI 会社の応答が間に合わなかった。", needsCeo: 0 } : null, "company"),
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -208,6 +224,8 @@ export const chatAgent: Agent = {
         review: reviewKind && { kind: reviewKind, material: reviewMaterial },
         replyLength: settings.replyLength,
         sns,
+        company,
+        companyConnected: companyConnected(),
         voice: ctx.voice,
       }),
       contents,
