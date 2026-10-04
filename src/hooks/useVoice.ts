@@ -731,6 +731,7 @@ export function useVoice({
     const text = pickWakeReply({ now, lastWakeAt: lastWakeAt.current, lastTalkAt: sp.lastSpokeAt });
     lastWakeAt.current = now;
     cancelSpeech();
+    chime("wake"); // 起動の「ピコン」（すぐ鳴らして、反応したことを知らせる）。そのあと一言返す
     const item: SpeechItem = { text };
     const url = wakeAudio.current.get(text);
     if (url && canUseCloud()) {
