@@ -15,12 +15,16 @@ function time(ts: number) {
   return new Date(ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 }
 
+import type { ActionKind } from "@/core/types";
+
 const ACTION_LABEL = {
   "todo-add": ["TODO ADDED", "tasks"],
   "todo-done": ["TODO DONE", "tasks"],
   "project-progress": ["PROGRESS", "analysis"],
   reminder: ["REMINDER SET", "memory"],
-} as const;
+  "company-instruct": ["COMPANY TASKED", "automation"],
+  "company-advance": ["COMPANY WORKING", "automation"],
+} as const satisfies Record<ActionKind, readonly [string, string]>;
 
 const CALENDAR_LABEL = { add: "CALENDAR ADDED", update: "CALENDAR UPDATED", delete: "CALENDAR DELETED" } as const;
 
@@ -167,7 +171,7 @@ const Message = memo(function Message({
               key={`${a.kind}-${i}`}
               className="memory-chip memory-chip--calendar"
               data-failed={!a.ok || undefined}
-              title={a.ok ? "脳（Obsidian）に保存しました" : a.error}
+              title={a.ok ? (a.kind.startsWith("company-") ? "AI 会社（ARQO）で実行しました" : "脳（Obsidian）に保存しました") : a.error}
             >
               <Icon name={ACTION_LABEL[a.kind][1]} size={12} /> <span>{a.ok ? ACTION_LABEL[a.kind][0] : "FAILED"}</span> {a.label}
             </li>

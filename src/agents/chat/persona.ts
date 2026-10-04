@@ -36,6 +36,10 @@ export interface PersonaInput {
   /** これからのリマインダー */
   reminders?: Reminder[] | null;
   /** 未読メール（返信の下書きを頼まれたときは直近のメールを本文つきで） */
+  /** AI 会社（ARQO）の状況。会社の話をしているときだけ渡る */
+  company?: { text: string; needsCeo: number } | null;
+  /** 会社に接続されているか（されていれば操作のタグを使える） */
+  companyConnected?: boolean;
   mail?: MailData;
   /** Gmail に下書きを作れるか（メールを読んだときだけ分かる） */
   mailDraft?: boolean;
@@ -105,6 +109,8 @@ export function buildSystemInstruction({
   news,
   tasks,
   reminders,
+  company,
+  companyConnected,
   mail,
   mailDraft,
   camera,
@@ -219,6 +225,7 @@ F.R.I.D.A.Y.：FRIDAY-Mark3 は会話基盤が見えてきています。次は�
   if (focus) out += FOCUS_RULES;
   if (quiz) out += quizSection(quiz, Boolean(voice));
   if (music) out += musicSection(music);
+  if (company || companyConnected) out += companySection(company, companyConnected);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
   if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
@@ -587,4 +594,51 @@ function snsSection(search: boolean, canSave: boolean): string {
       : "投稿案は本文にそのまま書く。"
   }
 - 誇大表現・事実でない数字・他人の権利を侵す内容（無断の画像や音源の利用など）は勧めない。`;
+}
+
+
+/**
+ * AI 会社（ARQO）の章。
+ *
+ * 陽大は 48 名の AI 社員からなる会社の CEO で、F.R.I.D.A.Y. はその副社長。
+ * 状況を渡されたときはそれだけを根拠に話し、渡されていないときは推測せず
+ * 「会社の状況を見る」と言って聞き直す。操作のタグは接続されているときだけ。
+ */
+function companySection(
+  company: { text: string; needsCeo: number } | null | undefined,
+  connected: boolean | undefined,
+): string {
+  let out = `
+# ARQO の AI 会社（48 名の AI 社員）
+- ${OWNER}はこの会社の CEO で、あなたはその副社長。会社の統率と管理はあなたの担当。
+- 会社の状況を話すときは、下に渡された内容だけを根拠にする。渡されていない数字や進捗を作らない。
+`;
+
+  if (company) {
+    out += `
+## いまの会社の状況
+${company.text}
+`;
+    if (company.needsCeo > 0) {
+      out += `- ${OWNER}の判断を待っているものが ${company.needsCeo} 件ある。会社の話をするときは、これを最初に伝える。
+`;
+    }
+  }
+
+  if (connected) {
+    out += `
+## 会社を動かす
+- ${OWNER}が会社に何かをやらせたいときは、返答の中に隠しタグを書く。本文には出さない。
+  <company-instruct>やってほしいことを、担当者が単独で理解できる形で書く（日本語）</company-instruct>
+  <company-advance/>  … AI 社員に、自分の担当タスクを今すぐ進めさせる
+- 外部へのメール送信・SNS 公開・支出・契約・本番反映は、会社側で必ず CEO の承認待ちとして止まる。
+  あなたに承認を実行する権限は無い。承認は${OWNER}がダッシュボードで行う。
+  「送っておいて」と言われたら、指示は伝えられるが送信は${OWNER}の承認が必要だと伝える。
+- 会社に指示を出したら、すぐには終わらない。「伝えた」と言い、進捗は次に聞かれたときに確認する。
+`;
+  } else {
+    out += "- いまは会社に接続されていない（COMPANY_URL / COMPANY_TOKEN が未設定）。状況は見られない。\n";
+  }
+
+  return out;
 }

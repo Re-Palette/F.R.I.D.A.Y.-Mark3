@@ -21,6 +21,7 @@ import { TagFilter, toFact } from "./hidden-tags";
 import { BROWSER_TAGS, toBrowserEvent } from "./browser-actions";
 import { GMAIL_TAGS, runGmailActions } from "./gmail-actions";
 import { MUSIC_TAGS, runMusicActions } from "./music-actions";
+import { COMPANY_TAGS, runCompanyActions } from "./company-actions";
 import type { SpotifyAccess } from "@/integrations/spotify";
 import type { DraftInput } from "@/integrations/gmail";
 import { saveDocument, toFolder } from "@/integrations/documents";
@@ -174,7 +175,7 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", "focus", "quiz-result", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", "focus", "quiz-result", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS, ...COMPANY_TAGS] as const, {
       document: 30_000,
       "gmail-draft": 8000,
       "file-note": 6000,
@@ -286,6 +287,16 @@ export async function* handleConversation(
       if (cmd) yield { type: "focus", ...cmd };
     }
     // 頼まれたメールの下書きを Gmail に保存（送信はしない。失敗したら本文でも知らせる）
+    // AI 会社への操作。承認が要るものは会社側で止まるので、ここから外へは出ない
+    for await (const { event, note } of runCompanyActions(tags.captures, signal)) {
+      yield event;
+      if (note) {
+        for (const text of [note]) {
+          yield { type: "delta", text };
+        }
+      }
+    }
+
     for await (const { event, note } of runGmailActions(tags.captures, tags.attrs, options.draft, signal)) {
       yield event;
       if (note) {

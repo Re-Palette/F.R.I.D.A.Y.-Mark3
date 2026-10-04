@@ -11,7 +11,7 @@
  *   何件を Gemini に渡すかはサーバー側（src/memory/context.ts）が上限をかけて決める。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
+import type { ActionKind, ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
 import { amazonMusicState, musicReply, runAmazonMusic } from "@/lib/amazon-music";
 import { asksForMusic, quickMusicCommand } from "@/lib/music";
 import { startFocus, stopFocus } from "@/lib/focus";
@@ -43,7 +43,7 @@ export interface UiMessage {
   /** Web 検索で参照したページ */
   sources?: { title: string; uri: string }[];
   /** 脳への書き込み（ToDo・進捗・リマインダー）の結果 */
-  actions?: { kind: "todo-add" | "todo-done" | "project-progress" | "reminder"; ok: boolean; label: string; error?: string }[];
+  actions?: { kind: ActionKind; ok: boolean; label: string; error?: string }[];
   /** この返答で書いた文書（脳に保存したもの） */
   documents?: { ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string }[];
   /** この返答で開いた（開こうとした）Web ページ・閉じたタブ */
