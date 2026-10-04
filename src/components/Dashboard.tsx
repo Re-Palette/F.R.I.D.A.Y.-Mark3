@@ -281,7 +281,8 @@ export function Dashboard() {
     speed: agent.voiceSpeed,
     // スマホは話している間マイクを止める（スピーカーの声を拾う・iPhone で再生と聞き取りがぶつかるのを防ぐ）
     bargeIn: bargeIn && !phone,
-    wakeWord: !phone, // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
+    wakeWord: !phone,
+    recorded: phone, // スマホは録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
   const voiceRef = useRef(voice);

@@ -27,6 +27,7 @@ import {
   unlockAudio,
   type RecognitionLike,
 } from "@/lib/speech";
+import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
 import { pickWakeReply, WAKE_REPLIES } from "@/lib/wake-reply";
 
@@ -87,6 +88,7 @@ export function useVoice({
   speed = 0.95,
   bargeIn = true,
   wakeWord = true,
+  recorded = false,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -99,6 +101,8 @@ export function useVoice({
   bargeIn?: boolean;
   /** 「フライデー」の呼びかけを待つか。false（スマホ）なら待機中はマイクを止め、コアのタップで話しかける */
   wakeWord?: boolean;
+  /** ブラウザの音声認識の代わりに、録った音声をサーバーで文字にする（スマホ。ブラウザの認識が声を拾わないことがあるため） */
+  recorded?: boolean;
 }) {
   const wakeWordOn = useRef(wakeWord);
   wakeWordOn.current = wakeWord;
@@ -266,12 +270,21 @@ export function useVoice({
 
   /* 音声認識の初期化 */
   useEffect(() => {
-    const Ctor = getRecognitionCtor();
+    const Ctor = recorded && canRecord() ? RecordedRecognition : getRecognitionCtor();
     if (!Ctor) {
       setSupported(false);
       return;
     }
+    setSupported(true);
     const rec = new Ctor();
+    // 録音で聞くときは、声が聞こえている間は受付時間を延ばす（途中のテキストが出ないため）
+    if (rec instanceof RecordedRecognition) {
+      rec.onspeechstart = () => {
+        if (stateRef.current !== "listening") return;
+        keepListening();
+        setInterim("聞いています…");
+      };
+    }
     rec.lang = "ja-JP";
     // 1 発言ずつ区切って聞く（区切りごとに自動で再開）。連続モードは Safari 等で
     // 「確定」の合図が来ず、呼びかけを判定できないことがあるため使わない。
@@ -433,7 +446,7 @@ export function useVoice({
       runningRef.current = false;
       abortingRef.current = false;
     };
-  }, [dispatch, keepListening, listenFor, looksLikeEcho, set, startRec]);
+  }, [dispatch, keepListening, listenFor, looksLikeEcho, recorded, set, startRec]);
 
   /* 日本語の音声を選ぶ（一覧は非同期に読み込まれる） */
   useEffect(() => {
