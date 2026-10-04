@@ -15,12 +15,22 @@ const TIMEOUT_MS = 12_000;
 export interface CompanyConfig {
   url: string;
   token: string;
+  /**
+   * 会社側が Vercel の「Deployment Protection（Vercel Authentication）」で
+   * 守られている場合、ブラウザのログインを持たないこちらの通信は
+   * アプリに届く前にログイン画面に差し替えられる。Vercel が用意している
+   * 自動化用の抜け道（Protection Bypass for Automation）の合言葉をここに
+   * 入れると、守りを外さないままこの通信だけが通る。
+   * 守りが無い会社なら空でよい。
+   */
+  bypass: string;
 }
 
 export function getCompanyConfig(): CompanyConfig | null {
   const url = (process.env.COMPANY_URL ?? "").trim().replace(/\/+$/, "");
   const token = (process.env.COMPANY_TOKEN ?? "").trim();
-  return url && token ? { url, token } : null;
+  const bypass = (process.env.COMPANY_BYPASS ?? "").trim();
+  return url && token ? { url, token, bypass } : null;
 }
 
 export function companyConnected(): boolean {
@@ -45,6 +55,13 @@ async function callTool(
       // HTTP ヘッダは ISO-8859-1 しか通らない。日本語（全角カッコを含む）を
       // 入れると fetch が投げる。会社側の表示名は会社側の既定に任せる。
       "x-friday-actor": "FRIDAY (Mark3)",
+      ...(config.bypass
+        ? {
+            "x-vercel-protection-bypass": config.bypass,
+            // 守りを通った印をこちらに残さない（通信ごとに合言葉で通る）
+            "x-vercel-set-bypass-cookie": "false",
+          }
+        : {}),
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
@@ -55,6 +72,14 @@ async function callTool(
     signal: signal ? AbortSignal.any([signal, timer]) : timer,
     cache: "no-store",
   });
+
+  // アプリではなく Vercel のログイン画面が答えた場合（HTML が返る）。
+  // 「トークンが違う」と誤診しないよう、本当の理由を伝える。
+  if (!(response.headers.get("content-type") ?? "").includes("json")) {
+    throw new Error(
+      "会社の入口（Vercel のアクセス保護）で止められました。COMPANY_BYPASS の設定が必要です。",
+    );
+  }
 
   if (!response.ok) {
     if (response.status === 401) throw new Error("会社への接続トークンが拒否されました。");
