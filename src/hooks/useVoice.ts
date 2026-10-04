@@ -776,6 +776,23 @@ export function useVoice({
     listenFor(FOLLOW_UP_MS);
   }, [cancelSpeech, listenFor]);
 
+  /**
+   * 呼びかけと同じ（スマホで中央のコアをタップしたとき）。
+   * VOICE MODE がオフならオンにして、「はい、陽大。」などと一言返してから聞く。読み上げ中なら止めて聞く。
+   */
+  const wake = useCallback(() => {
+    if (!recRef.current) {
+      setError("このブラウザは音声認識に対応していません。Chrome か Safari で開いてください。");
+      return;
+    }
+    setError(null);
+    unlockAudio();
+    if (stateRef.current === "off") enable();
+    const s = stateRef.current;
+    if (s === "speaking") bargeInRef.current();
+    else if (s === "standby") acknowledgeRef.current();
+  }, [enable]);
+
   /** 応答がエラー等で終わり、読み上げるものがないとき */
   const replyFinished = useCallback(() => {
     const sp = speech.current;
@@ -830,6 +847,7 @@ export function useVoice({
     supported,
     toggle,
     talkNow,
+    wake,
     speak,
     interject,
     cancelSpeech,

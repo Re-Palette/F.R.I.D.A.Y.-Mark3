@@ -524,6 +524,8 @@ export function Dashboard() {
             messages={chat.messages}
             lastRun={chat.lastRun}
             maxContext={agent.maxContext}
+            onWake={voice.wake}
+            onVoiceOff={voice.toggle}
           />
           <ProjectsPage hidden={view !== "projects"} />
           <TasksPage hidden={view !== "tasks"} />

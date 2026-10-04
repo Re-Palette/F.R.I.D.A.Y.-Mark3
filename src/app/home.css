@@ -3842,3 +3842,173 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     letter-spacing: 0.1em;
   }
 }
+
+/* ==========================================================================
+   スマホの HOME：スクロールなしの 1 画面（720px 以下だけ。パソコン・タブレットは変えない）
+     上：天気・次の予定・今日やること ／ 真ん中：コア（タップで起動） ／ 下：一言の案内
+   ========================================================================== */
+
+@media (max-width: 720px) {
+  .home.home--phone {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: none;
+    gap: 8px;
+    height: 100%;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .home--phone .mbrief {
+    order: 0;
+  }
+
+  .home--phone .home__core {
+    order: 1;
+    grid-area: auto;
+    position: relative;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    container-type: size;
+    --rw: min(100cqw, 100cqh);
+    overflow: hidden;
+  }
+
+  .home--phone .core-tap {
+    width: var(--rw);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    border-radius: 50%;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform 0.15s ease;
+  }
+
+  .home--phone .core-tap:active {
+    transform: scale(0.97);
+  }
+
+  .home--phone .core-tap:focus-visible {
+    outline: 1px dashed var(--orange);
+    outline-offset: 4px;
+  }
+
+  /* 返事はコアの下側に重ねる（長いときはパネルの中だけ動かす） */
+  .home--phone .home__bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 58%;
+    overflow-y: auto;
+    z-index: 5;
+  }
+
+  .home--phone .home__hint {
+    order: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 26px;
+    font-family: var(--font-jp);
+    font-size: 12.5px;
+    color: var(--text-2);
+    text-align: center;
+  }
+
+  .home--phone .home__hint[data-voice="listening"],
+  .home--phone .home__hint[data-voice="off"] {
+    color: var(--cyan);
+  }
+
+  .home__off {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--text-2);
+    background: rgba(255, 138, 31, 0.05);
+    border: 1px solid rgba(255, 138, 31, 0.35);
+    padding: 3px 10px;
+    cursor: pointer;
+  }
+
+  /* 天気・次の予定・今日やること */
+  .mbrief {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .mbrief__tile {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 8px 10px 9px;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    background: rgba(255, 138, 31, 0.05);
+    border: 1px solid rgba(255, 138, 31, 0.32);
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button.mbrief__tile {
+    cursor: pointer;
+  }
+
+  button.mbrief__tile:active {
+    background: rgba(255, 138, 31, 0.14);
+  }
+
+  .mbrief__tile[data-alert] {
+    border-color: rgba(255, 138, 31, 0.75);
+  }
+
+  .mbrief__label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--orange);
+  }
+
+  .mbrief__main {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 19px;
+    font-weight: 400;
+    line-height: 1.15;
+    color: #fff;
+    white-space: nowrap;
+  }
+
+  .mbrief__main small {
+    font-family: var(--font-jp);
+    font-size: 10.5px;
+    color: var(--text-2);
+  }
+
+  .mbrief__sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-jp);
+    font-size: 11px;
+    color: var(--text-2);
+  }
+
+  /* VOICE MODE はコアのタップで始めるので、HOME では入力欄の音声ボタンを出さない */
+  .app:has(.stage[data-view="home"]) .composer__tools [data-voice-control] {
+    display: none;
+  }
+}

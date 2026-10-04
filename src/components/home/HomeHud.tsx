@@ -5,14 +5,18 @@
  *   上：タブ（AGENTS / NOTES / TASKS / CONTEXT）
  *   左：SYSTEM STATUS・CURRENT MODE・接続の短いバー・現在地／右：レーダー・VOICE ACTIVITY・NOTIFICATIONS
  *   下：ACTIVITY LIVE。返事（検索の要約と関連ページ）は、話しかけたときだけ下に HUD パネルで開く。
+ * スマホ：スクロールなしの 1 画面。上に天気・次の予定・今日やること、真ん中にコア（タップで起動して話せる）、
+ *   その下に一言の案内。返事はコアの下側に重ねて開く。
  */
 import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import type { ChatPhase, ChatStage, LastRunStats, UiMessage } from "@/hooks/useChat";
+import { PHONE_QUERY, useMedia } from "@/hooks/useMedia";
 import type { VoiceState } from "@/hooks/useVoice";
 import { HandControl } from "../HandControl";
 import type { View } from "../Sidebar";
 import { AgentRoster, Radar, ResponsePanel, type ChatAgentStatus } from "./panels";
+import { MobileBrief } from "./MobileBrief";
 import { coreMode, Reactor } from "./Reactor";
 import { ActivityLive, CurrentMode, LinkBars, LocationMark, Notifications, SystemBars, TopTabs, VoiceActivity, type HomeTab } from "./readouts";
 
@@ -22,6 +26,15 @@ const HINT: Record<VoiceState, string> = {
   listening: "どうぞ、話してください…",
   thinking: "考えています…",
   speaking: "話しかければ割り込めます",
+};
+
+/** スマホ：コアの下の一言 */
+const PHONE_HINT: Record<VoiceState, string> = {
+  off: "コアをタップして起動",
+  standby: "タップ、または「フライデー」と呼んでください",
+  listening: "どうぞ、話してください…",
+  thinking: "考えています…",
+  speaking: "タップで止めて話せます",
 };
 
 export const HomeHud = memo(function HomeHud({
@@ -39,6 +52,8 @@ export const HomeHud = memo(function HomeHud({
   messages,
   lastRun,
   maxContext,
+  onWake,
+  onVoiceOff,
 }: {
   phase: ChatPhase;
   stage: ChatStage;
@@ -54,7 +69,12 @@ export const HomeHud = memo(function HomeHud({
   messages: UiMessage[];
   lastRun: LastRunStats;
   maxContext: number;
+  /** スマホでコアをタップしたとき（呼びかけと同じ） */
+  onWake?: () => void;
+  /** スマホで VOICE MODE を切る */
+  onVoiceOff?: () => void;
 }) {
+  const phone = useMedia(PHONE_QUERY);
   const mode = coreMode(phase, stage, voiceState);
   // 描画が追いつかない端末では、輪の回転などを止めて軽くする（コアが知らせる）
   const [lite, setLite] = useState(false);
@@ -87,6 +107,39 @@ export const HomeHud = memo(function HomeHud({
     else if (t === "tasks") onNavigate("tasks");
     else onOpenChat();
   };
+
+  if (phone) {
+    return (
+      <div className="home home--phone" data-mode={mode} data-lite={lite || undefined} data-response={showResponse || undefined} aria-hidden={hidden} inert={hidden}>
+        <MobileBrief onNavigate={onNavigate} />
+        <div className="home__core">
+          <button type="button" className="core-rig core-tap" onClick={onWake} aria-label={voiceState === "off" ? "F.R.I.D.A.Y. を起動" : "F.R.I.D.A.Y. に話しかける"}>
+            <Reactor phase={phase} stage={stage} voiceState={voiceState} active={!hidden} onSlow={onSlow} />
+          </button>
+          {showResponse && (
+            <div className="home__bottom">
+              <ResponsePanel
+                messages={messages}
+                phase={phase}
+                voiceState={voiceState}
+                lastRun={lastRun}
+                onOpenChat={onOpenChat}
+                onClose={() => setClosedFor(lastQuestion)}
+              />
+            </div>
+          )}
+        </div>
+        <div className="home__hint" data-voice={voiceState}>
+          <span>{PHONE_HINT[voiceState]}</span>
+          {voiceState !== "off" && (
+            <button type="button" className="home__off" onClick={onVoiceOff}>
+              OFF
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="home" data-mode={mode} data-lite={lite || undefined} data-response={showResponse || undefined} aria-hidden={hidden} inert={hidden}>
