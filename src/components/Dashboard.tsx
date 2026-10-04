@@ -29,6 +29,7 @@ import { CameraView } from "./CameraView";
 import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
 import { duckMusic, runAmazonMusic } from "@/lib/amazon-music";
 import { useNudges } from "@/hooks/useNudges";
+import { PHONE_QUERY, useMedia } from "@/hooks/useMedia";
 import { FOCUS_END, focusLeft, stopFocus, useFocus, type FocusEnd } from "@/lib/focus";
 import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 import { asksAboutScreen, captureScreen, getScreenState, toggleScreen, useScreenState } from "@/lib/screen";
@@ -272,12 +273,14 @@ export function Dashboard() {
   /* ---- 音声会話 ---- */
   const { stop: chatStop } = chat;
   const onVoiceCommand = useCallback((text: string) => void send(text, { voice: true }), [send]);
+  const phone = useMedia(PHONE_QUERY);
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
     cloudVoice: agent.tts.provider === "elevenlabs",
     speed: agent.voiceSpeed,
     bargeIn,
+    wakeWord: !phone, // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
   const voiceRef = useRef(voice);
@@ -695,6 +698,7 @@ export function Dashboard() {
 
         <Composer
           ref={composerRef}
+          wakeWord={!phone}
           phase={chat.phase}
           disabled={false}
           onSend={send}

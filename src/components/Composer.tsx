@@ -27,6 +27,8 @@ interface Props {
   onStop: () => void;
   onTyping?: () => void;
   voiceState?: VoiceState;
+  /** 「フライデー」の呼びかけで起動できるか（スマホは false） */
+  wakeWord?: boolean;
   voiceInterim?: string;
   onVoiceToggle?: () => void;
   onTalk?: () => void;
@@ -48,7 +50,7 @@ const VOICE_LABEL: Record<VoiceState, string> = {
 
 export const Composer = memo(
   forwardRef<ComposerHandle, Props>(function Composer(
-    { phase, disabled, onSend, onStop, onTyping, voiceState = "off", voiceInterim, onVoiceToggle, onTalk, cameraOn = false, onCameraToggle, screenOn = false, onScreenToggle },
+    { phase, disabled, onSend, onStop, onTyping, voiceState = "off", wakeWord = true, voiceInterim, onVoiceToggle, onTalk, cameraOn = false, onCameraToggle, screenOn = false, onScreenToggle },
     ref,
   ) {
   const [value, setValue] = useState("");
@@ -243,10 +245,10 @@ export const Composer = memo(
             data-on={voiceState !== "off" || undefined}
             onClick={onVoiceToggle}
             aria-pressed={voiceState !== "off"}
-            title={voiceState === "off" ? "音声会話をオン（「フライデー」で起動）" : "音声会話をオフ"}
+            title={voiceState === "off" ? (wakeWord ? "音声会話をオン（「フライデー」で起動）" : "音声会話をオン") : "音声会話をオフ"}
           >
             <i className="composer__voice-led" />
-            {VOICE_LABEL[voiceState]}
+            {voiceState === "standby" && !wakeWord ? "VOICE ON" : VOICE_LABEL[voiceState]}
             <span className="eq">
               <i />
               <i />

@@ -31,7 +31,7 @@ const HINT: Record<VoiceState, string> = {
 /** スマホ：コアの下の一言 */
 const PHONE_HINT: Record<VoiceState, string> = {
   off: "コアをタップして起動",
-  standby: "タップ、または「フライデー」と呼んでください",
+  standby: "コアをタップして話しかけてください",
   listening: "どうぞ、話してください…",
   thinking: "考えています…",
   speaking: "タップで止めて話せます",

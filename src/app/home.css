@@ -3905,7 +3905,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     left: 0;
     right: 0;
     bottom: 0;
-    max-height: 58%;
+    max-height: 40%; /* コアの中心はタップできるように空けておく */
     overflow-y: auto;
     z-index: 5;
   }

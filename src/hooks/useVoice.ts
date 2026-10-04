@@ -86,6 +86,7 @@ export function useVoice({
   cloudVoice = false,
   speed = 0.95,
   bargeIn = true,
+  wakeWord = true,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -96,7 +97,11 @@ export function useVoice({
   speed?: number;
   /** 話している間も聞く（割り込み）。false なら話している間はマイクを止める（スピーカーで自分の声を拾う環境向け） */
   bargeIn?: boolean;
+  /** 「フライデー」の呼びかけを待つか。false（スマホ）なら待機中はマイクを止め、コアのタップで話しかける */
+  wakeWord?: boolean;
 }) {
+  const wakeWordOn = useRef(wakeWord);
+  wakeWordOn.current = wakeWord;
   const bargeInOn = useRef(bargeIn);
   bargeInOn.current = bargeIn;
   const speedRef = useRef(speed);
@@ -214,8 +219,15 @@ export function useVoice({
     clearTimeout(followTimer.current);
     setInterim("");
     set("standby");
-    startRec();
-  }, [set, startRec]);
+    // 呼びかけを使わないときは、待機中にマイクを使わない
+    if (wakeWordOn.current) startRec();
+    else stopRec();
+  }, [set, startRec, stopRec]);
+
+  // 画面の幅が変わって呼びかけの有無が切り替わったら、待機中のマイクも合わせる
+  useEffect(() => {
+    if (stateRef.current === "standby") toStandby();
+  }, [wakeWord, toStandby]);
 
   /** 呼びかけなしで話せる状態（一定時間で待機に戻る） */
   const listenFor = useCallback(
@@ -402,7 +414,7 @@ export function useVoice({
       const s = stateRef.current;
       // 待機・聞き取り中に途切れたら自動で再開（ブラウザは一定時間で認識を止めるため）
       const listenWhileTalking = bargeInOn.current;
-      if (s === "standby" || s === "listening" || (listenWhileTalking && (s === "speaking" || s === "thinking"))) {
+      if ((s === "standby" && wakeWordOn.current) || s === "listening" || (listenWhileTalking && (s === "speaking" || s === "thinking"))) {
         clearTimeout(restartTimer.current);
         // 自分で止めた直後はすぐ再開（話し始めの言葉を取りこぼさない）。それ以外は少し待つ
         restartTimer.current = window.setTimeout(startRec, wasAborting ? 0 : 200);
