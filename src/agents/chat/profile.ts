@@ -5,3 +5,6 @@
 export const OWNER = "陽大";
 
 export const PROJECTS = ["FRIDAY-Mark3", "ARQO", "Re-Palette", "NEWTONE", "大学受験"] as const;
+
+/** 名前の読み（読み上げのときだけ置き換える。画面の文字は漢字のまま） */
+export const OWNER_READING = "はると";

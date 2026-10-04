@@ -2,6 +2,7 @@
  * /api/tts — 文章を ElevenLabs の声（MP3）にして返す（GET: ストリーミング再生用 / POST）。
  * 合言葉ロックの内側（proxy で保護）。API キーはサーバー側でのみ使用する。
  */
+import { withReadings } from "@/lib/reading";
 import { detectTone, isTone } from "@/lib/tone";
 import { MAX_TTS_CHARS, synthesize, TtsError } from "@/voice/elevenlabs";
 
@@ -17,7 +18,8 @@ async function respond(req: Request, raw: unknown, prevRaw?: unknown, toneRaw?: 
     const prev = typeof prevRaw === "string" ? prevRaw.trim().slice(-300) : undefined;
     // 文の雰囲気（送られてこなければ文から見分ける）
     const tone = isTone(toneRaw) ? toneRaw : detectTone(text);
-    const audio = await synthesize(text, req.signal, prev || undefined, tone);
+    // 名前の読み（陽大 → はると）は声にするときだけ置き換える
+    const audio = await synthesize(withReadings(text), req.signal, prev ? withReadings(prev) : undefined, tone);
     return new Response(audio, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });
   } catch (err) {
     const e = err instanceof TtsError ? err : new TtsError("TTS_UPSTREAM", "音声を作れませんでした。", 500, false);

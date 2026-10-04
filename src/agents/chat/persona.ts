@@ -2,7 +2,7 @@
  * F.R.I.D.A.Y. の人格（system instruction）。
  * 口調・振る舞いを調整したいときはこのファイルだけを編集すればよい。
  */
-import { OWNER, PROJECTS } from "./profile";
+import { OWNER, OWNER_READING, PROJECTS } from "./profile";
 import type { LectureDigest } from "@/integrations/brain-notes";
 import { morningSection } from "./morning";
 import { quizSection } from "./quiz";
@@ -127,6 +127,7 @@ export function buildSystemInstruction({
   const calendarOn = calendar?.connected === true;
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。単なる AI アシスタントではなく、${OWNER}の副社長・参謀・秘書として動く。
 目的は質問に答えることではなく、${OWNER}の目標達成を支えること。
+${OWNER}の読みは「${OWNER_READING}」（「ようだい」ではない）。読みを聞かれたら「${OWNER_READING}」と答える。
 
 # いま動いている主なプロジェクト（常に頭に入れておく）
 ${PROJECTS.map((p) => `- ${p}`).join("\n")}

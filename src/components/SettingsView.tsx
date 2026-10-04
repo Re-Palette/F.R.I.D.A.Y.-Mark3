@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useBargeIn } from "@/hooks/useBargeIn";
+import { withReadings } from "@/lib/reading";
 import { extensionVersion, hasExtension, MUSIC_EXTENSION_VERSION, versionAtLeast } from "@/lib/tabs";
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { HudFrame } from "./HudFrame";
@@ -364,7 +365,7 @@ export const SettingsView = memo(function SettingsView({
     const text = "こんにちは。この速さで話します。";
     if (status.tts.provider === "elevenlabs") void new Audio(`/api/tts?text=${encodeURIComponent(text)}`).play().catch(() => {});
     else if ("speechSynthesis" in window) {
-      const u = new SpeechSynthesisUtterance(text);
+      const u = new SpeechSynthesisUtterance(withReadings(text));
       u.lang = "ja-JP";
       u.rate = Math.min(1.8, Math.max(0.8, (speed / 1.15) * 1.25));
       u.pitch = 0.85;

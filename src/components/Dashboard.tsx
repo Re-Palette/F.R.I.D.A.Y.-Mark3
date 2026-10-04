@@ -10,6 +10,7 @@ import { STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
 import { useVoice } from "@/hooks/useVoice";
 import { useBargeIn } from "@/hooks/useBargeIn";
+import { withReadings } from "@/lib/reading";
 import { chime, pickJapaneseVoice } from "@/lib/speech";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
@@ -358,7 +359,7 @@ export function Dashboard() {
           const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`);
           audio.play().catch(() => {});
         } else if ("speechSynthesis" in window) {
-          const u = new SpeechSynthesisUtterance(text);
+          const u = new SpeechSynthesisUtterance(withReadings(text));
           u.lang = "ja-JP";
           u.voice = pickJapaneseVoice(window.speechSynthesis.getVoices());
           u.rate = Math.min(1.8, Math.max(0.8, (voiceSpeedRef.current / 1.15) * 1.25));

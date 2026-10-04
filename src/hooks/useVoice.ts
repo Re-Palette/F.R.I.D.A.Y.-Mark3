@@ -27,6 +27,7 @@ import {
   unlockAudio,
   type RecognitionLike,
 } from "@/lib/speech";
+import { withReadings } from "@/lib/reading";
 import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
 import { pickWakeReply, WAKE_REPLIES } from "@/lib/wake-reply";
@@ -563,7 +564,7 @@ export function useVoice({
     if (!synth) return Promise.resolve();
     const sp = speech.current;
     return new Promise<void>((resolve) => {
-      const u = new SpeechSynthesisUtterance(text);
+      const u = new SpeechSynthesisUtterance(withReadings(text));
       u.lang = "ja-JP";
       if (sp.voice) u.voice = sp.voice;
       // ElevenLabs の 1.15 ≒ ブラウザの 1.25 として換算
