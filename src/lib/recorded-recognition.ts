@@ -10,13 +10,28 @@ import { getAudioContext, type RecognitionErrorEvent, type RecognitionLike, type
 /** 送る音声の速さ（16kHz・モノラル。声の文字起こしには十分で、軽い） */
 const RATE = 16_000;
 /** 話し終わりとみなす無音の長さ */
-const END_SILENCE_MS = 900;
+const END_SILENCE_MS = 650;
 /** 何も話さなかったときに区切るまでの時間（ブラウザの音声認識と同じく、区切られたら呼び出し側がまた始める） */
 const NO_SPEECH_MS = 7_000;
 /** 1 発言の最長 */
 const MAX_UTTER_MS = 30_000;
 /** 話し始めの直前も少し残す（最初の音を切らないように） */
 const PRE_ROLL_MS = 350;
+/** これだけ黙ったら、話し終わりの判定を待たずに文字起こしを先に始める */
+const EARLY_SEND_MS = 300;
+
+/** 音声を送って文字にしてもらう */
+async function sendForText(samples: Float32Array, signal: AbortSignal): Promise<string> {
+  const res = await fetch("/api/stt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audio: toBase64(toWav(samples, RATE)), mimeType: "audio/wav" }),
+    signal,
+  });
+  const json = (await res.json().catch(() => ({}))) as { ok?: boolean; text?: string };
+  if (!res.ok || !json.ok) throw new Error("stt");
+  return (json.text ?? "").trim();
+}
 
 export function canRecord(): boolean {
   return typeof window !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia) && typeof AudioContext !== "undefined";
@@ -93,6 +108,8 @@ export class RecordedRecognition implements RecognitionLike {
     if (!this.ended) throw new Error("already started");
     this.ended = false;
     const id = ++this.session;
+    // 話している間に、文字起こしのサーバーを起こしておく（話し終えてから待たされないように）
+    void fetch("/api/stt", { method: "GET", cache: "no-store" }).catch(() => {});
     void this.run(id).catch((err: unknown) => {
       if (id !== this.session) return;
       const name = err instanceof Error ? err.name : "";
@@ -147,7 +164,7 @@ export class RecordedRecognition implements RecognitionLike {
     }
     this.stream = stream;
     const source = ctx.createMediaStreamSource(stream);
-    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const proc = ctx.createScriptProcessor(2048, 1, 1);
     const mute = ctx.createGain();
     mute.gain.value = 0;
     source.connect(proc);
@@ -155,7 +172,7 @@ export class RecordedRecognition implements RecognitionLike {
     mute.connect(ctx.destination); // つながっていないと音の処理が動かない端末があるため（音は出さない）
     this.nodes = [source, proc, mute];
 
-    const frameMs = (4096 / ctx.sampleRate) * 1000;
+    const frameMs = (2048 / ctx.sampleRate) * 1000;
     const chunks: Float32Array[] = [];
     const preRoll: Float32Array[] = [];
     let floor = 0.004; // まわりの雑音の大きさ（少しずつ合わせる）
@@ -165,6 +182,22 @@ export class RecordedRecognition implements RecognitionLike {
     let spokeMs = 0;
     let waitedMs = 0;
     let lastPing = 0;
+
+    const concat = () => {
+      const all = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+      let o = 0;
+      for (const c of chunks) {
+        all.set(c, o);
+        o += c.length;
+      }
+      return all;
+    };
+    // 少し黙った時点で、話し終わりを待たずに文字起こしを先に始める（続きを話したら取り消す）
+    let early: { controller: AbortController; promise: Promise<string> } | null = null;
+    const cancelEarly = () => {
+      early?.controller.abort();
+      early = null;
+    };
 
     const utterance = await new Promise<Float32Array | null>((resolve) => {
       proc.onaudioprocess = (e) => {
@@ -199,35 +232,31 @@ export class RecordedRecognition implements RecognitionLike {
           lastPing = 0;
           this.onspeechstart?.();
         }
-        silentMs = rms > threshold * 0.7 ? 0 : silentMs + frameMs;
-        if (silentMs >= END_SILENCE_MS || spokeMs >= MAX_UTTER_MS) {
-          const all = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
-          let o = 0;
-          for (const c of chunks) {
-            all.set(c, o);
-            o += c.length;
-          }
-          resolve(all);
+        if (rms > threshold * 0.7) {
+          silentMs = 0;
+          cancelEarly();
+        } else silentMs += frameMs;
+        if (!early && silentMs >= EARLY_SEND_MS && spokeMs - silentMs >= 350) {
+          const controller = new AbortController();
+          early = { controller, promise: sendForText(concat(), controller.signal) };
+          early.promise.catch(() => {}); // 取り消したときのエラーは無視（使うときに改めて受け取る）
         }
+        if (silentMs >= END_SILENCE_MS || spokeMs >= MAX_UTTER_MS) resolve(concat());
       };
     });
     proc.onaudioprocess = null;
     this.release();
-    if (id !== this.session) return;
+    if (id !== this.session) return cancelEarly();
     // 短すぎる音（せき・物音）は送らない
-    if (!utterance || utterance.length < RATE * 0.35) return this.finish(id);
+    if (!utterance || utterance.length < RATE * 0.35) {
+      cancelEarly();
+      return this.finish(id);
+    }
 
-    this.controller = new AbortController();
-    const res = await fetch("/api/stt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audio: toBase64(toWav(utterance, RATE)), mimeType: "audio/wav" }),
-      signal: this.controller.signal,
-    });
-    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; text?: string };
+    const pending = early as { controller: AbortController; promise: Promise<string> } | null;
+    this.controller = pending?.controller ?? new AbortController();
+    const text = await (pending?.promise ?? sendForText(utterance, this.controller.signal));
     if (id !== this.session) return;
-    if (!res.ok || !json.ok) throw new Error("stt");
-    const text = (json.text ?? "").trim();
     if (text) this.onresult?.(result(text));
     this.finish(id);
   }

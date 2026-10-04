@@ -4,6 +4,7 @@
  * スマホでは画面が録った短い音声（WAV）をここで Gemini に渡して文字にする。音声は文字にするためだけに使い、保存しない。
  */
 import { streamGemini } from "@/llm/gemini";
+import { warmGemini } from "@/llm/health";
 import { getGeminiConfig } from "@/lib/config";
 
 const PROMPT = `この音声は、日本語で AI 秘書「フライデー」に話しかけたものです。話した内容をそのまま文字にしてください。
@@ -16,9 +17,11 @@ export const MAX_AUDIO_CHARS = 2_600_000;
 
 export async function transcribe(audio: string, mimeType: string, signal?: AbortSignal): Promise<string> {
   const config = getGeminiConfig();
+  // 速さ優先：軽いモデル（Flash-Lite）を先に、考える時間は最小で
+  const models = [...config.models].sort((a, b) => Number(b.includes("lite")) - Number(a.includes("lite")));
   let text = "";
   for await (const chunk of streamGemini({
-    config: { ...config, thinkingLevel: undefined, temperature: 0, maxOutputTokens: 400 },
+    config: { ...config, models, model: models[0], thinkingLevel: "minimal", temperature: 0, maxOutputTokens: 300 },
     contents: [{ role: "user", parts: [{ inlineData: { mimeType, data: audio } }, { text: PROMPT }] }],
     signal,
   })) {
@@ -28,4 +31,9 @@ export async function transcribe(audio: string, mimeType: string, signal?: Abort
     .replace(/^[「『"]|[」』"]$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** 話し始めたときに呼ぶ：Gemini への接続を温めておく */
+export function warmStt(): void {
+  warmGemini();
 }

@@ -1,14 +1,20 @@
 /**
  * POST /api/stt — スマホの音声会話の文字起こし
  *   { audio: base64, mimeType: "audio/wav" } → { ok, text }
- * 音声は文字にするためだけに使い、保存しない。
+ * GET は話し始めに呼ぶ準備（サーバーを起こしておく）。音声は文字にするためだけに使い、保存しない。
  */
-import { MAX_AUDIO_CHARS, transcribe } from "@/integrations/stt";
+import { MAX_AUDIO_CHARS, transcribe, warmStt } from "@/integrations/stt";
 import { toFridayError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
+
+/** GET：聞き取りを始めたときに呼ばれ、このサーバーと Gemini への接続を起こしておく（応答は空） */
+export function GET(): Response {
+  warmStt();
+  return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+}
 
 export async function POST(req: Request): Promise<Response> {
   const headers = { "Cache-Control": "no-store" };

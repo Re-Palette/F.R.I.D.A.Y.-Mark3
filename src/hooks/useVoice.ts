@@ -318,7 +318,8 @@ export function useVoice({
           else setInterim("");
           return;
         }
-        hold(text);
+        // 録音の聞き取りは 1 発言をまとめて文字にしてくるので、続きを待たずにすぐ送る
+        hold(text, rec instanceof RecordedRecognition ? 0 : AFTER_FINAL_MS);
       }
     };
 
