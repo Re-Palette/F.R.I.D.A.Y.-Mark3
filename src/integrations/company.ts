@@ -33,6 +33,20 @@ export function getCompanyConfig(): CompanyConfig | null {
   return url && token ? { url, token, bypass } : null;
 }
 
+/**
+ * 会社のダッシュボード（陽大が承認などをする画面）の URL。COMPANY_DASHBOARD_URL があればそれ、無ければ COMPANY_URL。
+ * 「会社のダッシュボード開いて」で新しいタブに開く。トークンは含めない。
+ */
+export function companyDashboardUrl(): string | null {
+  const raw = (process.env.COMPANY_DASHBOARD_URL ?? process.env.COMPANY_URL ?? "").trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function companyConnected(): boolean {
   return getCompanyConfig() !== null;
 }

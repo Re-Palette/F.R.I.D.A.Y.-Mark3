@@ -10,6 +10,7 @@ import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
 import type { NowPlaying } from "@/lib/music";
 import type { Reminder } from "@/integrations/reminders";
+import { companyDashboardUrl } from "@/integrations/company";
 import { STALL_DAYS, type TasksOverview } from "@/integrations/tasks";
 import type { WeatherReport } from "@/integrations/weather";
 import { weatherSummary } from "@/integrations/weather";
@@ -226,7 +227,7 @@ F.R.I.D.A.Y.：FRIDAY-Mark3 は会話基盤が見えてきています。次は�
   if (focus) out += FOCUS_RULES;
   if (quiz) out += quizSection(quiz, Boolean(voice));
   if (music) out += musicSection(music);
-  if (company || companyConnected) out += companySection(company, companyConnected);
+  if (company || companyConnected || companyDashboardUrl()) out += companySection(company, companyConnected);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
   if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
@@ -644,6 +645,16 @@ ${company.text}
       out += `- ${OWNER}の判断を待っているものが ${company.needsCeo} 件ある。会社の話をするときは、これを最初に伝える。
 `;
     }
+  }
+
+  const dashboard = companyDashboardUrl();
+  if (dashboard) {
+    out += `
+## 会社のダッシュボードを開く
+- 「会社のダッシュボード開いて」「ダッシュボード見せて」「承認しに行く」などと言われたら、返答の最後に <open-url label="会社のダッシュボード">${dashboard}</open-url> を付ける。
+- 本文は「会社のダッシュボードを開きます。」の一言。承認待ちがあれば「承認待ちが〇件あります」と添える。
+- 単に「ダッシュボード」と言われたときも、この会社のダッシュボードのこと。
+`;
   }
 
   if (connected) {
