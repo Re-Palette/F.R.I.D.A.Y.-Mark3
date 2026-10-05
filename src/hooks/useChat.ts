@@ -18,6 +18,7 @@ import { startFocus, stopFocus } from "@/lib/focus";
 import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
+import { useSessionSync } from "./useSessionSync";
 
 export interface UiError {
   code: string;
@@ -204,6 +205,10 @@ export function useChat() {
       /* private mode 等では保存しない */
     }
   }, [messages, phase, hydrated]);
+
+  // スマホとパソコンで同じ会話を続ける（脳を通して同期）
+  const replace = useCallback((list: UiMessage[]) => update(() => list), [update]);
+  const sync = useSessionSync({ hydrated, phase, messages, store, replace });
 
   const run = useCallback(
     async (history: UiMessage[], opts: SendOptions = {}) => {
@@ -621,7 +626,8 @@ export function useChat() {
     } catch {
       /* noop */
     }
-  }, [update]);
+    sync.markCleared();
+  }, [sync, update]);
 
   return { messages, phase, stage, lastRun, lastErrorCode, send, retry, stop, clear };
 }
