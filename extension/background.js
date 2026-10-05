@@ -69,6 +69,25 @@ const MUSIC_URLS = ["https://music.amazon.co.jp/*", "https://music.amazon.com/*"
 const MUSIC_HOME = "https://music.amazon.co.jp";
 
 /** 開いている Amazon Music のタブ（音が出ているものを優先） */
+/**
+ * そのサイトをアプリとしてインストールしていれば、アプリで開いて、そのウィンドウのタブを返す（無ければ null）。
+ * アプリには開くページを渡せないので、起動してから目的のページに移る。
+ */
+async function openInApp(url, match) {
+  const target = new URL(url);
+  if (!(await launchInstalledApp(new URL(`${target.origin}/`)).catch(() => false))) return null;
+  for (let i = 0; i < 40; i++) {
+    const tabs = await chrome.tabs.query({ url: match });
+    const tab = tabs.sort((a, b) => b.id - a.id)[0];
+    if (tab) {
+      if (tab.url !== target.href) await chrome.tabs.update(tab.id, { url: target.href });
+      return tab;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return null;
+}
+
 async function musicTab() {
   const tabs = await chrome.tabs.query({ url: MUSIC_URLS });
   return tabs.find((t) => t.audible) ?? tabs[0] ?? null;
@@ -310,7 +329,8 @@ async function pageEnsurePlaying(waitMs) {
 async function playQuery(tab, query, kind) {
   const search = `${MUSIC_HOME}/search/${encodeURIComponent(query)}`;
   if (tab) await chrome.tabs.update(tab.id, { url: search });
-  else tab = await chrome.tabs.create({ url: search, active: false });
+  // 開いていなければ、インストールした Amazon Music のアプリで開く（入れていなければタブで）
+  else tab = (await openInApp(search, MUSIC_URLS)) ?? (await chrome.tabs.create({ url: search, active: false }));
   await loaded(tab.id);
   const found = await inPage(tab.id, pageFindResult, [kind || null]);
   if (found?.href) {
@@ -340,7 +360,7 @@ async function music(msg) {
     if (action === "now") return { ok: true, now: null };
     if (action === "duck") return { ok: true };
     if (action === "play" || action === "resume") {
-      await chrome.tabs.create({ url: MUSIC_HOME, active: true });
+      if (!(await openInApp(MUSIC_HOME, MUSIC_URLS))) await chrome.tabs.create({ url: MUSIC_HOME, active: true });
       return { ok: false, opened: true, error: "Amazon Music を開きました。聴きたい曲を選んで再生してください。" };
     }
     return { ok: false, error: "Amazon Music のタブが開いていません。「〇〇かけて」と頼むと開きます。" };

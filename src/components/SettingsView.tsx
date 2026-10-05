@@ -265,7 +265,7 @@ function BrowserControls({ hidden }: { hidden: boolean }) {
         ) : installed && !old ? (
           <b style={{ color: "var(--cyan)" }}>接続済み（開く・閉じる・Amazon Music の操作・インストールしたアプリで開くが使えます）</b>
         ) : installed ? (
-          <b style={{ color: "var(--cyan)" }}>古い版（{version ?? "?"}）。入れ直すと、インストールしたアプリ（会社のダッシュボードなど）をアプリのまま開けます</b>
+          <b style={{ color: "var(--cyan)" }}>古い版（{version ?? "?"}）。入れ直すと、インストールしたアプリ（会社のダッシュボード・Amazon Music など）をアプリのまま開けます</b>
         ) : (
           "未導入"
         )}
@@ -275,7 +275,7 @@ function BrowserControls({ hidden }: { hidden: boolean }) {
           <p className="settings__note">
             入れると「〇〇開いて」でポップアップが止められずに開き、YouTube や Google のページも「閉じて」で閉じられます。
             さらに、Chrome で開いた Amazon Music（music.amazon.co.jp）を「作業用の音楽かけて」「次の曲」「止めて」「音量下げて」で操作できます（パソコンの Chrome / Edge 用）。
-            Chrome にアプリとしてインストールしたサイト（会社のダッシュボードなど）は、「〇〇開いて」でタブではなくアプリで開きます（入れるときに「アプリ、拡張機能、テーマの管理」の許可を求められます）。
+            Chrome にアプリとしてインストールしたサイト（会社のダッシュボード・Amazon Music など）は、「〇〇開いて」でタブではなくアプリで開きます（入れるときに「アプリ、拡張機能、テーマの管理」の許可を求められます）。
           </p>
           <div className="settings__actions">
             <a className="ghost-btn" href="/friday-extension.zip" download>
