@@ -168,7 +168,8 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
     const draw = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      const m = modeRef.current;
+      // お知らせを読み上げているときも（音声会話でなくても）話している動きにする
+      const m: CoreMode = modeRef.current === "idle" && voiceLevel.talking ? "speaking" : modeRef.current;
       const tune = TUNE[m];
       angle += tune.spin * dt;
       // 声の大きさ（音声モードの間だけ。0〜1）。声に合わせて明るく・大きく脈打つ
@@ -178,7 +179,7 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
       const cx = w / 2;
       const cy = h / 2;
       const R = Math.min(w, h) * 0.44;
-      const breath = 1 + Math.sin(t * 1.1) * 0.02 + lv * 0.07;
+      const breath = 1 + Math.sin(t * 1.1) * 0.02 + lv * (m === "speaking" ? 0.1 : 0.07);
       const scan = Math.sin(t * 1.6); // 検索中の光の帯の高さ
       const wave = (t * 0.9) % 1; // 返事中の光の波
 
@@ -208,6 +209,10 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
         } else if (m === "listening") {
           // 聞いている間は、声が大きいほど表面が大きく波打つ
           s *= 1 + (0.03 + lv * 0.2) * Math.sin(t * 6 + y0 * 5 + x * 3);
+        } else if (m === "speaking") {
+          // 話している間は、声の大きさに合わせて中心から外へ波が広がるように脈打つ
+          const d = Math.hypot(x, y0, z);
+          s *= 1 + lv * 0.1 + (0.015 + lv * 0.14) * Math.sin(t * 9 - d * 5);
         } else if (m === "connect") {
           s *= 0.9 + 0.1 * Math.sin(t * 3);
         }

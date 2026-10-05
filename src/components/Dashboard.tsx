@@ -27,7 +27,7 @@ import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tab
 import { setHoloExplain, useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
-import { startVoiceLevel, stopVoiceLevel, voiceLevel } from "@/lib/voice-level";
+import { startVoiceLevel, stopVoiceLevel, trackSpeech, voiceLevel } from "@/lib/voice-level";
 import { duckMusic, runAmazonMusic } from "@/lib/amazon-music";
 import { useNudges } from "@/hooks/useNudges";
 import { PHONE_QUERY, useMedia } from "@/hooks/useMedia";
@@ -362,11 +362,17 @@ export function Dashboard() {
       chime("wake");
       voiceRef.current?.noteSpoken(text); // 自分で読み上げた言葉を聞き取って返事しないように
       window.setTimeout(() => {
+        // 読み上げている間は HOME のコアも話しているように動かす
         if (cloudTts) {
           const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`);
-          audio.play().catch(() => {});
+          const release = trackSpeech(audio);
+          audio.onended = audio.onerror = release;
+          audio.play().catch(release);
         } else if ("speechSynthesis" in window) {
           const u = new SpeechSynthesisUtterance(withReadings(text));
+          const release = trackSpeech(null);
+          u.onend = u.onerror = release;
+          window.setTimeout(release, 4000 + text.length * 300); // 終わりの合図が来ない環境の保険
           u.lang = "ja-JP";
           u.voice = pickJapaneseVoice(window.speechSynthesis.getVoices());
           u.rate = Math.min(1.8, Math.max(0.8, (voiceSpeedRef.current / 1.15) * 1.25));

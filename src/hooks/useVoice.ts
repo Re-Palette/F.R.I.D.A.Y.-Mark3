@@ -30,6 +30,7 @@ import {
 import { withReadings } from "@/lib/reading";
 import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
+import { trackSpeech } from "@/lib/voice-level";
 
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
@@ -619,9 +620,16 @@ export function useVoice({
         else stopRec();
       }
       let played = false;
+      // 声の大きさに合わせて HOME のコアを動かす（ElevenLabs の声は実際の大きさ、ブラウザの声は話し声らしい揺れ）
+      let release = item.audio ? trackSpeech(item.audio) : null;
       if (item.audio) played = await playCloud(item.audio, gen, () => ensureFetch(sp.queue[0]));
+      release?.();
       if (gen !== sp.gen) return;
-      if (!played) await playBrowser(item.text);
+      if (!played) {
+        release = trackSpeech(null);
+        await playBrowser(item.text);
+        release();
+      }
       sp.lastSpokeAt = Date.now();
       const last = sp.log[sp.log.length - 1];
       if (last) last.at = sp.lastSpokeAt; // 読み終えた時刻から数える
