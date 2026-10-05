@@ -8,7 +8,7 @@ import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useBargeIn } from "@/hooks/useBargeIn";
 import { withReadings } from "@/lib/reading";
-import { extensionVersion, hasExtension, MUSIC_EXTENSION_VERSION, versionAtLeast } from "@/lib/tabs";
+import { extensionVersion, hasExtension, LATEST_EXTENSION_VERSION, versionAtLeast } from "@/lib/tabs";
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
@@ -253,8 +253,8 @@ function BrowserControls({ hidden }: { hidden: boolean }) {
       setVersion(extensionVersion());
     });
   }, [hidden]);
-  // 古い版は「開く・閉じる」だけ。Amazon Music の操作には入れ直しが要る
-  const old = installed === true && !versionAtLeast(version, MUSIC_EXTENSION_VERSION);
+  // 古い版は一部の機能が使えない（Amazon Music の操作・インストールしたアプリで開く）。入れ直しが要る
+  const old = installed === true && !versionAtLeast(version, LATEST_EXTENSION_VERSION);
 
   return (
     <>
@@ -263,9 +263,9 @@ function BrowserControls({ hidden }: { hidden: boolean }) {
         {installed === null ? (
           "確認中…"
         ) : installed && !old ? (
-          <b style={{ color: "var(--cyan)" }}>接続済み（開く・閉じる・Amazon Music の操作が使えます）</b>
+          <b style={{ color: "var(--cyan)" }}>接続済み（開く・閉じる・Amazon Music の操作・インストールしたアプリで開くが使えます）</b>
         ) : installed ? (
-          <b style={{ color: "var(--cyan)" }}>古い版（{version ?? "?"}）。入れ直すと Amazon Music を操作できます</b>
+          <b style={{ color: "var(--cyan)" }}>古い版（{version ?? "?"}）。入れ直すと、インストールしたアプリ（会社のダッシュボードなど）をアプリのまま開けます</b>
         ) : (
           "未導入"
         )}
@@ -275,6 +275,7 @@ function BrowserControls({ hidden }: { hidden: boolean }) {
           <p className="settings__note">
             入れると「〇〇開いて」でポップアップが止められずに開き、YouTube や Google のページも「閉じて」で閉じられます。
             さらに、Chrome で開いた Amazon Music（music.amazon.co.jp）を「作業用の音楽かけて」「次の曲」「止めて」「音量下げて」で操作できます（パソコンの Chrome / Edge 用）。
+            Chrome にアプリとしてインストールしたサイト（会社のダッシュボードなど）は、「〇〇開いて」でタブではなくアプリで開きます（入れるときに「アプリ、拡張機能、テーマの管理」の許可を求められます）。
           </p>
           <div className="settings__actions">
             <a className="ghost-btn" href="/friday-extension.zip" download>

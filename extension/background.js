@@ -1,4 +1,5 @@
 // F.R.I.D.A.Y. が開いたタブを覚えておき、「閉じて」で閉じる。覚えるのは自分で開いたタブだけ。
+// 開くページが、Chrome にインストールしたアプリ（会社のダッシュボードなど）の入口なら、タブではなくそのアプリで開く。
 // Amazon Music の Web プレーヤー（music.amazon.co.jp）を、再生・一時停止・次の曲・音量などで操作する。
 const KEY = "fridayTabs";
 
@@ -9,6 +10,27 @@ async function save(ids) {
   await chrome.storage.session.set({ [KEY]: ids.slice(-30) });
 }
 
+/**
+ * インストールしたアプリ（Chrome の「アプリとしてインストール」）の入口なら、そのアプリのウィンドウで開く。
+ * アプリには開くページを渡せないので、入口（サイトのトップかアプリの開始ページ）のときだけ。開けたら true
+ */
+async function launchInstalledApp(url) {
+  if (!chrome.management?.getAll || !chrome.management.launchApp) return false;
+  const trim = (u) => u.replace(/\/+$/, "");
+  const apps = (await chrome.management.getAll()).filter((e) => e.isApp && e.enabled && e.appLaunchUrl);
+  const app = apps.find((a) => {
+    try {
+      const start = new URL(a.appLaunchUrl);
+      return start.origin === url.origin && (url.pathname === "/" || trim(start.href) === trim(url.href));
+    } catch {
+      return false;
+    }
+  });
+  if (!app) return false;
+  await chrome.management.launchApp(app.id);
+  return true;
+}
+
 async function open(url) {
   let parsed;
   try {
@@ -17,6 +39,8 @@ async function open(url) {
     return { ok: false, error: "URL が正しくありません。" };
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return { ok: false, error: "開けない URL です。" };
+  // アプリで開けなければ、ふつうにタブで開く
+  if (await launchInstalledApp(parsed).catch(() => false)) return { ok: true, app: true };
   const tab = await chrome.tabs.create({ url: parsed.toString(), active: true });
   await save([...(await load()), tab.id]);
   return { ok: true };
