@@ -3,7 +3,7 @@
  */
 import type { CalendarAccess, CalendarEvent } from "@/integrations/google-calendar";
 import { readDatedNotes } from "@/integrations/documents";
-import { getTasksOverview, type Task } from "@/integrations/tasks";
+import { getTasksOverview, STALL_DAYS, type Project, type Task } from "@/integrations/tasks";
 import { LOG_DIR, listNotes, MEMORY_PATH, readNote } from "@/memory/github-brain";
 
 export interface ReviewMaterial {
@@ -14,6 +14,10 @@ export interface ReviewMaterial {
   done: Task[];
   open: Task[];
   events: CalendarEvent[] | null;
+  /** これから 1 週間の予定（1 週間の振り返りのときだけ） */
+  nextEvents?: CalendarEvent[] | null;
+  /** プロジェクトの動き（何日動いていないか） */
+  projects?: Project[];
   /** 記憶.md のうち、期間中に書き足された部分 */
   memories: string;
 }
@@ -42,14 +46,15 @@ export async function gatherReview(tz: string, days: number, calendar?: Calendar
   const to = new Intl.DateTimeFormat("sv-SE", { timeZone: tz }).format(new Date());
   const from = addDays(to, -(days - 1));
   const perLog = days <= 1 ? 12_000 : 2500;
-  const [logs, diaries, tasks, events, memories] = await Promise.all([
+  const [logs, diaries, tasks, events, memories, nextEvents] = await Promise.all([
     readDatedNotes(LOG_DIR, from, to, perLog).catch(() => []),
     readDatedNotes("日記", from, to, 1500).catch(() => []),
     getTasksOverview().catch(() => ({ projects: [], todos: [], done: [] })),
     calendar ? calendar.between(-(days - 1), days).catch(() => null) : Promise.resolve(null),
     memoriesSince(from).catch(() => ""),
+    days >= 7 && calendar ? calendar.between(1, 7).catch(() => null) : Promise.resolve(null),
   ]);
-  return { from, to, logs, diaries, done: tasks.done, open: tasks.todos, events, memories };
+  return { from, to, logs, diaries, done: tasks.done, open: tasks.todos, events, memories, nextEvents, projects: tasks.projects };
 }
 
 /** 会話に渡す文章にする */
@@ -66,8 +71,32 @@ export function formatMaterial(m: ReviewMaterial): string {
   const open = m.open.length
     ? m.open.slice(0, 30).map((t) => `- ${t.text}${t.project ? `［${t.project}］` : ""}${t.due ? `（期限 ${t.due}）` : ""}`).join("\n")
     : "（なし）";
-  return `期間: ${m.from} 〜 ${m.to}
+  const nextWeek = addDays(m.to, 7);
+  const dueSoon = m.open.filter((t) => t.due && t.due > m.to && t.due <= nextWeek);
+  const extra =
+    m.projects === undefined
+      ? ""
+      : `
+## プロジェクトの動き
+${
+  m.projects.length
+    ? m.projects
+        .map(
+          (p) =>
+            `- ${p.name}: 進捗 ${p.progress}%${p.next ? ` 次: ${p.next}` : ""}${p.idleDays === undefined ? "" : p.idleDays >= STALL_DAYS && p.progress < 100 ? `（${p.idleDays}日動いていない＝止まっている）` : `（最終更新 ${p.idleDays}日前）`}`,
+        )
+        .join("\n")
+    : "（プロジェクトのノートなし）"
+}
 
+## これから 1 週間の予定
+${m.nextEvents === undefined || m.nextEvents === null ? "（カレンダー未接続・読み込めず）" : m.nextEvents.length ? m.nextEvents.map((e) => `- ${e.dayLabel} ${e.rangeLabel} ${e.title}`).join("\n") : "（予定なし）"}
+
+## これから 1 週間が期限の ToDo
+${dueSoon.length ? dueSoon.map((t) => `- ${t.text}（期限 ${t.due}）${t.project ? `［${t.project}］` : ""}`).join("\n") : "（なし）"}
+`;
+  return `期間: ${m.from} 〜 ${m.to}
+${extra}
 ## 予定（カレンダー）
 ${events}
 

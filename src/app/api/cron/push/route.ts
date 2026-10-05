@@ -2,6 +2,7 @@
  * GET /api/cron/push — 5 分ごとに GitHub Actions から呼ばれる（Authorization: Bearer <CRON_SECRET>）。
  *   1. 時間が来たリマインダーを全端末に通知し、完了にする
  *   2. ニュースの時間を過ぎていて、今日まだ送っていなければ、今日のニュースの見出しを通知する
+ *   3. 日曜の夜なら、週の振り返りを作って通知する（週 1 回。通知の設定が無くてもノートは作る）
  */
 import { getPushConfig, listSubscriptions, readPushState, sendPush, writePushState } from "@/integrations/push";
 import { listReminders, markReminderDone } from "@/integrations/reminders";
@@ -9,6 +10,7 @@ import { localNow, readNewsSettings } from "@/integrations/news";
 import { newsHeadlines } from "@/integrations/headlines";
 import { safeEqual } from "@/lib/auth";
 import { getTimezone } from "@/lib/config";
+import { runWeeklyIfDue } from "@/integrations/weekly";
 import { isBrainConfigured } from "@/memory/github-brain";
 
 export const runtime = "nodejs";
@@ -20,8 +22,10 @@ export async function GET(req: Request): Promise<Response> {
   if (!secret || !safeEqual(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) {
     return Response.json({ ok: false, error: secret ? "unauthorized" : "CRON_SECRET が設定されていません" }, { status: 401 });
   }
-  if (!getPushConfig().configured || !isBrainConfigured()) return Response.json({ ok: true, skipped: "push or brain not configured" });
-  if (!(await listSubscriptions()).length) return Response.json({ ok: true, skipped: "no devices" });
+  // 週の振り返り（通知の設定が無くても作る）
+  const weekly = await runWeeklyIfDue().catch((err: unknown) => ({ status: "skipped" as const, reason: err instanceof Error ? err.message : "failed" }));
+  if (!getPushConfig().configured || !isBrainConfigured()) return Response.json({ ok: true, weekly, skipped: "push or brain not configured" });
+  if (!(await listSubscriptions()).length) return Response.json({ ok: true, weekly, skipped: "no devices" });
 
   const result: { reminders: number; news: boolean | string } = { reminders: 0, news: false };
 
@@ -49,5 +53,5 @@ export async function GET(req: Request): Promise<Response> {
       result.news = err instanceof Error ? err.message : "failed";
     }
   }
-  return Response.json({ ok: true, ...result });
+  return Response.json({ ok: true, weekly, ...result });
 }

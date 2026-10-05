@@ -3,6 +3,7 @@
  * 他人に叩かれないよう、Vercel が付ける「Authorization: Bearer <CRON_SECRET>」を確かめる。
  */
 import { writeDailyDiary } from "@/integrations/diary";
+import { runWeeklyIfDue } from "@/integrations/weekly";
 import { refreshMemoryIndex } from "@/memory/obsidian";
 import { safeEqual } from "@/lib/auth";
 
@@ -18,9 +19,11 @@ export async function GET(req: Request): Promise<Response> {
   }
   try {
     const diary = await writeDailyDiary();
+    // 日曜なら週の振り返りも（5 分ごとの定期実行を設定していない場合の代わり。作ってあれば何もしない）
+    const weekly = await runWeeklyIfDue().catch(() => null);
     // 夜のうちに、意味で探すための索引も進めておく
     const indexed = await refreshMemoryIndex(true).catch(() => 0);
-    return Response.json({ ok: true, ...diary, indexed });
+    return Response.json({ ok: true, ...diary, weekly, indexed });
   } catch (err) {
     console.error("[friday] diary failed:", err);
     return Response.json({ ok: false, error: err instanceof Error ? err.message : "failed" }, { status: 500 });

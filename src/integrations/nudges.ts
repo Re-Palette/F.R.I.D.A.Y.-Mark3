@@ -4,6 +4,7 @@
  *   ToDo      … 期限が今日のもの（朝 9 時）・明日のもの（夜 7 時）
  *   天気      … 今日の降水確率が高いとき（朝 7 時）「傘を持っていって」
  *   プロジェクト … しばらく動いていないもの（昼 12 時に 1 日 1 回）
+ *   振り返り  … 日曜の夜、今週の振り返りができていたら（20 時半）
  * 授業ノートの課題（締め切りつき）は、まとめたときに ToDo に入るので、ToDo の声かけで知らせる。
  * 声かけの文と「いつから・いつまで言ってよいか」を返し、画面が時間になったら話す（同じものは 1 回だけ）。
  * Gemini は使わない（無料枠を使わない・すぐ返せる）。
@@ -11,6 +12,7 @@
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import { getTasksOverview, stalledProjects, type Project } from "@/integrations/tasks";
 import { getWeather } from "@/integrations/weather";
+import { latestWeeklyReview } from "@/integrations/weekly";
 
 export interface Nudge {
   id: string;
@@ -124,6 +126,21 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
       text: `${p.name}が${p.idleDays}日動いていません。${p.next ? `次は「${p.next}」からですね。` : "次の一手を決めておきましょうか。"}${others}`,
       kind: "project",
     });
+  }
+
+  // 週の振り返り：日曜の夜、今週の分ができていたら（自動で作られるのは 20 時すぎ）
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(new Date(now));
+  if (weekday === "Sun" && now >= localTime(today, "20:00", tz)) {
+    const weekly = await latestWeeklyReview().catch(() => null);
+    if (weekly?.path.endsWith(`${today}.md`)) {
+      out.push({
+        id: `weekly:${today}`,
+        at: localTime(today, "20:30", tz),
+        until: localTime(today, "23:30", tz),
+        text: "今週の振り返りができています。「振り返り聞かせて」と言ってもらえれば、要点を話します。",
+        kind: "project",
+      });
+    }
   }
 
   // 天気：今日の降水確率が 50% 以上なら、朝のうちに

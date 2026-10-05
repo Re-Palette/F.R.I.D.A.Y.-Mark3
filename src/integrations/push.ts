@@ -111,6 +111,10 @@ export async function sendPush(payload: PushPayload, only?: string): Promise<num
 
 export interface PushState {
   newsDate?: string;
+  /** 週の振り返りを作った日（日曜の日付） */
+  weeklyDate?: string;
+  /** 出かける前の知らせを送った予定（id:開始時刻） */
+  departed?: string[];
 }
 
 export async function readPushState(): Promise<PushState> {

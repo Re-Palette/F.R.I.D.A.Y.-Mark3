@@ -21,6 +21,7 @@ import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
 import { asksForDiary, asksForReview, formatMaterial, gatherReview } from "@/integrations/review";
+import { latestWeeklyReview } from "@/integrations/weekly";
 import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import type { CalendarEvent } from "@/integrations/google-calendar";
@@ -86,15 +87,23 @@ export const chatAgent: Agent = {
         )
       : Promise.resolve(null);
     // 振り返り（1 週間）・日記（今日）を頼まれたら、会話ログ・ToDo・予定などの材料を集める（少し長めに待つ）
-    const reviewKind = !ctx.memory.connected ? null : asksForReview(latest) ? "week" : asksForDiary(latest) ? "day" : null;
-    const reviewTask: Promise<string | null> = reviewKind
-      ? within(
-          gatherReview(ctx.timezone, reviewKind === "week" ? 7 : 1, ctx.calendar).then(formatMaterial),
-          REVIEW_BUDGET_MS,
-          null,
-          "review",
-        )
-      : Promise.resolve(null);
+    let reviewKind: "week" | "day" | "week-saved" | null = !ctx.memory.connected ? null : asksForReview(latest) ? "week" : asksForDiary(latest) ? "day" : null;
+    // 今週の振り返りが保存してあれば（日曜の夜に自動で作ったもの）、作り直さずにそれを話す。「作り直して」「作って」なら新しく作る
+    const saved =
+      reviewKind === "week" && !/作り直|作って|書いて|新しく|もう一度|更新/.test(latest)
+        ? await within(latestWeeklyReview(), budget, null, "weekly")
+        : null;
+    if (saved) reviewKind = "week-saved";
+    const reviewTask: Promise<string | null> = saved
+      ? Promise.resolve(saved.text)
+      : reviewKind
+        ? within(
+            gatherReview(ctx.timezone, reviewKind === "week" ? 7 : 1, ctx.calendar).then(formatMaterial),
+            REVIEW_BUDGET_MS,
+            null,
+            "review",
+          )
+        : Promise.resolve(null);
     // 朝のブリーフィング（「おはよう」「今日のことまとめて」）：予定・天気・ToDo に加えて、最近の授業の復習ポイントも集める
     const morning = asksForMorning(latest);
     const lectureTask: Promise<LectureDigest[]> =

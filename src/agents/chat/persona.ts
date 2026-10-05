@@ -62,7 +62,7 @@ export interface PersonaInput {
   /** 返答の長さの好み（SETTINGS） */
   replyLength?: "short" | "normal" | "long";
   /** 振り返り（week）・日記（day）の材料。material が null なら読み込めなかった */
-  review?: { kind: "week" | "day"; material: string | null } | null | false;
+  review?: { kind: "week" | "day" | "week-saved"; material: string | null } | null | false;
 }
 
 /** 音楽の話のときの Spotify の状態（音楽の話でなければ null） */
@@ -553,8 +553,19 @@ const WRITING_RULES = `
 - 脳の記憶・プロジェクト・予定など、手元の情報を活かして具体的に書く。分からない数字や事実は作らず【要確認】と書く。`;
 
 /** 振り返り・日記 */
-function reviewSection(kind: "week" | "day", material: string | null, voice: boolean): string {
+function reviewSection(kind: "week" | "day" | "week-saved", material: string | null, voice: boolean): string {
   const data = material ?? "（今回は材料を読み込めなかった。分かる範囲で書き、読み込めなかったことを一言伝える）";
+  if (kind === "week-saved") {
+    return `
+
+# 今週の振り返り（保存済みのものを伝える）
+- 下は、日曜の夜に作って Obsidian に保存してある今週の振り返り。新しく文書は作らない（<document> は書かない）。
+- 副社長として、${voice ? "話し言葉で 4〜6 文" : "短い見出しと箇条書きで"}要点を伝える：進んだこと → 止まっていること → 来週の予定と締め切り → 次の一手を一つ。
+- 詳しく聞かれたら、この振り返りの中身から答える。作り直してと言われたら、作り直すと伝える。
+
+# 保存済みの振り返り
+${data}`;
+  }
   if (kind === "week") {
     return `
 
@@ -563,9 +574,10 @@ function reviewSection(kind: "week" | "day", material: string | null, voice: boo
 - 構成：
   1. 今週のハイライト（3 つまで）
   2. できたこと・進んだこと（プロジェクトごと）
-  3. うまくいかなかったこと・課題（事実ベースで。責めない）
-  4. 気づき（会話や予定の傾向から分かること）
-  5. 来週の提案（具体的な行動を 3 つまで。未完了の ToDo と予定を踏まえる）
+  3. 止まっていること（「止まっている」プロジェクト・進まなかった ToDo。事実ベースで、責めない）
+  4. 来週の予定と締め切り（材料の「これから 1 週間」から、日付順に）
+  5. 気づき（会話や予定の傾向から分かること）
+  6. 次の一手（具体的な行動を 3 つまで。止まっているものの再開を優先して考える）
 - 材料に無いことは書かない。材料が少なければ短くてよい。
 - タグの外では${voice ? "話し言葉で 2〜3 文" : "2〜4 文"}で要点だけ伝える。
 
