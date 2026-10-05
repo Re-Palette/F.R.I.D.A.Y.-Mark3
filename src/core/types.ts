@@ -42,6 +42,8 @@ export interface ChatMessage {
   files?: ChatFile[];
   /** この発言で新しく添えたファイル（名前と、脳に保存した原本の場所）。要点を脳の「資料」に保存するのに使う */
   attached?: { name: string; path?: string }[];
+  /** スマホの音声会話：録った声（最新のユーザー発言にだけ付く。content は空で、サーバーが文字にする） */
+  audio?: { mimeType: string; data: string };
 }
 
 /** POST /api/chat のリクエストボディ */
@@ -102,6 +104,8 @@ export type StreamEvent =
   | { type: "mail-draft"; ok: boolean; to: string; subject: string; error?: string }
   /** いま何をしているか（外部の情報を集めている／検索している／考えている） */
   | { type: "stage"; stage: "connect" | "think" | "search" }
+  /** 録った声を文字にした結果（空なら何も聞き取れなかった＝返答しない） */
+  | { type: "transcript"; text: string }
   | { type: "done"; finishReason?: string; prepMs?: number }
   | { type: "error"; code: string; message: string; retryable: boolean };
 

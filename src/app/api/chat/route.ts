@@ -11,6 +11,10 @@ import { isSpotifyConfigured, SpotifyAccess, spotifyTokenFrom } from "@/integrat
 import type { AmazonMusicState } from "@/lib/music";
 import { asksForNews, localNow, NEWS_COOKIE, peekNewsSettings } from "@/integrations/news";
 import { isBrainConfigured } from "@/memory/github-brain";
+import { warmBrain } from "@/memory/obsidian";
+import { getTasksOverview } from "@/integrations/tasks";
+import { listReminders } from "@/integrations/reminders";
+import { getWeather } from "@/integrations/weather";
 import { cookieHeader, readCookie } from "@/lib/secure-cookie";
 import { getTimezone } from "@/lib/config";
 import { toFridayError } from "@/lib/errors";
@@ -71,6 +75,14 @@ export async function POST(req: Request): Promise<Response> {
   const mailCanDraft = refresh ? () => hasComposeScope(refresh) : undefined;
   const spotifyToken = spotifyTokenFrom(req);
   const draft = refresh ? (input: Parameters<typeof createDraft>[1]) => createDraft(refresh, input) : undefined;
+  // 録った声で話しかけられたら、文字にしている間に予定・天気・ToDo・脳の読み込みを先に始めておく
+  if (history[history.length - 1]?.audio) {
+    void Promise.allSettled([
+      getWeather(),
+      calendar?.upcoming(7),
+      ...(isBrainConfigured() ? [getTasksOverview(), listReminders(), warmBrain()] : []),
+    ]);
+  }
   const events = handleConversation(history, req.signal, {
     voice,
     onTurn: resolveTurn,

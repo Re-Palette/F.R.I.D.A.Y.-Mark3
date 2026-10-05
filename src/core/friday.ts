@@ -25,6 +25,7 @@ import { COMPANY_TAGS, runCompanyActions } from "./company-actions";
 import type { SpotifyAccess } from "@/integrations/spotify";
 import type { DraftInput } from "@/integrations/gmail";
 import { saveDocument, toFolder } from "@/integrations/documents";
+import { MAX_AUDIO_CHARS, transcribe } from "@/integrations/stt";
 
 export const MAX_MESSAGE_CHARS = 16000;
 const MAX_HISTORY_ITEMS = 400;
@@ -80,15 +81,18 @@ export function sanitizeHistory(input: unknown): ChatMessage[] {
   const messages = input
     .slice(-MAX_HISTORY_ITEMS)
     .filter(
-      (m): m is ChatMessage =>
+      (m, i, all): m is ChatMessage =>
         !!m &&
         typeof m === "object" &&
         (m.role === "user" || m.role === "assistant") &&
         typeof m.content === "string" &&
-        m.content.trim().length > 0,
+        // 録った声だけの最新の発言は、中身が空でもよい（サーバーで文字にする）
+        (m.content.trim().length > 0 || (i === all.length - 1 && m.role === "user" && toAudio((m as { audio?: unknown }).audio) !== undefined)),
     )
     .map((m, i, all) => {
       const out: ChatMessage = { role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) };
+      const audio = i === all.length - 1 && m.role === "user" ? toAudio((m as { audio?: unknown }).audio) : undefined;
+      if (audio) out.audio = audio;
       // 画像は最新のユーザー発言のものだけ受け取る（古い画像を毎回送り直さない）
       const image = i === all.length - 1 && m.role === "user" ? toImage((m as { image?: unknown }).image) : undefined;
       return image ? { ...out, image } : out;
@@ -119,6 +123,15 @@ export function sanitizeHistory(input: unknown): ChatMessage[] {
     throw new FridayError("BAD_REQUEST", "送信するメッセージがありません。", 400);
   }
   return messages;
+}
+
+/** 録った声（スマホの音声会話）を検証する */
+function toAudio(v: unknown): ChatMessage["audio"] | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const { mimeType, data } = v as { mimeType?: unknown; data?: unknown };
+  if (typeof mimeType !== "string" || !/^audio\/[\w.+-]+$/.test(mimeType)) return undefined;
+  if (typeof data !== "string" || !data || data.length > MAX_AUDIO_CHARS || !/^[A-Za-z0-9+/=]+$/.test(data.slice(0, 200))) return undefined;
+  return { mimeType, data };
 }
 
 /** 事前チェック（ストリーム開始前に HTTP ステータスで返したいエラー） */
@@ -160,6 +173,14 @@ export async function* handleConversation(
 ): AsyncGenerator<StreamEvent> {
   let turn: SaveTurnInput | null = null;
   try {
+    // スマホの音声会話：録った声をまず文字にして、画面に知らせる（何も聞き取れなければ返答しない）
+    const last = history[history.length - 1];
+    if (last?.audio) {
+      const heard = await transcribe(last.audio.data, last.audio.mimeType, signal);
+      yield { type: "transcript", text: heard };
+      if (!heard) return;
+      history = [...history.slice(0, -1), { role: "user", content: heard.slice(0, MAX_MESSAGE_CHARS) }];
+    }
     const window = buildConversationWindow(history, getContextConfig());
     const agent = await routeRequest(window.messages);
 

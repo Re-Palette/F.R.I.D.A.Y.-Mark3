@@ -274,6 +274,12 @@ export function Dashboard() {
   /* ---- 音声会話 ---- */
   const { stop: chatStop } = chat;
   const onVoiceCommand = useCallback((text: string) => void send(text, { voice: true }), [send]);
+  // スマホ：録った声をそのまま会話に送る（サーバーが文字にして返答まで続ける。何も聞き取れなければ聞き取りに戻る）
+  const onVoiceAudio = useCallback(
+    (audio: { mimeType: string; data: string }) =>
+      void chatSendRaw("", { voice: true, audio, onNoSpeech: () => voiceRef.current.replyFinished() }),
+    [chatSendRaw],
+  );
   const phone = useMedia(PHONE_QUERY);
   const voice = useVoice({
     onCommand: onVoiceCommand,
@@ -283,7 +289,8 @@ export function Dashboard() {
     // スマホは話している間マイクを止める（スピーカーの声を拾う・iPhone で再生と聞き取りがぶつかるのを防ぐ）
     bargeIn: bargeIn && !phone,
     wakeWord: !phone,
-    recorded: phone, // スマホは録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
+    recorded: phone, // スマホは録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため）
+    onAudio: onVoiceAudio, // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
   const voiceRef = useRef(voice);

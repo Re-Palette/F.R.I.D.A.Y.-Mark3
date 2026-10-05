@@ -97,6 +97,11 @@ export class RecordedRecognition implements RecognitionLike {
   onend: (() => void) | null = null;
   /** 声が聞こえている間、ときどき呼ぶ（呼び出し側が聞き取りの受付時間を延ばせるように） */
   onspeechstart: (() => void) | null = null;
+  /**
+   * 指定すると、文字にせずに録った声（WAV・base64）をそのまま渡す（会話のサーバーが文字にする。往復が 1 回で済む）。
+   * 指定しなければ /api/stt で文字にして onresult で返す。
+   */
+  onaudio: ((audio: { mimeType: string; data: string }) => void) | null = null;
 
   private session = 0;
   private stream: MediaStream | null = null;
@@ -109,7 +114,7 @@ export class RecordedRecognition implements RecognitionLike {
     this.ended = false;
     const id = ++this.session;
     // 話している間に、文字起こしのサーバーを起こしておく（話し終えてから待たされないように）
-    void fetch("/api/stt", { method: "GET", cache: "no-store" }).catch(() => {});
+    if (!this.onaudio) void fetch("/api/stt", { method: "GET", cache: "no-store" }).catch(() => {});
     void this.run(id).catch((err: unknown) => {
       if (id !== this.session) return;
       const name = err instanceof Error ? err.name : "";
@@ -236,7 +241,7 @@ export class RecordedRecognition implements RecognitionLike {
           silentMs = 0;
           cancelEarly();
         } else silentMs += frameMs;
-        if (!early && silentMs >= EARLY_SEND_MS && spokeMs - silentMs >= 350) {
+        if (!early && !this.onaudio && silentMs >= EARLY_SEND_MS && spokeMs - silentMs >= 350) {
           const controller = new AbortController();
           early = { controller, promise: sendForText(concat(), controller.signal) };
           early.promise.catch(() => {}); // 取り消したときのエラーは無視（使うときに改めて受け取る）
@@ -250,6 +255,13 @@ export class RecordedRecognition implements RecognitionLike {
     // 短すぎる音（せき・物音）は送らない
     if (!utterance || utterance.length < RATE * 0.35) {
       cancelEarly();
+      return this.finish(id);
+    }
+
+    // 声のまま渡す（会話のサーバーで文字にする）
+    if (this.onaudio) {
+      cancelEarly();
+      this.onaudio({ mimeType: "audio/wav", data: toBase64(toWav(utterance, RATE)) });
       return this.finish(id);
     }
 

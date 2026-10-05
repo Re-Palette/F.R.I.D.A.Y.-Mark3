@@ -75,7 +75,14 @@ export interface SendOptions {
   image?: { full: string; thumb: string };
   /** 添えたファイル（送る中身と、画面に出す名前など） */
   files?: { files: ChatFile[]; shown: { name: string; kind: string; thumb?: string }[]; attached?: { name: string; path?: string }[] };
+  /** スマホの音声会話：録った声（文字はサーバーが起こして、届いたら発言の表示を置き換える） */
+  audio?: { mimeType: string; data: string };
+  /** 録った声から何も聞き取れなかったとき（発言も返答も出さずに、聞き取りに戻る） */
+  onNoSpeech?: () => void;
 }
+
+/** 声で話しかけて、まだ文字になっていない発言の表示 */
+export const HEARING_PLACEHOLDER = "…";
 
 export type ChatPhase = "idle" | "waiting" | "streaming";
 /** F.R.I.D.A.Y. が今していること（HOME の THINK / SEARCH / CONNECT / CREATE 表示） */
@@ -113,6 +120,8 @@ function toChatImage(dataUrl: string | undefined): ChatImage | undefined {
 const fullFiles = new Map<string, ChatFile[]>();
 /** その発言で新しく添えたファイルの名前と、脳に保存した原本の場所（要点を「資料」に保存するため。その発言の送信のときだけ渡す） */
 const attachedFiles = new Map<string, { name: string; path?: string }[]>();
+/** 録った声（まだ文字になっていない最新の発言の分だけ） */
+const fullAudio = new Map<string, { mimeType: string; data: string }>();
 
 function toApiHistory(messages: UiMessage[]): ChatMessage[] {
   const list = messages.filter((m) => m.status !== "error" && m.content.trim());
@@ -129,6 +138,12 @@ function toApiHistory(messages: UiMessage[]): ChatMessage[] {
     if (image) out.image = image;
     if (i === withFiles) out.files = fullFiles.get(m.id);
     if (i === list.length - 1 && attachedFiles.has(m.id)) out.attached = attachedFiles.get(m.id);
+    // 録った声だけの発言は、文字の代わりに声を送る（サーバーが文字にする）
+    const audio = i === list.length - 1 && m.role === "user" ? fullAudio.get(m.id) : undefined;
+    if (audio) {
+      out.content = "";
+      out.audio = audio;
+    }
     return out;
   });
 }
@@ -372,6 +387,18 @@ export function useChat() {
 
           const handle = (event: StreamEvent) => {
             switch (event.type) {
+              case "transcript": {
+                // 録った声を文字にした結果：発言の表示を置き換える。何も聞き取れなければ、発言ごと取り消して聞き取りに戻る
+                const userId = history[history.length - 1]?.id;
+                if (userId) fullAudio.delete(userId);
+                if (!event.text.trim()) {
+                  finishNow(() => update((prev) => prev.filter((m) => m.id !== userId && m.id !== assistantId)));
+                  opts.onNoSpeech?.();
+                  break;
+                }
+                if (userId) patch(userId, (m) => ({ ...m, content: event.text }));
+                break;
+              }
               case "meta":
                 model = event.model;
                 setLastRun((s) => ({ ...s, model: event.model, contextMessages: event.contextMessages }));
@@ -568,9 +595,13 @@ export function useChat() {
 
   const send = useCallback(
     (text: string, opts: SendOptions = {}) => {
-      const content = text.trim();
+      const content = text.trim() || (opts.audio ? HEARING_PLACEHOLDER : "");
       if (!content) return false;
       const id = uid();
+      if (opts.audio) {
+        fullAudio.clear(); // 送るのはこの 1 回分だけ
+        fullAudio.set(id, opts.audio);
+      }
       if (opts.image) {
         fullImages.set(id, opts.image.full);
         // 古い画像は持ち続けない（送るのは最新の 1 枚だけ）

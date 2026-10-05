@@ -89,6 +89,7 @@ export function useVoice({
   bargeIn = true,
   wakeWord = true,
   recorded = false,
+  onAudio,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -103,6 +104,8 @@ export function useVoice({
   wakeWord?: boolean;
   /** ブラウザの音声認識の代わりに、録った音声をサーバーで文字にする（スマホ。ブラウザの認識が声を拾わないことがあるため） */
   recorded?: boolean;
+  /** 録った声をそのまま会話に送る（recorded のとき。会話のサーバーが文字にするので往復が 1 回で済む） */
+  onAudio?: (audio: { mimeType: string; data: string }) => void;
 }) {
   const wakeWordOn = useRef(wakeWord);
   wakeWordOn.current = wakeWord;
@@ -129,6 +132,8 @@ export function useVoice({
   const restartTimer = useRef(0);
   const onCommandRef = useRef(onCommand);
   onCommandRef.current = onCommand;
+  const onAudioRef = useRef(onAudio);
+  onAudioRef.current = onAudio;
   const onBargeInRef = useRef(onBargeIn);
   onBargeInRef.current = onBargeIn;
   /** 割り込み処理（読み上げの停止など。下で定義する関数を後から入れる） */
@@ -276,6 +281,18 @@ export function useVoice({
     const rec = new Ctor();
     // 録音で聞くときは、声が聞こえている間は受付時間を延ばす（途中のテキストが出ないため）
     if (rec instanceof RecordedRecognition) {
+      // 録った声は文字にせずそのまま会話に送る（送る先があるとき）
+      if (onAudioRef.current) {
+        rec.onaudio = (audio) => {
+          if (stateRef.current !== "listening" || !onAudioRef.current) return;
+          clearTimeout(followTimer.current);
+          setInterim("");
+          stopRec();
+          speech.current.armedAt = Date.now();
+          set("thinking");
+          onAudioRef.current(audio);
+        };
+      }
       rec.onspeechstart = () => {
         if (stateRef.current !== "listening") return;
         keepListening();
