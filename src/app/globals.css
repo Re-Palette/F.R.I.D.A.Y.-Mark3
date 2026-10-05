@@ -2740,6 +2740,15 @@ button:disabled,
   color: #e3e5e9;
 }
 
+/* しばらく動いていないプロジェクト */
+.projects__idle {
+  margin-right: 8px;
+  font-style: normal;
+  font-family: var(--font-jp);
+  font-size: 10.5px;
+  color: var(--orange);
+}
+
 .projects__bar {
   position: relative;
   height: 5px;

@@ -12,7 +12,7 @@ export interface Nudge {
   at: number;
   until: number;
   text: string;
-  kind: "calendar" | "todo" | "weather";
+  kind: "calendar" | "todo" | "weather" | "project" | "depart";
   eventAt?: number;
 }
 

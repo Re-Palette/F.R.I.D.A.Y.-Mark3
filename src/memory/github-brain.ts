@@ -171,6 +171,17 @@ async function putFile(path: string, text: string, message: string, sha?: string
   });
 }
 
+/** そのファイルが最後に更新された時刻（GitHub の最後のコミット。無ければ null） */
+export async function lastUpdatedAt(path: string): Promise<number | null> {
+  const c = getBrainConfig();
+  const res = await gh(c, `/commits?path=${encodeURIComponent(path)}&per_page=1`, {}, 5000);
+  if (!res.ok) throw explain(res.status);
+  const list = (await res.json()) as { commit?: { committer?: { date?: string }; author?: { date?: string } } }[];
+  const date = list[0]?.commit?.committer?.date ?? list[0]?.commit?.author?.date;
+  const at = date ? Date.parse(date) : NaN;
+  return Number.isFinite(at) ? at : null;
+}
+
 /** ファイルを書き換える（無ければ作る）。同時更新でぶつかったら 1 回だけ取り直して再試行 */
 export async function updateNote(path: string, update: (current: string | null) => string, message: string): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {

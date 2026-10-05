@@ -10,7 +10,7 @@ import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MailSummary } from "@/integrations/gmail";
 import type { NowPlaying } from "@/lib/music";
 import type { Reminder } from "@/integrations/reminders";
-import type { TasksOverview } from "@/integrations/tasks";
+import { STALL_DAYS, type TasksOverview } from "@/integrations/tasks";
 import type { WeatherReport } from "@/integrations/weather";
 import { weatherSummary } from "@/integrations/weather";
 import type { AgentContext } from "@/agents/types";
@@ -373,7 +373,11 @@ function tasksSection(tasks: TasksOverview | null, reminders: Reminder[] | null,
     ? "（今回は読み込めなかった）"
     : tasks.projects.length
       ? tasks.projects
-          .map((p) => `- ${p.name}: 進捗 ${p.progress}%（未完了 ${p.open} / 完了 ${p.done}）${p.next ? ` 次: ${p.next}` : ""}${p.status ? ` 状況: ${p.status}` : ""}`)
+          .map(
+            (p) =>
+              `- ${p.name}: 進捗 ${p.progress}%（未完了 ${p.open} / 完了 ${p.done}）${p.next ? ` 次: ${p.next}` : ""}${p.status ? ` 状況: ${p.status}` : ""}` +
+              (p.idleDays === undefined ? "" : p.idleDays >= STALL_DAYS && p.progress < 100 ? ` ［${p.idleDays}日動いていない＝止まっている］` : ` ［最終更新 ${p.idleDays === 0 ? "今日" : `${p.idleDays}日前`}］`),
+          )
           .join("\n")
       : "（まだプロジェクトのノートは無い。「プロジェクト/名前.md」を作ると表示される）";
   const todos = !tasks
@@ -399,6 +403,10 @@ ${todos}
 
 # これからのリマインダー
 ${upcoming}
+
+# 止まっているプロジェクトの扱い
+- ［止まっている］と付いたプロジェクトは、その話のとき・進捗を聞かれたとき・朝のまとめのときに、静かに一言触れる（「ARQO が5日動いていません。次は〇〇からですね」）。
+- 毎回は言わない。責めず、次の一手を一つ添える。
 
 # ToDo・進捗・リマインダーの書き方（頼まれたときだけ、返答の最後に 1 行ずつ付ける）
 - ToDo の追加：<todo-add>{"text":"やること","project":"プロジェクト名","due":"YYYY-MM-DD"}</todo-add>（project・due は分かるときだけ）

@@ -3,12 +3,13 @@
  *   予定      … 始まる 20 分前に「あと 20 分です」
  *   ToDo      … 期限が今日のもの（朝 9 時）・明日のもの（夜 7 時）
  *   天気      … 今日の降水確率が高いとき（朝 7 時）「傘を持っていって」
+ *   プロジェクト … しばらく動いていないもの（昼 12 時に 1 日 1 回）
  * 授業ノートの課題（締め切りつき）は、まとめたときに ToDo に入るので、ToDo の声かけで知らせる。
  * 声かけの文と「いつから・いつまで言ってよいか」を返し、画面が時間になったら話す（同じものは 1 回だけ）。
  * Gemini は使わない（無料枠を使わない・すぐ返せる）。
  */
 import type { CalendarEvent } from "@/integrations/google-calendar";
-import { getTasksOverview } from "@/integrations/tasks";
+import { getTasksOverview, stalledProjects, type Project } from "@/integrations/tasks";
 import { getWeather } from "@/integrations/weather";
 
 export interface Nudge {
@@ -21,7 +22,7 @@ export interface Nudge {
   text: string;
   /** 予定の始まる時刻 */
   eventAt?: number;
-  kind: "calendar" | "todo" | "weather";
+  kind: "calendar" | "todo" | "weather" | "project" | "depart";
 }
 
 /** その地域での日付（YYYY-MM-DD） */
@@ -79,7 +80,7 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
   }
 
   // ToDo：期限が今日（朝 9 時から夜まで）・明日（夜 7 時から寝るまで）
-  const { todos } = await getTasksOverview().catch(() => ({ todos: [] as { text: string; due?: string }[] }));
+  const { todos, projects } = await getTasksOverview().catch(() => ({ todos: [] as { text: string; due?: string }[], projects: [] as Project[] }));
   const dueToday = todos.filter((t) => t.due === today).map((t) => t.text);
   const dueTomorrow = todos.filter((t) => t.due === addDays(today, 1)).map((t) => t.text);
   const overdue = todos.filter((t) => t.due && t.due < today).map((t) => t.text);
@@ -108,6 +109,20 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
       until: localTime(today, "22:00", tz),
       text: `期限を過ぎているものが${overdue.length}件残っています。${list(overdue)}。終わっていれば消しておきます。`,
       kind: "todo",
+    });
+  }
+
+  // プロジェクト：しばらく動いていないものを、昼に 1 日 1 回だけ（いちばん長く止まっているもの）
+  const stalled = stalledProjects(projects);
+  if (stalled.length) {
+    const p = stalled[0];
+    const others = stalled.length > 1 ? `ほかに${stalled.slice(1, 3).map((q) => q.name).join("と")}も止まっています。` : "";
+    out.push({
+      id: `stall:${today}`,
+      at: localTime(today, "12:00", tz),
+      until: localTime(today, "21:00", tz),
+      text: `${p.name}が${p.idleDays}日動いていません。${p.next ? `次は「${p.next}」からですね。` : "次の一手を決めておきましょうか。"}${others}`,
+      kind: "project",
     });
   }
 

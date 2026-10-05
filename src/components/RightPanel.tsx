@@ -208,6 +208,8 @@ export function SchedulePanel({ gmail }: { gmail?: boolean }) {
 interface ProjectView {
   name: string;
   progress: number;
+  /** 何日動いていないか */
+  idleDays?: number;
   open: number;
   next?: string;
   color: string;
@@ -245,14 +247,17 @@ export function ProjectsPanel({ title = "CURRENT", accent = "PROJECTS", idx = "0
       ) : (
         <ul className="projects" data-sample={real ? undefined : true}>
           {projects.slice(0, 4).map((p) => (
-            <li key={p.name} title={p.next ? `次: ${p.next}` : undefined}>
+            <li key={p.name} title={p.next ? `次: ${p.next}` : undefined} data-stalled={(p.idleDays ?? 0) >= 5 && p.progress < 100 ? true : undefined}>
               <span className="projects__avatar" style={{ background: p.color }}>
                 {p.initial}
               </span>
               <span className="projects__body">
                 <span className="projects__row">
                   <span>{p.name}</span>
-                  <span className="projects__pct">{p.progress}%</span>
+                  <span className="projects__pct">
+                    {(p.idleDays ?? 0) >= 5 && p.progress < 100 && <em className="projects__idle">{p.idleDays}日停止</em>}
+                    {p.progress}%
+                  </span>
                 </span>
                 <span className="projects__bar">
                   <span style={{ transform: `scaleX(${p.progress / 100})` }} />

@@ -4007,6 +4007,46 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     color: var(--text-2);
   }
 
+  .home--phone .mbrief-wrap {
+    order: 0;
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  /* しばらく動いていないプロジェクト（1 行） */
+  .mbrief__stall {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    padding: 6px 10px;
+    color: var(--text-2);
+    font-family: var(--font-jp);
+    font-size: 11.5px;
+    text-align: left;
+    background: rgba(255, 138, 31, 0.08);
+    border: 1px solid rgba(255, 138, 31, 0.55);
+    border-left-width: 3px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mbrief__stall b {
+    flex: none;
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--orange);
+  }
+
+  .mbrief__stall span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* VOICE MODE はコアのタップで始めるので、HOME では入力欄の音声ボタンを出さない */
   .app:has(.stage[data-view="home"]) .composer__tools [data-voice-control] {
     display: none;

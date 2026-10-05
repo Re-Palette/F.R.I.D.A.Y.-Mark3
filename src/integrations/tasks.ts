@@ -6,7 +6,7 @@
  *   ToDo は Obsidian のチェックボックス「- [ ] やること（期限: 2026-10-01）」。完了は「- [x]」
  */
 import { invalidate, swr } from "@/lib/swr";
-import { BRAIN_DIR, isBrainConfigured, listNotes, readNote, updateNote } from "@/memory/github-brain";
+import { BRAIN_DIR, isBrainConfigured, lastUpdatedAt, listNotes, readNote, updateNote } from "@/memory/github-brain";
 
 export const TODO_PATH = `${BRAIN_DIR}/ToDo.md`;
 export const PROJECT_DIR = "プロジェクト/";
@@ -36,6 +36,35 @@ export interface Project {
   status?: string;
   color: string;
   initial: string;
+  /** ノートが最後に更新された時刻（GitHub のコミット。F.R.I.D.A.Y. や Obsidian で書いたとき） */
+  updatedAt?: number;
+  /** 何日動いていないか */
+  idleDays?: number;
+}
+
+/** これだけ動いていないプロジェクトは「止まっている」として知らせる */
+export const STALL_DAYS = 5;
+
+/** 止まっているプロジェクト（終わったもの・日付が分からないものは除く。長く止まっている順） */
+export function stalledProjects(projects: Project[]): Project[] {
+  return projects.filter((p) => (p.idleDays ?? 0) >= STALL_DAYS && p.progress < 100).sort((a, b) => (b.idleDays ?? 0) - (a.idleDays ?? 0));
+}
+
+/** 各プロジェクトのノートが最後に動いた日（30 分ごとに取り直す。時間がかかるときは前回の値か無しで返す） */
+async function attachActivity(projects: Project[]): Promise<void> {
+  const now = Date.now();
+  await Promise.all(
+    projects.map(async (p) => {
+      const at = await Promise.race([
+        swr(`activity:${p.path}`, 30 * 60_000, 24 * 60 * 60_000, () => lastUpdatedAt(p.path)).catch(() => null),
+        new Promise<null>((r) => setTimeout(() => r(null), 2500)),
+      ]);
+      if (at) {
+        p.updatedAt = at;
+        p.idleDays = Math.max(0, Math.floor((now - at) / 86_400_000));
+      }
+    }),
+  );
 }
 
 export interface TasksOverview {
@@ -107,6 +136,7 @@ async function loadOverview(): Promise<TasksOverview> {
     projects.push(project);
     todos.push(...tasks);
   });
+  await attachActivity(projects);
   const open = todos.filter((t) => !t.done).sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
   return { projects, todos: open, done: todos.filter((t) => t.done).slice(-40) };
 }
