@@ -7,6 +7,7 @@ import { memo, useEffect, useLayoutEffect, useRef } from "react";
 import type { ChatPhase, UiMessage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import { Core } from "./Core";
+import { DocExport } from "./DocExport";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 import { Markdown } from "./Markdown";
@@ -158,10 +159,14 @@ const Message = memo(function Message({
             <Markdown text={d.content ?? ""} />
           </div>
           {d.content && (
-            <button type="button" className="ghost-btn doc-card__copy" onClick={() => void navigator.clipboard?.writeText(d.content ?? "")}>
-              コピー
-            </button>
+            <div className="doc-card__actions">
+              <DocExport doc={d} />
+              <button type="button" className="ghost-btn doc-card__copy" onClick={() => void navigator.clipboard?.writeText(d.content ?? "")}>
+                コピー
+              </button>
+            </div>
           )}
+          {d.files && d.files.length > 0 && <p className="doc-card__path">Obsidian にも保存：{d.files.join(" ・ ")}</p>}
         </details>
       ))}
       {msg.actions && msg.actions.length > 0 && (

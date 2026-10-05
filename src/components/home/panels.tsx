@@ -10,6 +10,7 @@ import { CALENDAR_CHANGED, TASKS_CHANGED, type ChatPhase, type ChatStage, type L
 import { REMINDERS_CHANGED } from "@/hooks/useReminders";
 import type { VoiceState } from "@/hooks/useVoice";
 import type { WeatherReport } from "@/integrations/weather";
+import { DocExport } from "../DocExport";
 import { HudFrame } from "../HudFrame";
 import { Icon, type IconName } from "../icons";
 import { Markdown } from "../Markdown";
@@ -312,6 +313,13 @@ export function ResponsePanel({
                 </button>
               </p>
             )}
+            {docs
+              .filter((d) => d.kind && d.content)
+              .map((d, i) => (
+                <p key={`${d.title}-x${i}`} className="rpanel__docs">
+                  <DocExport doc={d} compact />
+                </p>
+              ))}
             {reply?.music?.map((m, i) => (
               <p key={`${m.label}-${i}`} className="rpanel__docs" data-failed={!m.ok || undefined}>
                 <Icon name="music" size={12} /> {m.ok ? m.label : `音楽を操作できませんでした：${m.error ?? ""}`}

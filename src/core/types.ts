@@ -72,6 +72,9 @@ export type ActionKind =
   | "company-instruct"
   | "company-advance";
 
+/** 文書の形：pdf は画面で PDF に、slides はスライド（PDF・PowerPoint）にする */
+export type DocKind = "pdf" | "slides";
+
 export type StreamEvent =
   | { type: "meta"; agent: AgentId; model: string; contextMessages: number }
   | { type: "delta"; text: string }
@@ -84,7 +87,7 @@ export type StreamEvent =
   /** 脳への書き込み（ToDo の追加・完了、進捗、リマインダー）の結果 */
   | { type: "action"; kind: ActionKind; ok: boolean; label: string; error?: string }
   /** 文書を脳に保存した結果（content は画面に出す本文） */
-  | { type: "document"; ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string }
+  | { type: "document"; ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string; kind?: DocKind }
   /** ニュースの設定（時間・興味のある分野）を変えた結果 */
   | { type: "news-settings"; ok: boolean; time?: string; topics?: string[]; error?: string }
   /** prepMs: 返答前の準備（記憶・予定・天気の取得）にかかった時間 */

@@ -49,7 +49,7 @@ export function toSyncMessage(raw: unknown): SyncMessage | null {
   for (const key of EXTRA_KEYS) if (raw[key] !== undefined) out[key] = raw[key];
   // 書いた文書は題名と場所だけ（本文は脳に保存済み）
   if (Array.isArray(raw.documents)) {
-    out.documents = raw.documents.filter(isObj).map(({ ok, title, path, updated, error }) => ({ ok, title, path, updated, error }));
+    out.documents = raw.documents.filter(isObj).map(({ ok, title, path, updated, error, kind, files }) => ({ ok, title, path, updated, error, kind, files }));
   }
   // 添えたファイルは名前と種類だけ（小さな画像も送らない）
   if (Array.isArray(raw.files)) out.files = raw.files.filter(isObj).map(({ name, kind }) => ({ name, kind }));

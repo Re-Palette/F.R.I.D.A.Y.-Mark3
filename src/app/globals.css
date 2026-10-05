@@ -2031,6 +2031,44 @@ button:disabled,
   margin-top: 8px;
 }
 
+/* 資料・スライドを PDF・PowerPoint で保存するボタン */
+.doc-card__actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.doc-card__actions .doc-card__copy {
+  margin-top: 0;
+}
+
+.doc-export {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-export .ghost-btn {
+  color: var(--cyan);
+  border-color: rgba(255, 138, 31, 0.5);
+}
+
+.doc-export[data-compact] .ghost-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+.doc-export__error {
+  font-style: normal;
+  font-family: var(--font-jp);
+  font-size: 11px;
+  color: #ff8a73;
+}
+
 /* Web 検索の出典 */
 .msg__sources {
   list-style: none;

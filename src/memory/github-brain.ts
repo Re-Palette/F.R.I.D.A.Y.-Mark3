@@ -202,10 +202,16 @@ export async function updateNote(path: string, update: (current: string | null) 
  * 写真・PDF などをそのまま保存する（data は base64）。同じ場所にもうあれば何もしない（同じファイルを 2 回送ったとき）。
  * GitHub の API は 1 ファイル数 MB までなら問題なく受け付ける。
  */
-export async function putBinary(path: string, data: string, message: string): Promise<{ created: boolean }> {
+export async function putBinary(path: string, data: string, message: string, overwrite = false): Promise<{ created: boolean }> {
   const c = getBrainConfig();
   const url = `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`;
-  const res = await gh(c, url, { method: "PUT", body: JSON.stringify({ message, content: data }) }, 30_000);
+  // 上書きするときは、いまの版（sha）を付けて送る（作り直した資料の PDF など）
+  let sha: string | undefined;
+  if (overwrite) {
+    const cur = await gh(c, url);
+    if (cur.ok) sha = ((await cur.json()) as { sha?: string }).sha;
+  }
+  const res = await gh(c, url, { method: "PUT", body: JSON.stringify({ message, content: data, ...(sha ? { sha } : {}) }) }, 30_000);
   if (res.ok) {
     markTreeStale();
     return { created: true };

@@ -14,7 +14,7 @@ import {
   type CompanyBrief,
 } from "@/integrations/company";
 import { asksForMusic } from "@/lib/music";
-import { quizMaterial, recentLectures, recentWeakPoints, type LectureDigest } from "@/integrations/brain-notes";
+import { asksForDocument, lectureMaterial, quizMaterial, recentLectures, recentWeakPoints, type LectureDigest } from "@/integrations/brain-notes";
 import { inQuiz } from "./quiz";
 import { asksForMorning } from "./morning";
 import { listReminders, type Reminder } from "@/integrations/reminders";
@@ -118,6 +118,9 @@ export const chatAgent: Agent = {
           "quiz",
         )
       : Promise.resolve(null);
+    // 資料・PDF・スライドを頼まれたら、科目名が入っていればその授業ノートを集める（「線形代数の資料作って」）
+    const docAsk = asksForDocument(latest);
+    const lectureDocsTask = docAsk && ctx.memory.connected ? within(lectureMaterial(latest), budget + 800, null, "lecture-docs") : Promise.resolve(null);
     // 音楽の話のときだけ、いま流れている曲を Spotify に聞く（接続済みのとき）
     const musicTalk = asksForMusic(latest);
     // Spotify に接続していれば Spotify、していなければ Amazon Music（画面の拡張機能が操作する）
@@ -140,7 +143,7 @@ export const chatAgent: Agent = {
         }))
       : Promise.resolve(null);
 
-    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company] = await Promise.all([
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company, lectureDocs] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -155,6 +158,7 @@ export const chatAgent: Agent = {
       lectureTask,
       quizTask,
       within<CompanyBrief | null>(companyTask, budget + 600, wantsCompany ? { text: "AI 会社の応答が間に合わなかった。", needsCeo: 0 } : null, "company"),
+      lectureDocsTask,
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -193,16 +197,16 @@ export const chatAgent: Agent = {
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
     // ニュースのまとめは長くなるので上限を広げる
     // 短い普通の発言（検索・まとめ以外）も考える量を最小にする（最初の一言が速くなる）
-    const quick = !search && !briefing && !morning && !quiz && !reviewKind && !sns && !drafting && !reading && latest.length < QUICK_REPLY_CHARS;
+    const quick = !search && !briefing && !morning && !quiz && !reviewKind && !sns && !drafting && !reading && !docAsk && latest.length < QUICK_REPLY_CHARS;
     const runConfig = ctx.voice
       ? {
           ...config,
           thinkingLevel: "minimal" as const,
           // 文書・振り返りは本文を隠しタグに書くので長く、読み上げは短い
-          maxOutputTokens: briefing ? 1200 : reviewKind || sns || drafting || /企画書|レポート|報告書|文書|原稿|下書き/.test(latest) ? 5000 : Math.min(config.maxOutputTokens, 400),
+          maxOutputTokens: briefing ? 1200 : reviewKind || sns || drafting || docAsk || /企画書|レポート|報告書|文書|原稿|下書き/.test(latest) ? 8000 : Math.min(config.maxOutputTokens, 400),
         }
-      : briefing || reviewKind || sns || drafting || reading || /企画書|レポート|報告書|文書|原稿|下書き|書いて|作成して/.test(latest)
-        ? { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, 6000) }
+      : briefing || reviewKind || sns || drafting || reading || docAsk || /企画書|レポート|報告書|文書|原稿|下書き|書いて|作成して/.test(latest)
+        ? { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, docAsk ? 10000 : 6000) }
         : quick
           ? { ...config, thinkingLevel: "minimal" as const }
           : config;
@@ -235,6 +239,7 @@ export const chatAgent: Agent = {
         sns,
         company,
         companyConnected: companyConnected(),
+        lectureDocs,
         voice: ctx.voice,
       }),
       contents,

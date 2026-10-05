@@ -196,8 +196,9 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", "file-note", "focus", "quiz-result", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS, ...COMPANY_TAGS] as const, {
+    const tags = new TagFilter(["memory", "news-settings", "document", "slides", "file-note", "focus", "quiz-result", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS, ...COMPANY_TAGS] as const, {
       document: 30_000,
+      slides: 30_000,
       "gmail-draft": 8000,
       "file-note": 6000,
     });
@@ -326,17 +327,26 @@ export async function* handleConversation(
         yield { type: "delta", text };
       }
     }
-    // 書いた文書を脳に保存（本文は画面のカードに出す。読み上げはしない）
-    for (const [i, content] of tags.captures.document.entries()) {
-      const attrs = tags.attrs.document[i] ?? {};
+    // 書いた文書を脳に保存（本文は画面のカードに出す。読み上げはしない）。PDF・スライドは画面が作る
+    const docs = [
+      ...tags.captures.document.map((content, i) => ({ content, attrs: tags.attrs.document[i] ?? {}, kind: /^pdf$/i.test(tags.attrs.document[i]?.format ?? "") ? ("pdf" as const) : undefined })),
+      ...tags.captures.slides.map((content, i) => ({ content, attrs: tags.attrs.slides[i] ?? {}, kind: "slides" as const })),
+    ];
+    for (const { content, attrs, kind } of docs) {
       const title = attrs.title || /^#\s+(.+)$/m.exec(content)?.[1]?.trim() || "無題";
+      // PDF・スライドは、脳がつながっていなくても画面で作れる（保存だけできない）
+      if (!memory.connected) {
+        yield kind
+          ? { type: "document", ok: true, title, content, kind }
+          : { type: "document", ok: false, title, content, error: "脳（Obsidian）が接続されていないため保存できません。" };
+        continue;
+      }
       try {
-        if (!memory.connected) throw new Error("脳（Obsidian）が接続されていないため保存できません。");
-        const saved = await saveDocument({ title, folder: toFolder(attrs.folder), content });
-        yield { type: "document", ok: true, title: saved.title, path: saved.path, content, updated: saved.updated };
+        const saved = await saveDocument({ title: kind === "slides" ? `${title}（スライド）` : title, folder: toFolder(attrs.folder), content });
+        yield { type: "document", ok: true, title: kind === "slides" ? title : saved.title, path: saved.path, content, updated: saved.updated, kind };
       } catch (err) {
         const error = err instanceof Error ? err.message : "脳に保存できませんでした。";
-        yield { type: "document", ok: false, title, content, error };
+        yield { type: "document", ok: false, title, content, error, kind };
       }
     }
     // 添えたファイルの要点を脳の「資料」に保存（原本は画面から「添付」に保存済み）

@@ -11,7 +11,8 @@
  *   何件を Gemini に渡すかはサーバー側（src/memory/context.ts）が上限をかけて決める。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ActionKind, ChatFile, ChatImage, ChatMessage, StreamEvent } from "@/core/types";
+import type { ActionKind, ChatFile, ChatImage, ChatMessage, DocKind, StreamEvent } from "@/core/types";
+import { saveDocFiles } from "@/lib/doc-export";
 import { amazonMusicState, musicReply, runAmazonMusic } from "@/lib/amazon-music";
 import { asksForMusic, quickMusicCommand } from "@/lib/music";
 import { startFocus, stopFocus } from "@/lib/focus";
@@ -46,7 +47,7 @@ export interface UiMessage {
   /** 脳への書き込み（ToDo・進捗・リマインダー）の結果 */
   actions?: { kind: ActionKind; ok: boolean; label: string; error?: string }[];
   /** この返答で書いた文書（脳に保存したもの） */
-  documents?: { ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string }[];
+  documents?: { ok: boolean; title: string; path?: string; content?: string; updated?: boolean; error?: string; kind?: DocKind; files?: string[] }[];
   /** この返答で開いた（開こうとした）Web ページ・閉じたタブ */
   tabs?: { action: "open" | "close"; ok: boolean; label: string; url?: string; blocked?: boolean; error?: string }[];
   /** ニュースの設定を変えた結果 */
@@ -423,8 +424,16 @@ export function useChat() {
                 break;
               }
               case "document": {
-                const { ok, title, path, content, updated, error } = event;
-                patch(assistantId, (m) => ({ ...m, documents: [...(m.documents ?? []), { ok, title, path, content, updated, error }] }));
+                const { ok, title, path, content, updated, error, kind } = event;
+                patch(assistantId, (m) => ({ ...m, documents: [...(m.documents ?? []), { ok, title, path, content, updated, error, kind }] }));
+                // 資料の PDF・スライドは、脳にも PDF（スライドは PowerPoint も）を保存する
+                if (ok && kind && path) {
+                  void saveDocFiles({ title, content, kind, path })
+                    .then((files) =>
+                      patch(assistantId, (m) => ({ ...m, documents: m.documents?.map((d) => (d.path === path ? { ...d, files } : d)) })),
+                    )
+                    .catch(() => {});
+                }
                 break;
               }
               case "action": {

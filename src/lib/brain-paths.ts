@@ -33,6 +33,16 @@ export function isAttachmentPath(path: string): boolean {
   return /^添付\/\d{4}-\d{2}\/\d{4}-\d{2}-\d{2}_\d{6}_[^/\\]{1,90}$/.test(path) && !path.includes("..");
 }
 
+/** F.R.I.D.A.Y. が書いた資料の PDF・スライドの置き場所として正しい形か（文書/〇〇.pdf など。Markdown と同じフォルダ） */
+export function isDocFilePath(path: string): boolean {
+  return /^(文書|振り返り|SNS)\/[^/\\]{1,100}\.(pdf|pptx)$/.test(path) && !path.includes("..");
+}
+
+/** 資料の Markdown の置き場所（文書/〇〇.md）から、PDF・スライドの置き場所を作る */
+export function docFilePath(mdPath: string, ext: "pdf" | "pptx"): string {
+  return mdPath.replace(/\.md$/, `.${ext}`);
+}
+
 /** 授業ノートの置き場所として正しい形か */
 export function isLecturePath(path: string): boolean {
   return /^授業\/[^/\\]{1,60}\/[^/\\]{1,120}\.md$/.test(path) && !path.includes("..");

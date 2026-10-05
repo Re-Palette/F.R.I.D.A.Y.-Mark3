@@ -39,6 +39,8 @@ export interface PersonaInput {
   /** 未読メール（返信の下書きを頼まれたときは直近のメールを本文つきで） */
   /** AI 会社（ARQO）の状況。会社の話をしているときだけ渡る */
   company?: { text: string; needsCeo: number } | null;
+  /** 資料・PDF・スライドを頼まれたときの授業ノート（科目が分かったとき） */
+  lectureDocs?: { subject: string; notes: { date: string; title: string; text: string }[] } | null;
   /** 会社に接続されているか（されていれば操作のタグを使える） */
   companyConnected?: boolean;
   mail?: MailData;
@@ -112,6 +114,7 @@ export function buildSystemInstruction({
   reminders,
   company,
   companyConnected,
+  lectureDocs,
   mail,
   mailDraft,
   camera,
@@ -230,6 +233,8 @@ F.R.I.D.A.Y.：FRIDAY-Mark3 は会話基盤が見えてきています。次は�
   if (company || companyConnected || companyDashboardUrl()) out += companySection(company, companyConnected);
   if (mail) out += mailSection(mail, mailDraft);
   if (memoryConnected) out += WRITING_RULES;
+  out += EXPORT_RULES(memoryConnected);
+  if (lectureDocs) out += lectureDocSection(lectureDocs);
   if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
   if (sns) out += snsSection(Boolean(search), memoryConnected);
   if (calendar?.connected) out += calendarSection(calendar.events, now, timezone);
@@ -552,6 +557,44 @@ const WRITING_RULES = `
 - 直してほしいと言われたら、直した全文を同じ title で書き直す（上書き保存される）。
 - 目的・相手・分量が分からないときは、書き始める前に 1 つだけ質問してよい。短い一文やちょっとした例文なら、タグを使わず普通に答える。
 - 脳の記憶・プロジェクト・予定など、手元の情報を活かして具体的に書く。分からない数字や事実は作らず【要確認】と書く。`;
+
+/** PDF・スライドを作る */
+const EXPORT_RULES = (canSave: boolean) => `
+
+# PDF・スライドを作る
+- 「〇〇の資料作って」「PDF でまとめて」「レジュメにして」など、読む・配る・印刷する資料を頼まれたら、次のタグに Markdown で書く。画面が PDF にして、ダウンロードできるようにする${canSave ? "（脳にも Markdown と PDF を保存する）" : ""}：
+<document title="資料のタイトル" format="pdf">
+# 資料のタイトル
+## 見出し
+本文・箇条書き（- ）・番号（1. ）・チェック（- [ ] ）・表（| a | b |）
+</document>
+- 「スライド作って」「プレゼン資料」「発表用に」と頼まれたら、次のタグに書く。画面が 16:9 のスライド（PDF と PowerPoint）にする${canSave ? "（脳にも保存する）" : ""}：
+<slides title="発表のタイトル">
+# 発表のタイトル
+## 副題（発表者・日付など）
+---
+# 1 枚目の見出し
+- 要点（1 枚に 3〜5 個。1 行は短く、体言止めでよい）
+  - 補足（必要なときだけ 1 段下げる）
+> この 1 枚で話す内容のメモ（PowerPoint のノートに入る）
+---
+# 次の見出し
+- …
+</slides>
+  - 枚数は内容に合わせて 5〜12 枚くらい。最後は「まとめ」か「次の一手」。1 枚目は表紙（タイトルと副題だけ）。
+- 資料もスライドも、手元の情報（授業ノート・脳のノート・予定・プロジェクト）を活かして具体的に書く。分からない数字や事実は作らず【要確認】と書く。
+- タグの外の返答は 1〜2 文だけ（「線形代数の資料を PDF にしました。下のボタンから保存できます」）。本文は重ねて書かない。
+- 直してと言われたら、同じ title で全文を書き直す。`;
+
+/** 資料づくりに使う授業ノート */
+function lectureDocSection(m: { subject: string; notes: { date: string; title: string; text: string }[] }): string {
+  return `
+
+# 「${m.subject}」の授業ノート（資料・スライドの材料）
+- 資料・PDF・スライドは、下の授業ノートの内容をもとに作る。授業ノートに無いことは足さない（一般的な説明を補うときは「補足」と分かるように書く）。
+- 試験対策なら「重要なところ」「テストに出そうなところ」「用語」「復習チェック」を中心に、復習しやすい順に並べる。
+${m.notes.map((n) => `\n## ${n.date} ${n.title}\n${n.text}`).join("\n")}`;
+}
 
 /** 振り返り・日記 */
 function reviewSection(kind: "week" | "day" | "week-saved", material: string | null, voice: boolean): string {

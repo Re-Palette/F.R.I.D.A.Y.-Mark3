@@ -222,6 +222,37 @@ export async function recentLectures(tz: string, days: number, max = 3): Promise
   return Promise.all(files.map((f) => lectureDigest(f)));
 }
 
+/** 資料・PDF・スライドを頼まれているか（「〇〇の資料作って」「PDF でまとめて」「スライド作って」） */
+export function asksForDocument(text: string): boolean {
+  return /資料|PDF|ＰＤＦ|ピーディーエフ|スライド|プレゼン|発表(用|の)?資料|レジュメ|まとめ(て|た)?(もの|やつ)?(を)?(作|つく)/i.test(text) || (/まとめて/.test(text) && /授業|講義|ノート|範囲|テスト/.test(text));
+}
+
+/**
+ * 資料づくりの材料：発言に科目名（授業フォルダの名前）が入っていれば、その科目の授業ノート（新しい順に最大 6 回分）。
+ * 文字起こしの全文は除き、まとめの部分だけを渡す。科目が分からなければ null
+ */
+export async function lectureMaterial(text: string): Promise<{ subject: string; notes: { date: string; title: string; text: string }[] } | null> {
+  if (!isBrainConfigured()) return null;
+  const all = await listLectureNotes();
+  const plain = text.replace(/\s+/g, "");
+  const subject = [...new Set(all.map((f) => f.path.split("/")[1]))].find((s) => plain.includes(s.replace(/\s+/g, "")));
+  if (!subject) return null;
+  const files = all.filter((f) => f.path.split("/")[1] === subject).slice(0, 6);
+  const notes = await Promise.all(
+    files.map(async (f) => {
+      const body = await readNote(f);
+      const name = f.path.split("/")[2];
+      const cut = body.search(/^#{1,3}\s*文字起こし/m);
+      return {
+        date: name.slice(0, 10),
+        title: /^# (.+)$/m.exec(body)?.[1] ?? name.replace(/\.md$/, ""),
+        text: (cut > 0 ? body.slice(0, cut) : body).slice(0, 6000),
+      };
+    }),
+  );
+  return { subject, notes };
+}
+
 /* ---------- 集中モードの記録 ---------- */
 
 export const FOCUS_LOG_PATH = "FRIDAY/集中ログ.md";
