@@ -1,6 +1,6 @@
 /**
  * 先回りの声かけ（F.R.I.D.A.Y. のほうから話しかける材料）。
- *   予定      … 始まる 20 分前に「あと 20 分です」
+ *   予定      … 始まる 20 分前に「あと 20 分です」。場所の入った予定は、移動時間（既定 45 分）前に「そろそろ出る時間です」と天気・期限も一緒に
  *   ToDo      … 期限が今日のもの（朝 9 時）・明日のもの（夜 7 時）
  *   天気      … 今日の降水確率が高いとき（朝 7 時）「傘を持っていって」
  *   プロジェクト … しばらく動いていないもの（昼 12 時に 1 日 1 回）
@@ -10,6 +10,7 @@
  * Gemini は使わない（無料枠を使わない・すぐ返せる）。
  */
 import type { CalendarEvent } from "@/integrations/google-calendar";
+import { departText, isOuting, spokenTime, travelMinutes } from "@/integrations/depart";
 import { getTasksOverview, stalledProjects, type Project } from "@/integrations/tasks";
 import { getWeather } from "@/integrations/weather";
 import { latestWeeklyReview } from "@/integrations/weekly";
@@ -49,15 +50,6 @@ const MIN = 60_000;
 /** 予定の何分前に知らせるか */
 const LEAD_MIN = 20;
 
-/** 「15時」「15時半」「15時10分」 */
-function spokenTime(label: string): string {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(label);
-  if (!m) return label;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  return min === 0 ? `${h}時` : min === 30 ? `${h}時半` : `${h}時${min}分`;
-}
-
 const list = (items: string[]) => (items.length <= 3 ? items.join("、") : `${items.slice(0, 3).join("、")} ほか ${items.length - 3} 件`);
 
 export async function buildNudges(input: { tz: string; now?: number; events?: CalendarEvent[] | null }): Promise<Nudge[]> {
@@ -66,11 +58,28 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
   const today = localDate(tz, now);
   const out: Nudge[] = [];
 
-  // 予定：始まる 20 分前から、始まるまで
+  const [{ todos, projects }, weather] = await Promise.all([
+    getTasksOverview().catch(() => ({ todos: [] as { text: string; due?: string }[], projects: [] as Project[] })),
+    getWeather().catch(() => null),
+  ]);
+  const day = weather?.days.find((d) => d.date === today);
+
+  // 予定：始まる 20 分前から、始まるまで。出かける予定（場所あり）は、移動時間の前に「そろそろ出る時間」
   for (const ev of input.events ?? []) {
     if (ev.allDay) continue;
     const start = Date.parse(ev.start);
     if (!Number.isFinite(start) || start <= now || start - now > 6 * 60 * MIN) continue;
+    if (isOuting(ev)) {
+      out.push({
+        id: `depart:${ev.id}:${ev.start}`,
+        at: start - travelMinutes(ev) * MIN,
+        until: start - 5 * MIN,
+        eventAt: start,
+        text: departText(ev, { rain: day?.rain, snow: day?.label.includes("雪"), dueToday: todos.filter((t) => t.due === today).map((t) => t.text), left: true }),
+        kind: "depart",
+      });
+      continue;
+    }
     out.push({
       id: `cal:${ev.id}:${ev.start}`,
       at: start - LEAD_MIN * MIN,
@@ -82,7 +91,6 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
   }
 
   // ToDo：期限が今日（朝 9 時から夜まで）・明日（夜 7 時から寝るまで）
-  const { todos, projects } = await getTasksOverview().catch(() => ({ todos: [] as { text: string; due?: string }[], projects: [] as Project[] }));
   const dueToday = todos.filter((t) => t.due === today).map((t) => t.text);
   const dueTomorrow = todos.filter((t) => t.due === addDays(today, 1)).map((t) => t.text);
   const overdue = todos.filter((t) => t.due && t.due < today).map((t) => t.text);
@@ -144,8 +152,6 @@ export async function buildNudges(input: { tz: string; now?: number; events?: Ca
   }
 
   // 天気：今日の降水確率が 50% 以上なら、朝のうちに
-  const weather = await getWeather().catch(() => null);
-  const day = weather?.days.find((d) => d.date === today);
   if (day && day.rain >= 50) {
     out.push({
       id: `rain:${today}`,
