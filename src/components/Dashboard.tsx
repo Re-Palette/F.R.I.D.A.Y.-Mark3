@@ -23,7 +23,7 @@ import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./
 import { LecturePage } from "./LecturePage";
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
-import { hasExtension, openTabNow, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
+import { bringToFront, hasExtension, openTabNow, syncKeepOpen, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
 import { setHoloExplain, useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
@@ -290,7 +290,8 @@ export function Dashboard() {
     bargeIn: bargeIn && !phone,
     wakeWord: !phone,
     recorded: phone, // スマホは録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため）
-    onAudio: onVoiceAudio, // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
+    onAudio: onVoiceAudio,
+    onWoke: () => void bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
   const voiceRef = useRef(voice);
@@ -345,6 +346,10 @@ export function Dashboard() {
     void duckMusic(duck);
   }, [duck]);
   useEffect(() => () => stopVoiceLevel(), []);
+  // 「Chrome を開いたら F.R.I.D.A.Y. を裏で開いておく」の設定を拡張機能に伝えておく（パソコン）
+  useEffect(() => {
+    if (!phone) void syncKeepOpen();
+  }, [phone]);
 
   // 聞き取りを始めたら Gemini / ElevenLabs への接続を温めておく（話し終わった瞬間に速く返すため）
   useEffect(() => {
@@ -513,6 +518,8 @@ export function Dashboard() {
       </div>
       {/* 画面全体を囲む HUD の枠（HOME のときだけ見せる） */}
       <ScreenFrame />
+      {/* 呼ばれて前に出たとき、声を出せるようにするための「何も起きない」クリックの的（拡張機能が使う） */}
+      <div className="activation-spot" data-activation-spot aria-hidden="true" />
 
       <Header />
 

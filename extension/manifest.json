@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "F.R.I.D.A.Y. Tabs",
-  "version": "1.5.0",
-  "description": "F.R.I.D.A.Y. Mark3 から、Web ページを開く・閉じる操作（インストールしたアプリはアプリで開く）と、Amazon Music の再生の操作をできるようにします。",
+  "version": "1.6.0",
+  "description": "F.R.I.D.A.Y. Mark3 から、Web ページを開く・閉じる操作（インストールしたアプリはアプリで開く）と、Amazon Music の再生の操作をできるようにします。Chrome を開いたら F.R.I.D.A.Y. を裏で開いておき、「フライデー」と呼ぶと前に出します。",
   "permissions": [
     "storage",
     "scripting",
@@ -39,6 +39,8 @@
     "128": "icon-128.png"
   },
   "host_permissions": [
+    "https://f-r-i-d-a-y-mark3.vercel.app/*",
+    "http://localhost/*",
     "https://music.amazon.co.jp/*",
     "https://music.amazon.com/*"
   ]

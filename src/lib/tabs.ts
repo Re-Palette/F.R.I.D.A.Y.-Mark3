@@ -66,7 +66,45 @@ export async function hasExtension(): Promise<boolean> {
 /** Amazon Music の操作に必要な拡張機能の版 */
 export const MUSIC_EXTENSION_VERSION = "1.3.0";
 /** いちばん新しい拡張機能の版（インストールしたアプリで開く・Amazon Music もアプリで） */
-export const LATEST_EXTENSION_VERSION = "1.5.0";
+export const LATEST_EXTENSION_VERSION = "1.6.0";
+/** 「Chrome を開いたら裏で開いておき、呼ばれたら前に出す」に必要な版 */
+export const KEEP_OPEN_EXTENSION_VERSION = "1.6.0";
+const KEEP_OPEN_KEY = "friday.keepOpen.v1";
+
+/** 「Chrome を開いたら F.R.I.D.A.Y. を裏で開いておく」がオンか（既定はオン） */
+export function keepOpenWanted(): boolean {
+  try {
+    return localStorage.getItem(KEEP_OPEN_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/** 「裏で開いておく」の設定を拡張機能に伝える（変えたとき・画面を開いたとき） */
+export async function syncKeepOpen(on = keepOpenWanted()): Promise<boolean> {
+  try {
+    localStorage.setItem(KEEP_OPEN_KEY, on ? "on" : "off");
+  } catch {
+    /* noop */
+  }
+  if (!(await hasExtension()) || !versionAtLeast(extensionVersion(), KEEP_OPEN_EXTENSION_VERSION)) return false;
+  return Boolean((await askExtension({ type: "keep-open", on }, 2000))?.ok);
+}
+
+/**
+ * 「フライデー」と呼ばれたとき、このタブが裏にあれば前に出す（拡張機能が要る）。
+ * まだ一度も操作されていないページは声を出せないので、何も起きない小さな枠を 1 回クリックしたことにしてもらう。
+ */
+export async function bringToFront(): Promise<void> {
+  if (typeof document === "undefined") return;
+  const behind = document.hidden || !document.hasFocus();
+  const silent = !(navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive;
+  if (!behind && !silent) return;
+  if (!(await hasExtension()) || !versionAtLeast(extensionVersion(), KEEP_OPEN_EXTENSION_VERSION)) return;
+  const spot = document.querySelector<HTMLElement>("[data-activation-spot]")?.getBoundingClientRect();
+  const point = silent && spot ? { x: Math.round(spot.left + spot.width / 2), y: Math.round(spot.top + spot.height / 2) } : undefined;
+  await askExtension({ type: "focus", point }, 4000);
+}
 
 /** 入っている拡張機能の版（分からなければ undefined） */
 export function extensionVersion(): string | undefined {

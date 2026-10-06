@@ -8,7 +8,7 @@ import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useBargeIn } from "@/hooks/useBargeIn";
 import { withReadings } from "@/lib/reading";
-import { extensionVersion, hasExtension, LATEST_EXTENSION_VERSION, versionAtLeast } from "@/lib/tabs";
+import { extensionVersion, hasExtension, KEEP_OPEN_EXTENSION_VERSION, keepOpenWanted, LATEST_EXTENSION_VERSION, syncKeepOpen, versionAtLeast } from "@/lib/tabs";
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
@@ -255,9 +255,32 @@ function BrowserControls({ hidden }: { hidden: boolean }) {
   }, [hidden]);
   // 古い版は一部の機能が使えない（Amazon Music の操作・インストールしたアプリで開く）。入れ直しが要る
   const old = installed === true && !versionAtLeast(version, LATEST_EXTENSION_VERSION);
+  const [keepOpen, setKeepOpen] = useState(true);
+  useEffect(() => setKeepOpen(keepOpenWanted()), []);
+  const canKeepOpen = installed === true && versionAtLeast(version, KEEP_OPEN_EXTENSION_VERSION);
 
   return (
     <>
+      {canKeepOpen && (
+        <>
+          <span className="settings__label">呼びかけで F.R.I.D.A.Y. を開く — この端末だけの設定</span>
+          <Choice
+            value={keepOpen ? "on" : "off"}
+            options={[
+              { value: "on", label: "裏で開いておく" },
+              { value: "off", label: "開かない" },
+            ]}
+            onChange={(v) => {
+              setKeepOpen(v === "on");
+              void syncKeepOpen(v === "on");
+            }}
+          />
+          <p className="settings__note">
+            「裏で開いておく」にすると、Chrome を開いたときに F.R.I.D.A.Y. をピン留めのタブで裏に開き、「フライデー」と呼ぶとそのタブが前に出て話を聞きます。
+            タブを閉じたときは、次に Chrome を開いたときにまた開きます。
+          </p>
+        </>
+      )}
       <p className="settings__note">
         拡張機能：
         {installed === null ? (

@@ -3884,3 +3884,14 @@ body:has(.holo-stage[data-open]) .app * {
     opacity: 0.65;
   }
 }
+
+/* 拡張機能が「操作した」ことにするための、何も起きない小さな枠（見えない） */
+.activation-spot {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  height: 6px;
+  z-index: 2147483647;
+  opacity: 0;
+}

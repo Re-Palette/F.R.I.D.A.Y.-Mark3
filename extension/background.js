@@ -369,15 +369,68 @@ async function music(msg) {
   return r ?? { ok: false, error: "Amazon Music を操作できませんでした。" };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+/* ---------- F.R.I.D.A.Y. を裏で開いておき、呼ばれたら前に出す ---------- */
+// 「フライデー」の呼びかけは F.R.I.D.A.Y. のページが聞いているので、ページが開いていないと呼べない。
+// そこで Chrome を開いたときに、F.R.I.D.A.Y. をピン留めのタブとして裏で開いておく（設定でオン・オフ）。
+const KEEP = "fridayKeepOpen";
+
+/** F.R.I.D.A.Y. のタブ（開いていなければ null） */
+async function fridayTab(home) {
+  const tabs = (await chrome.tabs.query({ url: `${home}*` }).catch(() => [])).filter((t) => {
+    // F.R.I.D.A.Y. の画面（トップ）だけ。ログイン・プライバシーポリシーのページは数えない
+    try {
+      return new URL(t.url || t.pendingUrl || "").pathname === "/";
+    } catch {
+      return false;
+    }
+  });
+  return tabs.find((t) => t.pinned) ?? tabs[0] ?? null;
+}
+
+/** 設定がオンで、F.R.I.D.A.Y. が開いていなければ、ピン留めで裏に開く */
+async function ensureFridayTab() {
+  const conf = (await chrome.storage.local.get(KEEP))[KEEP];
+  if (!conf?.on || !conf.home) return;
+  if (await fridayTab(conf.home)) return;
+  await chrome.tabs.create({ url: conf.home, pinned: true, active: false });
+}
+
+chrome.runtime.onStartup.addListener(() => void ensureFridayTab());
+
+/** 「裏で開いておく」の設定（画面の SETTINGS から） */
+async function keepOpen(msg, sender) {
+  const page = sender.tab?.url ? new URL(sender.tab.url) : null;
+  if (!page) return { ok: false };
+  await chrome.storage.local.set({ [KEEP]: { on: Boolean(msg.on), home: `${page.origin}/` } });
+  return { ok: true };
+}
+
+/**
+ * 呼ばれたページを前に出す。まだ一度も操作されていないページは音を鳴らせないので、
+ * 必要なら印の場所（何も起きない小さな枠）を 1 回クリックしたことにして、声を出せるようにする。
+ */
+async function focusTab(msg, sender) {
+  const tab = sender.tab;
+  if (!tab?.id) return { ok: false };
+  await chrome.tabs.update(tab.id, { active: true });
+  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  if (msg.point && Number.isFinite(msg.point.x) && Number.isFinite(msg.point.y)) await trustedClick(tab.id, msg.point);
+  return { ok: true };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const run =
-    msg.type === "open"
-      ? open(msg.url)
-      : msg.type === "close"
-        ? close(msg.target)
-        : msg.type === "music"
-          ? music(msg)
-          : Promise.resolve({ ok: true, version: 2 });
+    msg.type === "keep-open"
+      ? keepOpen(msg, sender)
+      : msg.type === "focus"
+        ? focusTab(msg, sender)
+        : msg.type === "open"
+          ? open(msg.url)
+          : msg.type === "close"
+            ? close(msg.target)
+            : msg.type === "music"
+              ? music(msg)
+              : Promise.resolve({ ok: true, version: 2 });
   run.then(reply, (err) => reply({ ok: false, error: String(err && err.message ? err.message : err) }));
   return true; // 非同期で返す
 });

@@ -91,6 +91,7 @@ export function useVoice({
   wakeWord = true,
   recorded = false,
   onAudio,
+  onWoke,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -105,10 +106,14 @@ export function useVoice({
   wakeWord?: boolean;
   /** ブラウザの音声認識の代わりに、録った音声をサーバーで文字にする（スマホ。ブラウザの認識が声を拾わないことがあるため） */
   recorded?: boolean;
+  /** 「フライデー」と呼ばれたとき（タブが裏にあれば前に出すため） */
+  onWoke?: () => void;
   /** 録った声をそのまま会話に送る（recorded のとき。会話のサーバーが文字にするので往復が 1 回で済む） */
   onAudio?: (audio: { mimeType: string; data: string }) => void;
 }) {
   const wakeWordOn = useRef(wakeWord);
+  /** 開いた時点で自分から聞き始めたところ（ブラウザに止められたら、黙って最初の操作を待つ） */
+  const autoStarting = useRef(false);
   wakeWordOn.current = wakeWord;
   const bargeInOn = useRef(bargeIn);
   bargeInOn.current = bargeIn;
@@ -135,6 +140,8 @@ export function useVoice({
   onCommandRef.current = onCommand;
   const onAudioRef = useRef(onAudio);
   onAudioRef.current = onAudio;
+  const onWokeRef = useRef(onWoke);
+  onWokeRef.current = onWoke;
   const onBargeInRef = useRef(onBargeIn);
   onBargeInRef.current = onBargeIn;
   /** 割り込み処理（読み上げの停止など。下で定義する関数を後から入れる） */
@@ -318,6 +325,7 @@ export function useVoice({
           setInterim(`聞こえた：${text}`);
           return;
         }
+        onWokeRef.current?.();
         if (command.length >= 2) {
           set("listening"); // 呼びかけに続けて話した内容。続きがあるかもしれないので少し待つ
           keepListening();
@@ -421,7 +429,9 @@ export function useVoice({
 
     rec.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        setError("マイクの使用が許可されていません。アドレスバーのマイクのアイコンから許可してください。");
+        // 開いた時点で自分から始めたのを止められただけなら、黙って最初の操作を待つ
+        if (!autoStarting.current) setError("マイクの使用が許可されていません。アドレスバーのマイクのアイコンから許可してください。");
+        autoStarting.current = false;
         runningRef.current = false;
         set("off");
       } else if (e.error === "network") {
@@ -826,8 +836,9 @@ export function useVoice({
     afterSpeech();
   }, [afterSpeech]);
 
-  // 前回 VOICE MODE をオンにしていたら、最初のクリック/キー操作で自動的に再開する
-  // （ブラウザはユーザー操作なしでのマイク・音声の開始を制限するため）
+  // 前回 VOICE MODE をオンにしていたら再開する。
+  // パソコン（呼びかけで起動する画面）は、開いた時点で聞き始める（裏で開いておいたタブでも「フライデー」と呼べるように）。
+  // ブラウザに止められたら、最初のクリック/キー操作で再開する。声を出す許可は、最初の操作のときに取る
   useEffect(() => {
     let wanted = false;
     try {
@@ -835,7 +846,23 @@ export function useVoice({
     } catch {
       /* noop */
     }
-    if (!wanted || !getRecognitionCtor()) return;
+    const unlock = () => unlockAudio();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    if (!wanted || !getRecognitionCtor()) {
+      return () => {
+        window.removeEventListener("pointerdown", unlock);
+        window.removeEventListener("keydown", unlock);
+      };
+    }
+    // スマホかどうかが分かってから（最初の描画の直後）。スマホは呼びかけを使わないので自分からは始めない
+    const auto = window.setTimeout(() => {
+      if (!wakeWordOn.current || stateRef.current !== "off" || !recRef.current) return;
+      autoStarting.current = true;
+      setError(null);
+      toStandby();
+      window.setTimeout(() => (autoStarting.current = false), 10_000);
+    }, 150);
     const resume = (e: Event) => {
       // 音声ボタン自体の操作はそのボタンの処理に任せる（二重に切り替わらないように）
       if ((e.target as Element | null)?.closest?.("[data-voice-control]")) return;
@@ -844,10 +871,13 @@ export function useVoice({
     window.addEventListener("pointerdown", resume, { once: true });
     window.addEventListener("keydown", resume, { once: true });
     return () => {
+      clearTimeout(auto);
       window.removeEventListener("pointerdown", resume);
       window.removeEventListener("keydown", resume);
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
     };
-  }, [enable]);
+  }, [enable, toStandby]);
 
   useEffect(
     () => () => {
