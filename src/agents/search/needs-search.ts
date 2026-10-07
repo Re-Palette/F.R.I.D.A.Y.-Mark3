@@ -15,6 +15,15 @@ const SEARCH_HINTS = [
 /** 検索しなくてよい話題（予定・天気・記憶は手元の情報で答える） */
 const LOCAL_ONLY = /^(おはよう|こんにちは|こんばんは|おやすみ|ありがとう|了解|OK|うん|はい)/i;
 
+/** はっきり「調べて」と言われたとき */
+const EXPLICIT = /調べて|検索|ググ|ネットで|ウェブで|webで/i;
+
+/**
+ * 手元の情報（予定・ToDo・授業・プロジェクト・記憶・振り返り・自分のこと）で答える話。
+ * 「今週の予定」「テストの結果」「最近の調子」などで検索して待たせないよう、はっきり頼まれたとき以外は検索しない
+ */
+const LOCAL_CONTEXT = /予定|スケジュール|ToDo|TODO|タスク|課題|宿題|授業|講義|テスト|試験|勉強|プロジェクト|進捗|ARQO|Re-?Palette|NEWTONE|FRIDAY|フライデー|記憶|覚えて|メモ|ノート|日記|振り返|調子|気分|俺|僕|私|自分|陽大|会社|社員|承認|メール|資料|スライド|PDF|クイズ/i;
+
 /** SNS の投稿づくり・トレンドの相談か（SNS AI） */
 export function asksForSns(text: string): boolean {
   return /インスタ|Instagram|instagram|X\s?の投稿|ツイート|ポスト(文|案)|投稿(文|案|内容)|SNS|ハッシュタグ|TikTok|ティックトック|リール|ストーリーズ|バズ/.test(text);
@@ -28,5 +37,7 @@ export function asksForTrend(text: string): boolean {
 export function needsSearch(text: string): boolean {
   const t = text.trim();
   if (!t || t.length < 3 || LOCAL_ONLY.test(t)) return false;
+  if (EXPLICIT.test(t)) return true;
+  if (LOCAL_CONTEXT.test(t) || /^(今週|今日|今月|最近)(は|って)?どう/.test(t)) return false;
   return SEARCH_HINTS.some((re) => re.test(t));
 }

@@ -32,7 +32,7 @@ import { buildSystemInstruction, type MailData, type MusicContext } from "./pers
  * 脳・カレンダー・天気を集めるのに待てる時間。間に合わなければ無しで返答する（返答の速さ優先）。
  * どれも前回の結果をキャッシュから即座に返すので、普段はほぼ待たない（上限は初回や障害時の保険）。
  */
-const CONTEXT_BUDGET_MS = { text: 900, voice: 450 };
+const CONTEXT_BUDGET_MS = { text: 650, voice: 400 };
 
 /** 振り返り・日記の材料集めに待てる時間（頼まれたときだけなので長め） */
 const REVIEW_BUDGET_MS = 3000;
@@ -197,7 +197,9 @@ export const chatAgent: Agent = {
     // 音声会話は「最初の一言の速さ」優先: 考える量を最小にし、返答も短く
     // ニュースのまとめは長くなるので上限を広げる
     // 短い普通の発言（検索・まとめ以外）も考える量を最小にする（最初の一言が速くなる）
-    const quick = !search && !briefing && !morning && !quiz && !reviewKind && !sns && !drafting && !reading && !docAsk && latest.length < QUICK_REPLY_CHARS;
+    // ふつうの会話（調べもの・クイズ・長めの相談も）は考える量を最小にして、最初の一言を速くする。
+    // 文書づくり・振り返り・ファイル読み・ニュースのまとめのように、組み立てが要るときだけ少し考える
+    const quick = !briefing && !morning && !reviewKind && !sns && !drafting && !reading && !docAsk && latest.length < QUICK_REPLY_CHARS * 4;
     const runConfig = ctx.voice
       ? {
           ...config,

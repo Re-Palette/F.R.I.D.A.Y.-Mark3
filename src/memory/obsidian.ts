@@ -27,8 +27,8 @@ const RECENT_MEMORY_CHARS = 2500;
 const CHUNK_CHARS = 600;
 const TOP_CHUNKS = 4;
 const RECALL_BUDGET_CHARS = 5000;
-/** 意味の近さを測るのに待てる時間（返答を遅らせないため短め） */
-const SEMANTIC_BUDGET_MS = 550;
+/** 意味の近さを測るのに待てる時間（返答を遅らせないため短め。脳の読み込み全体の待ち時間より十分短く） */
+const SEMANTIC_BUDGET_MS = 350;
 /** これより意味が近ければ、言葉が一致しなくても候補にする */
 const SEMANTIC_MIN = 0.62;
 
@@ -135,7 +135,8 @@ export class ObsidianMemory implements LongTermMemory {
     }
 
     // MEMORY AI: 意味の近さも測る（言い回しが違っても見つかる）。間に合わなければ言葉の一致だけで探す
-    const sims = await Promise.race([
+    // 「ありがとう」「了解」のような短い発言は、言葉の一致だけで十分（意味を測る通信を省いて速く）
+    const sims = query.trim().length < 6 ? null : await Promise.race([
       similarity(`${query}\n${history.slice(-2, -1).map((m) => m.content).join(" ")}`.slice(0, 800), all.map((c) => c.id)).catch(() => null),
       new Promise<null>((r) => setTimeout(() => r(null), SEMANTIC_BUDGET_MS)),
     ]);
