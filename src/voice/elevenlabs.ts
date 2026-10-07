@@ -190,3 +190,28 @@ export async function checkTts(): Promise<TtsError | null> {
   cache = { key, at: Date.now(), error };
   return error;
 }
+
+/* ---------- 残りの利用枠 ---------- */
+
+export interface TtsQuota {
+  used: number;
+  limit: number;
+  /** 次に枠が戻る時刻（ミリ秒） */
+  resetAt?: number;
+  tier?: string;
+}
+
+/** ElevenLabs の今月の利用枠（使った文字数・上限）。キーに読む権限が無いときなどは null */
+export async function ttsQuota(): Promise<TtsQuota | null> {
+  const config = getTtsConfig();
+  if (!isTtsConfigured(config)) return null;
+  const res = await fetch(`${config.baseUrl}/v1/user/subscription`, {
+    headers: { "xi-api-key": config.apiKey! },
+    signal: AbortSignal.timeout(5000),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const j = (await res.json().catch(() => ({}))) as { character_count?: number; character_limit?: number; next_character_count_reset_unix?: number; tier?: string };
+  if (typeof j.character_count !== "number" || typeof j.character_limit !== "number") return null;
+  return { used: j.character_count, limit: j.character_limit, resetAt: j.next_character_count_reset_unix ? j.next_character_count_reset_unix * 1000 : undefined, tier: j.tier };
+}

@@ -22,6 +22,7 @@ import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
 import { asksForDiary, asksForReview, formatMaterial, gatherReview } from "@/integrations/review";
 import { latestWeeklyReview } from "@/integrations/weekly";
+import { asksForUsage, usageReport } from "@/integrations/usage";
 import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import type { CalendarEvent } from "@/integrations/google-calendar";
@@ -120,6 +121,8 @@ export const chatAgent: Agent = {
       : Promise.resolve(null);
     // 資料・PDF・スライドを頼まれたら、科目名が入っていればその授業ノートを集める（「線形代数の資料作って」）
     const docAsk = asksForDocument(latest);
+    // API の残り・使用量を聞かれたら、ElevenLabs の利用枠と Gemini の今日の使用回数を集める
+    const usageTask: Promise<string | null> = asksForUsage(latest) ? within(usageReport(), budget + 1500, null, "usage") : Promise.resolve(null);
     const lectureDocsTask = docAsk && ctx.memory.connected ? within(lectureMaterial(latest), budget + 800, null, "lecture-docs") : Promise.resolve(null);
     // 音楽の話のときだけ、いま流れている曲を Spotify に聞く（接続済みのとき）
     const musicTalk = asksForMusic(latest);
@@ -143,7 +146,7 @@ export const chatAgent: Agent = {
         }))
       : Promise.resolve(null);
 
-    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company, lectureDocs] = await Promise.all([
+    const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company, lectureDocs, usage] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
@@ -159,6 +162,7 @@ export const chatAgent: Agent = {
       quizTask,
       within<CompanyBrief | null>(companyTask, budget + 600, wantsCompany ? { text: "AI 会社の応答が間に合わなかった。", needsCeo: 0 } : null, "company"),
       lectureDocsTask,
+      usageTask,
     ]);
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
@@ -242,6 +246,7 @@ export const chatAgent: Agent = {
         company,
         companyConnected: companyConnected(),
         lectureDocs,
+        usage,
         voice: ctx.voice,
       }),
       contents,

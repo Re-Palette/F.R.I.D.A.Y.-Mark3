@@ -207,6 +207,12 @@ const MAX_ATTEMPTS = 2;
  * 未提供（404）のモデルはプロセスが続く限りスキップする。
  */
 const unavailableUntil = new Map<string, number>();
+
+/** いま上限・混雑で使えないモデル（このサーバーが覚えている分。残りの量を聞かれたときに伝える） */
+export function limitedModels(): { model: string; until: number }[] {
+  const now = Date.now();
+  return [...unavailableUntil].filter(([, until]) => until > now && Number.isFinite(until)).map(([model, until]) => ({ model, until }));
+}
 const RATE_LIMIT_COOLDOWN = 10 * 60_000;
 const CONGESTION_COOLDOWN = 2 * 60_000;
 

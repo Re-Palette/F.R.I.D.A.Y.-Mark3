@@ -39,6 +39,8 @@ export interface PersonaInput {
   /** 未読メール（返信の下書きを頼まれたときは直近のメールを本文つきで） */
   /** AI 会社（ARQO）の状況。会社の話をしているときだけ渡る */
   company?: { text: string; needsCeo: number } | null;
+  /** API の残り・使用量を聞かれたときの材料 */
+  usage?: string | null;
   /** 資料・PDF・スライドを頼まれたときの授業ノート（科目が分かったとき） */
   lectureDocs?: { subject: string; notes: { date: string; title: string; text: string }[] } | null;
   /** 会社に接続されているか（されていれば操作のタグを使える） */
@@ -127,6 +129,7 @@ export function buildSystemInstruction({
   review,
   replyLength,
   sns,
+  usage,
 }: PersonaInput): string {
   const calendarOn = calendar?.connected === true;
   const base = `あなたは F.R.I.D.A.Y.（フライデー）Mark3。単なる AI アシスタントではなく、${OWNER}の副社長・参謀・秘書として動く。
@@ -235,6 +238,7 @@ F.R.I.D.A.Y.：FRIDAY-Mark3 は会話基盤が見えてきています。次は�
   if (memoryConnected) out += WRITING_RULES;
   out += EXPORT_RULES(memoryConnected);
   if (lectureDocs) out += lectureDocSection(lectureDocs);
+  if (usage) out += usageSection(usage, Boolean(voice));
   if (review) out += reviewSection(review.kind, review.material, Boolean(voice));
   if (sns) out += snsSection(Boolean(search), memoryConnected);
   if (calendar?.connected) out += calendarSection(calendar.events, now, timezone);
@@ -585,6 +589,18 @@ const EXPORT_RULES = (canSave: boolean) => `
 - 資料もスライドも、手元の情報（授業ノート・脳のノート・予定・プロジェクト）を活かして具体的に書く。分からない数字や事実は作らず【要確認】と書く。
 - タグの外の返答は 1〜2 文だけ（「線形代数の資料を PDF にしました。下のボタンから保存できます」）。本文は重ねて書かない。
 - 直してと言われたら、同じ title で全文を書き直す。`;
+
+/** API の残り・使用量 */
+function usageSection(report: string, voice: boolean): string {
+  return `
+
+# API の残り・使用量（今回聞かれている）
+- 下の材料だけをもとに答える。結論（今日・今月はまだ足りそうか）→ 数字 → 気をつけること、の順で${voice ? "話し言葉で 2〜4 文" : "短く"}。
+- Gemini の残りは目安（Gemini は残りの回数を教えてくれない）だと一言添える。ElevenLabs の数字は正確。
+- 足りなくなりそうなら、次の一手を一つ（例：声をブラウザの声にする、急ぎでない資料づくりは無料枠が戻る 16〜17 時以降に）。
+
+${report}`;
+}
 
 /** 資料づくりに使う授業ノート */
 function lectureDocSection(m: { subject: string; notes: { date: string; title: string; text: string }[] }): string {
