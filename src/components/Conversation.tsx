@@ -4,6 +4,7 @@
  * 会話ログ。F.R.I.D.A.Y. の返答はストリーミングで逐次表示される。
  */
 import { memo, useEffect, useLayoutEffect, useRef } from "react";
+import { skipWhileHidden } from "@/lib/memo-hidden";
 import type { ChatPhase, UiMessage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import { Core } from "./Core";
@@ -245,7 +246,7 @@ const Message = memo(function Message({
   );
 });
 
-export function Conversation({
+export const Conversation = memo(function Conversation({
   messages,
   phase,
   onRetry,
@@ -345,4 +346,4 @@ export function Conversation({
       </div>
     </section>
   );
-}
+}, skipWhileHidden);

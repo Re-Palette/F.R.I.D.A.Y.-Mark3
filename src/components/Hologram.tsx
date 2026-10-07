@@ -7,7 +7,7 @@
  * - ドラッグで回す／ホイールで拡大縮小／ダブルクリックで元に戻す。手の動き（HandControl）でも動く
  * - 画面に見えていない間は描画を止める。WebGL が使えない環境では何も出さない（元の円盤が見える）
  */
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatPhase } from "@/hooks/useChat";
 import { holo, resetView, rotateBy, zoomBy } from "@/lib/hologram-control";
@@ -15,6 +15,7 @@ import { assetFailed, clearHologram, getHoloState, setHoloExpanded, subscribeHol
 import type { HoloModel } from "@/lib/hologram-schema";
 import { buildAsset, buildModel, dotTexture, holoMaterial } from "./hologram-visuals";
 import { toggleHand, useHandStatus, warmHands } from "./HandControl";
+import { settled } from "@/lib/settle";
 
 const ORANGE = 0xff8a1f;
 const AMBER = 0xffb45a;
@@ -22,7 +23,7 @@ const CYAN = 0x2ee6ff;
 const R = 1.5;
 
 type Three = typeof import("three");
-export function Hologram({
+export const Hologram = memo(function Hologram({
   phase,
   speaking,
   active,
@@ -276,7 +277,9 @@ export function Hologram({
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
       };
-      const ro = new ResizeObserver(resize);
+      // 大きさが変わり続けている間は作り直さない（落ち着いてから 1 回）
+      const resizeLater = settled(resize);
+      const ro = new ResizeObserver(resizeLater);
       ro.observe(el);
       resize();
 
@@ -486,6 +489,7 @@ export function Hologram({
         unsubscribe();
         disposeModel();
         ro.disconnect();
+        resizeLater.cancel();
         io.disconnect();
         canvas.removeEventListener("pointerdown", down);
         canvas.removeEventListener("pointermove", move);
@@ -529,13 +533,21 @@ export function Hologram({
       {mounted && createPortal(<HoloStage open={hs.expanded && active} />, document.body)}
     </>
   );
-}
+});
 
 /** 作ったホログラムを画面いっぱいに大きく見せる枠（中身の canvas は Hologram が移してくる） */
 function HoloStage({ open }: { open: boolean }) {
   const hs = useHoloState();
   const hand = useHandStatus();
   const handOn = hand === "loading" || hand === "ready";
+  // 拡大表示の間は後ろの画面のアニメーションを止める（CSS が body の印を見る）
+  useEffect(() => {
+    if (open) document.body.dataset.holoOpen = "";
+    else delete document.body.dataset.holoOpen;
+    return () => {
+      delete document.body.dataset.holoOpen;
+    };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setHoloExpanded(false);

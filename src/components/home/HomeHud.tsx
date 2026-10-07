@@ -12,6 +12,7 @@ import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import type { ChatPhase, ChatStage, LastRunStats, UiMessage } from "@/hooks/useChat";
 import { PHONE_QUERY, useMedia } from "@/hooks/useMedia";
+import { skipWhileHidden } from "@/lib/memo-hidden";
 import type { VoiceState } from "@/hooks/useVoice";
 import { HandControl } from "../HandControl";
 import type { View } from "../Sidebar";
@@ -100,13 +101,16 @@ export const HomeHud = memo(function HomeHud({
       window.removeEventListener("pointerdown", onDown);
     };
   }, [tab]);
-  const onTab = (t: HomeTab) => {
-    if (t === "agents") return setTab((cur) => (cur === "agents" ? null : "agents"));
-    setTab(null);
-    if (t === "notes") onNavigate("memory");
-    else if (t === "tasks") onNavigate("tasks");
-    else onOpenChat();
-  };
+  const onTab = useCallback(
+    (t: HomeTab) => {
+      if (t === "agents") return setTab((cur) => (cur === "agents" ? null : "agents"));
+      setTab(null);
+      if (t === "notes") onNavigate("memory");
+      else if (t === "tasks") onNavigate("tasks");
+      else onOpenChat();
+    },
+    [onNavigate, onOpenChat],
+  );
 
   if (phone) {
     return (
@@ -197,4 +201,4 @@ export const HomeHud = memo(function HomeHud({
       </div>
     </div>
   );
-});
+}, skipWhileHidden);

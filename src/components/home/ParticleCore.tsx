@@ -7,8 +7,9 @@
  * 音声モードの間は、実際の声の大きさ（voiceLevel）に合わせて明るさ・大きさ・波打ちが変わる。
  * 見えていないとき・タブが裏のときは描かない。動きを減らす設定なら止まった絵を 1 枚だけ描く。
  */
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { voiceLevel } from "@/lib/voice-level";
+import { settled } from "@/lib/settle";
 
 export type CoreMode = "idle" | "listening" | "connect" | "think" | "search" | "create" | "speaking";
 
@@ -84,7 +85,7 @@ function makeNetwork() {
  * onSlow：この端末では描画が追いつかない（なめらかに動かない）と分かったときに 1 回だけ呼ぶ。
  * そのあとは自分でも軽い描き方（低い解像度・少ないコマ数）に切り替える。
  */
-export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active: boolean; onSlow?: () => void }) {
+export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active: boolean; onSlow?: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -150,7 +151,9 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
       prerender(Math.max(1, Math.min(w, h) * 0.44));
     };
     fit();
-    const ro = new ResizeObserver(fit);
+    // 返事の欄が伸びていく間などは作り直さず、大きさが落ち着いてから 1 回だけ描き直しの準備をする
+    const fitLater = settled(fit);
+    const ro = new ResizeObserver(fitLater);
     ro.observe(canvas);
 
     let angle = 0;
@@ -265,10 +268,11 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
       ctx.globalAlpha = 1;
     };
 
-    // 30fps で十分（負荷を抑える）
-    // ふだんは 30fps。画面の更新（requestAnimationFrame）の間隔を 3 秒ごとに測り、
+    // なめらかに見えるよう、描くのが速い端末では毎フレーム（60fps）描く。1 回描くのに時間がかかる端末は 30fps に。
+    // さらに、画面の更新（requestAnimationFrame）の間隔を 3 秒ごとに測り、
     // 2 回続けて平均 45ms を超えたら（20fps 未満）、この端末には重いと判断して軽い描き方にする
-    let gap = 32;
+    let gap = 0;
+    let drawAvg = 0;
     let prev = 0;
     let sum = 0;
     let frames = 0;
@@ -299,7 +303,11 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
         }
       }
       if (now - last < gap) return;
+      const t0 = performance.now();
       draw(now);
+      // 1 回描くのにかかった時間（なめらかにならす）。6ms を超えるようなら 30fps に落とす
+      drawAvg = drawAvg * 0.95 + (performance.now() - t0) * 0.05;
+      if (!lite) gap = drawAvg > 6 ? 32 : drawAvg < 4 ? 0 : gap;
     };
     if (still) {
       draw(performance.now());
@@ -309,8 +317,9 @@ export function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active:
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      fitLater.cancel();
     };
   }, [active]);
 
   return <canvas ref={ref} className="pcore" aria-hidden="true" />;
-}
+});

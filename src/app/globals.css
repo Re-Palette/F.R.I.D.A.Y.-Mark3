@@ -2444,6 +2444,8 @@ button:disabled,
   padding: 8px 0;
   max-height: 160px;
   caret-color: var(--orange-hi);
+  /* 入力に合わせて高さを自動で変える（1 文字ごとに高さを測り直さないので軽い） */
+  field-sizing: content;
 }
 
 .composer__input::placeholder {
@@ -3808,8 +3810,9 @@ ol.settings__note {
   }
 }
 
-/* 拡大表示の間は、後ろに隠れた画面のアニメーションを止めて軽くする */
-body:has(.holo-stage[data-open]) .app * {
+/* 拡大表示の間は、後ろに隠れた画面のアニメーションを止めて軽くする
+   （:has() で判定すると、ページのどこが変わっても全体の見た目を計算し直して重くなるので、body の印で判定する） */
+body[data-holo-open] .app * {
   animation-play-state: paused !important;
 }
 
@@ -3894,4 +3897,10 @@ body:has(.holo-stage[data-open]) .app * {
   height: 6px;
   z-index: 2147483647;
   opacity: 0;
+}
+
+/* 会話が長くなっても軽く：画面の外にある発言は、見えるまで配置の計算をしない */
+.conversation__list > .msg:not(:nth-last-child(-n + 4)) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 140px;
 }

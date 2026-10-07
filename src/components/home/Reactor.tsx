@@ -7,6 +7,7 @@
  *   中心：光る太陽と、つながった光の点の網（ParticleCore。状態で動きが変わる）
  * 「〇〇のホログラム」を作ったときだけ、中心に 3D ホログラムが浮かぶ。
  */
+import { memo } from "react";
 import type { ChatPhase, ChatStage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import { useHoloState } from "@/lib/hologram-model";
@@ -44,7 +45,7 @@ const TRIANGLES = [0, 90, 180, 270].map((d) => {
 /** 斜めの光る括弧 */
 const BRACKETS = [30, 60, 120, 150, 210, 240, 300, 330];
 
-export function Reactor({
+export const Reactor = memo(function Reactor({
   phase,
   stage,
   voiceState,
@@ -116,4 +117,4 @@ export function Reactor({
       </div>
     </div>
   );
-}
+});

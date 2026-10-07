@@ -5,7 +5,7 @@
  *   上のタブ（AGENTS / NOTES / TASKS / CONTEXT）／SYSTEM STATUS（この端末の負荷）／CURRENT MODE／接続の短いバー
  *   左下の現在地／VOICE ACTIVITY（波形）／NOTIFICATIONS／ACTIVITY LIVE（会話の量）
  */
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { AGENT_CARDS } from "@/data/agents";
 import { TASKS_CHANGED, type ChatPhase, type LastRunStats, type UiMessage } from "@/hooks/useChat";
@@ -31,7 +31,7 @@ function Bar({ ratio, live }: { ratio: number | null; live?: boolean }) {
 
 export type HomeTab = "agents" | "notes" | "tasks" | "context";
 
-export function TopTabs({
+export const TopTabs = memo(function TopTabs({
   chatStatus,
   brain,
   lastRun,
@@ -66,7 +66,7 @@ export function TopTabs({
       ))}
     </nav>
   );
-}
+});
 
 /* ---------- SYSTEM STATUS：この端末の CPU（画面の処理の重さ）・メモリ・保存領域・通信 ---------- */
 
@@ -138,7 +138,7 @@ function useDeviceMetrics(active: boolean): Metrics {
   return m;
 }
 
-export function SystemBars({ active }: { active: boolean }) {
+export const SystemBars = memo(function SystemBars({ active }: { active: boolean }) {
   const m = useDeviceMetrics(active);
   const pct = (r: number | null) => (r === null ? "—" : `${Math.round(r * 100)}%`);
   const rows = [
@@ -161,7 +161,7 @@ export function SystemBars({ active }: { active: boolean }) {
       </ul>
     </section>
   );
-}
+});
 
 /* ---------- CURRENT MODE ---------- */
 
@@ -175,7 +175,7 @@ export const MODE_LABEL: Record<CoreMode, string> = {
   speaking: "RESPONDING",
 };
 
-export function CurrentMode({ mode, hint }: { mode: CoreMode; hint: string }) {
+export const CurrentMode = memo(function CurrentMode({ mode, hint }: { mode: CoreMode; hint: string }) {
   return (
     <section className="hblock hmode" data-mode={mode}>
       <h3 className="hblock__title">CURRENT MODE</h3>
@@ -185,11 +185,11 @@ export function CurrentMode({ mode, hint }: { mode: CoreMode; hint: string }) {
       </b>
     </section>
   );
-}
+});
 
 /* ---------- 接続の短いバー（印・名前・バー・値） ---------- */
 
-export function LinkBars({
+export const LinkBars = memo(function LinkBars({
   chatStatus,
   phase,
   brain,
@@ -229,11 +229,11 @@ export function LinkBars({
       ))}
     </ul>
   );
-}
+});
 
 /* ---------- 左下の現在地 ---------- */
 
-export function LocationMark() {
+export const LocationMark = memo(function LocationMark() {
   const w = useJson<{ ok: boolean; weather?: WeatherReport }>("/api/weather", [], 15 * 60_000);
   const wx = w?.ok ? w.weather : undefined;
   return (
@@ -258,7 +258,7 @@ export function LocationMark() {
       </div>
     </div>
   );
-}
+});
 
 /* ---------- VOICE ACTIVITY：直近 1 分のうち、聞く・考える・話すをしていた割合 ---------- */
 
@@ -310,7 +310,7 @@ function wavePath(amp: number, phase: number) {
 const WAVE_A = wavePath(15, 0);
 const WAVE_B = wavePath(10, 1.7);
 
-export function VoiceActivity({ state }: { state: VoiceState }) {
+export const VoiceActivity = memo(function VoiceActivity({ state }: { state: VoiceState }) {
   const ratio = useVoiceActivity(state);
   // 音声モードの間は、波の高さを実際の声の大きさに合わせて毎フレーム変える（測れないときは状態ごとの動き）
   const ampRef = useRef<HTMLDivElement>(null);
@@ -367,11 +367,11 @@ export function VoiceActivity({ state }: { state: VoiceState }) {
       </div>
     </section>
   );
-}
+});
 
 /* ---------- NOTIFICATIONS（近い順に 3 件） ---------- */
 
-export function Notifications({ news }: { news?: StatusResponse["news"] }) {
+export const Notifications = memo(function Notifications({ news }: { news?: StatusResponse["news"] }) {
   const { items, ready } = useIncoming(news);
   return (
     <section className="hbox hnote">
@@ -396,7 +396,7 @@ export function Notifications({ news }: { news?: StatusResponse["news"] }) {
       )}
     </section>
   );
-}
+});
 
 /* ---------- ACTIVITY LIVE：直近 2 時間の会話の量（4 分ごと）・文脈の使用量・短い数字 ---------- */
 

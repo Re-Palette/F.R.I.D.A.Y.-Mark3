@@ -3,7 +3,7 @@
 /**
  * HOME の部品（共通の読み込み・レーダー・エージェント一覧・お知らせ・返事）。数字はすべて実データ（無いものは「—」）。
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { AGENT_CARDS } from "@/data/agents";
 import { CALENDAR_CHANGED, TASKS_CHANGED, type ChatPhase, type ChatStage, type LastRunStats, type UiMessage } from "@/hooks/useChat";
@@ -59,7 +59,7 @@ export function agentOnline(key: string, phase: string, chat: ChatAgentStatus, b
 
 /* ---------- レーダー ---------- */
 
-export function Radar() {
+export const Radar = memo(function Radar() {
   const ticks = Array.from({ length: 36 }, (_, i) => i * 10);
   return (
     <div className="radar" aria-hidden="true">
@@ -88,7 +88,7 @@ export function Radar() {
       </svg>
     </div>
   );
-}
+});
 
 /* ---------- エージェント一覧 ---------- */
 

@@ -7,7 +7,7 @@
  * 入力中は onTyping を呼び、サーバー側で Gemini への接続を温めておく。
  * ファイル添付：クリップのボタン・貼り付け（写真）・画面へのドロップ（Dashboard）。添えたファイルは入力欄の上に並ぶ。
  */
-import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { addFiles, removeAttachment, useAttachments, type AttachmentKind } from "@/lib/attachments";
 import type { ChatPhase } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
@@ -48,6 +48,9 @@ const VOICE_LABEL: Record<VoiceState, string> = {
   speaking: "SPEAKING",
 };
 
+/** 入力欄の高さを CSS だけで自動に変えられるか */
+const autoSizes = typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content");
+
 export const Composer = memo(
   forwardRef<ComposerHandle, Props>(function Composer(
     { phase, disabled, onSend, onStop, onTyping, voiceState = "off", wakeWord = true, voiceInterim, onVoiceToggle, onTalk, cameraOn = false, onCameraToggle, screenOn = false, onScreenToggle },
@@ -76,9 +79,10 @@ export const Composer = memo(
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }), []);
 
+  // 高さは CSS（field-sizing: content）が入力に合わせて変える。対応していないブラウザだけ、測って合わせる
   const resize = () => {
     const ta = taRef.current;
-    if (!ta) return;
+    if (!ta || autoSizes) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
   };
@@ -106,29 +110,39 @@ export const Composer = memo(
     }
   };
 
+  // 枠とマイクのボタンは入力のたびに描き直さない（1 文字ごとの負荷を減らす）
+  const staticParts = useMemo(
+    () => (
+      <>
+        <HudFrame cut={22} small={10} leds notch />
+        <button
+          type="button"
+          className="composer__mic"
+          data-voice-control
+          onClick={onTalk}
+          title="押して話す（呼びかけなしで 1 回聞き取り）"
+          aria-label="音声で話す"
+        >
+          {/* 聞き取り中・話し中に反応する波形の輪 */}
+          <span className="composer__wave" aria-hidden="true">
+            {Array.from({ length: 24 }, (_, i) => (
+              <i key={i} style={{ transform: `rotate(${i * 15}deg)`, animationDelay: `${((i * 0.13) % 1).toFixed(2)}s` }} />
+            ))}
+          </span>
+          <svg className="composer__mic-ring" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="30" strokeDasharray="3 4.2" />
+            <path d="M32 2 A30 30 0 0 1 60 22" className="composer__mic-arc" />
+          </svg>
+          <Icon name="mic" size={24} strokeWidth={1.8} />
+        </button>
+      </>
+    ),
+    [onTalk],
+  );
+
   return (
     <div className="composer hud" data-busy={busy || undefined} data-voice={voiceState}>
-      <HudFrame cut={22} small={10} leds notch />
-      <button
-        type="button"
-        className="composer__mic"
-        data-voice-control
-        onClick={onTalk}
-        title="押して話す（呼びかけなしで 1 回聞き取り）"
-        aria-label="音声で話す"
-      >
-        {/* 聞き取り中・話し中に反応する波形の輪 */}
-        <span className="composer__wave" aria-hidden="true">
-          {Array.from({ length: 24 }, (_, i) => (
-            <i key={i} style={{ transform: `rotate(${i * 15}deg)`, animationDelay: `${((i * 0.13) % 1).toFixed(2)}s` }} />
-          ))}
-        </span>
-        <svg className="composer__mic-ring" viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r="30" strokeDasharray="3 4.2" />
-          <path d="M32 2 A30 30 0 0 1 60 22" className="composer__mic-arc" />
-        </svg>
-        <Icon name="mic" size={24} strokeWidth={1.8} />
-      </button>
+      {staticParts}
       <div className="composer__main">
         {(attachments.length > 0 || attachMsg) && (
           <div className="composer__files" aria-label="添付するファイル">
