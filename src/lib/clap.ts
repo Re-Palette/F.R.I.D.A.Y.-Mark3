@@ -6,7 +6,7 @@
  *   - 高い音まで含むザラッとした音（ゼロ交差率が高い。声の母音やノックのような低い音は低い）
  *   - すぐ消える（大きさが山の 1/4 まで落ちるのが 120ms 以内。話し声は音節が長く続く）
  *   - 消えたあと静かなまま（「パ」のような破裂音は、すぐ後に母音が続くので除く）
- * 拍手らしい音が 0.12〜0.8 秒の間隔で 2 回続き、そのあと 0.5 秒何も鳴らなければ「2 回の拍手」。
+ * 拍手らしい音が 0.12〜0.8 秒の間隔で 2 回続き、そのあと 0.3 秒何も鳴らなければ「2 回の拍手」。
  * 3 回以上続いたとき（拍手喝采・ノックの連打など）は反応しない。
  *
  * 音は録音も送信もしない。大きさとゼロ交差率だけを見る。
@@ -33,7 +33,7 @@ const MIN_ZCR = 0.1;
 const MIN_GAP_S = 0.12;
 const MAX_GAP_S = 0.8;
 /** 2 回目のあと、3 回目が来ないことを確かめる時間 */
-const QUIET_AFTER_S = 0.5;
+const QUIET_AFTER_S = 0.3;
 /** 一度反応したら、しばらく反応しない */
 const COOLDOWN_S = 2.5;
 
@@ -57,10 +57,13 @@ export class DoubleClapDetector {
 
   private readonly sampleRate: number;
   private readonly onDoubleClap: () => void;
+  /** 1 回目の拍手らしい音が鳴ったとき（タブを前に出す準備を先に始めるため） */
+  private readonly onFirstClap?: () => void;
 
-  constructor(sampleRate: number, onDoubleClap: () => void) {
+  constructor(sampleRate: number, onDoubleClap: () => void, onFirstClap?: () => void) {
     this.sampleRate = sampleRate;
     this.onDoubleClap = onDoubleClap;
+    this.onFirstClap = onFirstClap;
     this.win = Math.max(64, Math.round(sampleRate * WINDOW_S));
     this.buf = new Float32Array(this.win);
   }
@@ -170,6 +173,7 @@ export class DoubleClapDetector {
       if (gap > MAX_GAP_S) this.claps = [];
     }
     this.claps.push(start);
+    if (this.claps.length === 1) this.onFirstClap?.();
     if (this.claps.length > 2) {
       // 3 回以上は反応しない（静かになるまで数えない）
       this.claps = [];

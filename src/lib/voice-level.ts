@@ -103,13 +103,19 @@ export function recentAudio(ms: number): Float32Array | null {
 
 /* ---------- 拍手 2 回で起動。マイクを開いている間だけ、音の大きさとザラつきを見て判定する（録音・送信しない） ---------- */
 let clapHandler: (() => void) | null = null;
+/** 1 回目の拍手で呼ぶ（起動の準備を先に始める） */
+let clapPrime: (() => void) | null = null;
 let clap: { proc: ScriptProcessorNode; mute: GainNode } | null = null;
 
 function attachClap() {
   if (clap || !clapHandler || !source || !ctx) return;
   try {
     const c = ctx;
-    const detector = new DoubleClapDetector(c.sampleRate, () => clapHandler?.());
+    const detector = new DoubleClapDetector(
+      c.sampleRate,
+      () => clapHandler?.(),
+      () => clapPrime?.(),
+    );
     const proc = c.createScriptProcessor(1024, 1, 1);
     const mute = c.createGain();
     mute.gain.value = 0;
@@ -145,8 +151,9 @@ function detachClap() {
 }
 
 /** 拍手 2 回で呼ぶ処理（null で止める）。マイクを開いている間（音声モードがオンの間）だけ聞く */
-export function setClapHandler(handler: (() => void) | null): void {
+export function setClapHandler(handler: (() => void) | null, prime: (() => void) | null = null): void {
   clapHandler = handler;
+  clapPrime = prime;
   if (handler) attachClap();
   else detachClap();
 }

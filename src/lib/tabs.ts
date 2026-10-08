@@ -106,6 +106,15 @@ export async function bringToFront(): Promise<void> {
   await askExtension({ type: "focus", point }, 4000);
 }
 
+/**
+ * 拡張機能を起こしておく（拍手の 1 回目で呼ぶ）。Chrome の拡張機能は使っていないと眠るので、
+ * 2 回目の拍手のあとすぐタブを前に出せるよう、先に起こしておく。
+ */
+export function wakeExtension(): void {
+  if (typeof document === "undefined" || !document.documentElement.dataset.fridayTabs) return;
+  void askExtension({ type: "ping" }, 1000);
+}
+
 /** 入っている拡張機能の版（分からなければ undefined） */
 export function extensionVersion(): string | undefined {
   return typeof document === "undefined" ? undefined : document.documentElement.dataset.fridayTabs || undefined;

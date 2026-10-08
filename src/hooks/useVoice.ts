@@ -112,8 +112,8 @@ export function useVoice({
   wakeWord?: boolean;
   /** ブラウザの音声認識の代わりに、録った音声をサーバーで文字にする（スマホ。ブラウザの認識が声を拾わないことがあるため） */
   recorded?: boolean;
-  /** 「フライデー」と呼ばれたとき（タブが裏にあれば前に出すため） */
-  onWoke?: () => void;
+  /** 「フライデー」と呼ばれたとき（タブが裏にあれば前に出すため。前に出し終わるまでの Promise を返してよい） */
+  onWoke?: () => void | Promise<unknown>;
   /** 録った声をそのまま会話に送る（recorded のとき。会話のサーバーが文字にするので往復が 1 回で済む） */
   onAudio?: (audio: { mimeType: string; data: string }) => void;
   /**
@@ -903,11 +903,12 @@ export function useVoice({
    */
   const boot = useCallback(() => {
     if (!recRef.current) return;
+    // まず最初にタブを前に出す（拍手とほぼ同時に画面が出るように。声はそのあと）
+    const front = Promise.resolve(onWokeRef.current?.()).catch(() => {});
     setError(null);
     unlockAudio();
     if (stateRef.current === "off") enable();
     cancelSpeech();
-    onWokeRef.current?.();
     chime("boot");
     const sp = speech.current;
     sp.id = `boot-${Date.now()}`;
@@ -918,9 +919,12 @@ export function useVoice({
     sp.armedAt = 0;
     sp.queue = [{ text: BOOT_LINE }];
     const gen = sp.gen;
-    window.setTimeout(() => {
+    // 起動の音が鳴り終わり、タブが前に出てから話す（前に出すのが遅くても 1.2 秒で話し始める）
+    const chimeDone = new Promise((r) => window.setTimeout(r, 450));
+    const capped = Promise.race([front, new Promise((r) => window.setTimeout(r, 1200))]);
+    void Promise.all([chimeDone, capped]).then(() => {
       if (speech.current.gen === gen && stateRef.current !== "off") void speakNext();
-    }, 450); // 起動の音が鳴り終わってから話す
+    });
   }, [cancelSpeech, enable, speakNext]);
 
   /** 応答がエラー等で終わり、読み上げるものがないとき */

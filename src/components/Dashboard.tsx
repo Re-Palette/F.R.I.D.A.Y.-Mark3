@@ -24,7 +24,7 @@ import { CalendarPage, FilesPage, MemoryPage, ProjectsPage, TasksPage } from "./
 import { LecturePage } from "./LecturePage";
 import { SettingsView } from "./SettingsView";
 import { Sidebar, type View } from "./Sidebar";
-import { bringToFront, hasExtension, openTabNow, syncKeepOpen, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
+import { wakeExtension, bringToFront, hasExtension, openTabNow, syncKeepOpen, TAB_BLOCKED, type TabNotice } from "@/lib/tabs";
 import { setHoloExplain, useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
@@ -322,7 +322,7 @@ export function Dashboard() {
     recorded: phone, // スマホは録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため）
     onAudio: onVoiceAudio,
     verifyVoice: ownerOnly ? verifyVoice : undefined,
-    onWoke: () => void bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
+    onWoke: () => bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
   const voiceRef = useRef(voice);
@@ -330,7 +330,8 @@ export function Dashboard() {
 
   // 拍手 2 回で全システム起動（パソコン。マイクを開いている音声モードの間だけ聞く。「フライデー」の呼びかけもそのまま使える）
   useEffect(() => {
-    setClapHandler(clapWake && !phone ? () => voiceRef.current.boot() : null);
+    // 1 回目の拍手で拡張機能を起こしておき、2 回目のあとすぐタブを前に出す
+    setClapHandler(clapWake && !phone ? () => voiceRef.current.boot() : null, clapWake && !phone ? wakeExtension : null);
     return () => setClapHandler(null);
   }, [clapWake, phone]);
 
