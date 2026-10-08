@@ -19,7 +19,7 @@ import { parseFocus } from "@/lib/focus-command";
 import { formatNow } from "@/lib/time";
 import { buildConversationWindow } from "@/memory/context";
 import { bigrams, score, type Chunk } from "@/memory/lexical";
-import { DEFAULT_LM_STUDIO_URL, LMStudioError, listLMStudioModels, normalizeLMStudioUrl, streamLMStudio } from "@/llm/lmstudio";
+import { DEFAULT_LM_STUDIO_URL, LMStudioError, listLMStudioModels, normalizeLMStudioUrl, pickLMStudioModel, streamLMStudio } from "@/llm/lmstudio";
 import { getLocal, setLocal } from "./local-store";
 
 /* ---------- オフライン用の控え（/api/offline/pack） ---------- */
@@ -130,9 +130,8 @@ export function rememberLocalAiConfig(cfg: { baseUrl?: string; model?: string })
 /** LM Studio が使えるか（読み込み済みのモデル名も返す） */
 export async function checkLocalAi(signal?: AbortSignal): Promise<{ ok: boolean; model?: string }> {
   const cfg = localAiConfig();
-  const models = await listLMStudioModels(cfg.baseUrl, signal);
-  if (!models) return { ok: false };
-  const model = cfg.model || models[0];
+  if (cfg.model) return (await listLMStudioModels(cfg.baseUrl, signal)) ? { ok: true, model: cfg.model } : { ok: false };
+  const model = await pickLMStudioModel(cfg.baseUrl, signal);
   return model ? { ok: true, model } : { ok: false };
 }
 

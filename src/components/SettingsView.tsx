@@ -13,7 +13,7 @@ import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { useVoiceprint } from "@/hooks/useVoiceprint";
 import { probeRoute, useAiRoute } from "@/lib/ai-router";
 import { diagnoseLocalAi, localAiConfig, localAiModels, localAiPrefs, saveLocalAiPrefs, type LocalAiPrefs } from "@/lib/offline-core";
-import { streamLMStudio } from "@/llm/lmstudio";
+import { pickLMStudioModel, streamLMStudio } from "@/llm/lmstudio";
 import { installOnDeviceSpeech, lastOnDeviceStatus, onDeviceSpeechStatus, type OnDeviceSpeech } from "@/lib/speech";
 import { recordVoice } from "@/lib/voice-record";
 import { cosine, embedVoice, loadVoiceprintModel, normalize, saveVoiceprint, STRICTNESS, type Strictness, type Voiceprint } from "@/lib/voiceprint";
@@ -357,7 +357,9 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
         return;
       }
       setModels(check.models.filter((m) => !/embed/i.test(m)));
-      setPhase("返事を作っています…（初回はモデルの読み込みで 1〜2 分かかることがあります）");
+      const cfg = localAiConfig();
+      const using = cfg.model || (await pickLMStudioModel(cfg.baseUrl)) || "?";
+      setPhase(`${using} で返事を作っています…（初回はモデルの読み込みで 1 分ほどかかることがあります）`);
       let text = "";
       let model = "";
       for await (const c of streamLMStudio(localAiConfig(), {
@@ -377,7 +379,7 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
       setTest({
         ok: false,
         text: timeout
-          ? "5 分待っても返事がありませんでした。LM Studio でモデルが読み込めているか、GPU オフロードの設定を確かめてください。"
+          ? "5 分待っても返事がありませんでした。LM Studio の「読み込み済みのインスタンス」で大きなモデル（9B など）をすべて取り出してから、LM Studio を一度終了して起動し直し、もう一度試してください。"
           : `${err instanceof Error ? err.message : "ローカル AI に接続できませんでした。"}`,
       });
     } finally {

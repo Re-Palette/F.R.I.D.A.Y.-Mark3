@@ -50,6 +50,29 @@ export async function listLMStudioModels(baseUrl: string, signal?: AbortSignal):
   }
 }
 
+/**
+ * 「自動」のときに使うモデルを選ぶ。LM Studio ですでに読み込んでいるモデルを優先する
+ * （一覧の先頭が大きなモデルだと、それを読み込みに行って PC が重くなるため）。
+ * 読み込み済みが分からない・無いときは、名前から一番小さそうなもの（例: 2b < 9b）を選ぶ。
+ */
+export async function pickLMStudioModel(baseUrl: string, signal?: AbortSignal): Promise<string | null> {
+  const models = await listLMStudioModels(baseUrl, signal);
+  if (models === null) return null;
+  try {
+    // LM Studio 独自の一覧（読み込み状態つき）。無い版なら下の選び方へ
+    const res = await fetch(`${baseUrl.replace(/\/v1$/, "")}/api/v0/models`, { signal, cache: "no-store" });
+    if (res.ok) {
+      const json = (await res.json()) as { data?: { id?: string; state?: string; type?: string }[] };
+      const loaded = (json.data ?? []).find((m) => m.state === "loaded" && m.type !== "embeddings" && m.id && !EMBEDDING.test(m.id));
+      if (loaded?.id) return loaded.id;
+    }
+  } catch {
+    /* 下の選び方へ */
+  }
+  const size = (id: string) => Number(/(\d+(?:\.\d+)?)\s*b\b/i.exec(id)?.[1] ?? 999);
+  return [...models].sort((a, b) => size(a) - size(b))[0] ?? "";
+}
+
 /** 考えている途中の文（<think>…</think>）を取り除く。塊の途中でタグが切れても扱える */
 export class ThinkFilter {
   private inThink = false;
@@ -105,9 +128,9 @@ export class LMStudioError extends Error {
 export async function* streamLMStudio(config: LMStudioConfig, req: AIRequest): AsyncGenerator<AIChunk> {
   let model = config.model;
   if (!model) {
-    const models = await listLMStudioModels(config.baseUrl, req.signal);
-    if (models === null) throw new LMStudioError("LOCAL_AI_UNAVAILABLE", "ローカル AI（LM Studio）に接続できません。");
-    model = models[0] ?? "";
+    const picked = await pickLMStudioModel(config.baseUrl, req.signal);
+    if (picked === null) throw new LMStudioError("LOCAL_AI_UNAVAILABLE", "ローカル AI（LM Studio）に接続できません。");
+    model = picked;
     if (!model) throw new LMStudioError("LOCAL_AI_NO_MODEL", "LM Studio でモデルが読み込まれていません。");
   }
   const thinking = config.thinking === true;
