@@ -7,6 +7,7 @@
  * 毎フレーム読むので React の state ではなく、ただのオブジェクトで持つ。
  */
 import { getAudioContext } from "./speech";
+import { downsample } from "./recorded-recognition";
 
 export const voiceLevel = {
   /** 0〜1（なめらかにしてある） */
@@ -35,6 +36,69 @@ const routed = new WeakSet<HTMLMediaElement>();
 /** いま鳴っている読み上げ（音声モード以外のお知らせも含む） */
 let speechCount = 0;
 let speechEl: HTMLMediaElement | null = null;
+
+/* ---------- 声紋認証のための、直近の声（16kHz・約 8 秒）。画面の中だけに置き、保存も送信もしない ---------- */
+const RING_RATE = 16_000;
+const ring = new Float32Array(RING_RATE * 8);
+let ringPos = 0;
+let ringFilled = 0;
+let captureWanted = false;
+let capture: { proc: ScriptProcessorNode; mute: GainNode } | null = null;
+
+function attachCapture() {
+  if (capture || !captureWanted || !source || !ctx) return;
+  try {
+    const c = ctx;
+    const proc = c.createScriptProcessor(2048, 1, 1);
+    const mute = c.createGain();
+    mute.gain.value = 0;
+    proc.onaudioprocess = (e) => {
+      const small = downsample(e.inputBuffer.getChannelData(0), c.sampleRate);
+      for (let i = 0; i < small.length; i++) {
+        ring[ringPos] = small[i];
+        ringPos = (ringPos + 1) % ring.length;
+      }
+      ringFilled = Math.min(ring.length, ringFilled + small.length);
+    };
+    source.connect(proc);
+    proc.connect(mute);
+    mute.connect(c.destination); // つながっていないと動かないブラウザがあるため（音は出さない）
+    capture = { proc, mute };
+  } catch {
+    capture = null;
+  }
+}
+
+function detachCapture() {
+  if (!capture) return;
+  capture.proc.onaudioprocess = null;
+  try {
+    source?.disconnect(capture.proc);
+  } catch {
+    /* noop */
+  }
+  capture.proc.disconnect();
+  capture.mute.disconnect();
+  capture = null;
+  ringFilled = 0;
+}
+
+/** 直近の声を取っておくか（声紋認証がオンの間だけ） */
+export function setVoiceCapture(on: boolean): void {
+  captureWanted = on;
+  if (on) attachCapture();
+  else detachCapture();
+}
+
+/** 直近 ms ミリ秒の声（16kHz）。取っていなければ null */
+export function recentAudio(ms: number): Float32Array | null {
+  if (!capture || !ringFilled) return null;
+  const n = Math.min(ringFilled, Math.round((ms / 1000) * RING_RATE));
+  const out = new Float32Array(n);
+  const start = (ringPos - n + ring.length) % ring.length;
+  for (let i = 0; i < n; i++) out[i] = ring[(start + i) % ring.length];
+  return out;
+}
 
 /** iPhone・iPad（読み上げの音を Web Audio に通すと鳴らなくなることがあるので、測らない） */
 const isIOS = () =>
@@ -142,6 +206,7 @@ export function startVoiceLevel(): Promise<void> {
       buf = new Float32Array(analyser.fftSize);
       // 測るだけ（スピーカーにはつながない）
       source.connect(analyser);
+      attachCapture();
       voiceLevel.live = true;
     } catch {
       // マイクを使えない環境では、話している間の揺れだけ
@@ -156,6 +221,7 @@ export function startVoiceLevel(): Promise<void> {
 /** マイクの音量を測るのをやめる */
 export function stopVoiceLevel(): void {
   wanted = false;
+  detachCapture();
   source?.disconnect();
   source = null;
   analyser = null;

@@ -27,7 +27,9 @@ import { bringToFront, hasExtension, openTabNow, syncKeepOpen, TAB_BLOCKED, type
 import { setHoloExplain, useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
-import { startVoiceLevel, stopVoiceLevel, trackSpeech, voiceLevel } from "@/lib/voice-level";
+import { recentAudio, setVoiceCapture, startVoiceLevel, stopVoiceLevel, trackSpeech, voiceLevel } from "@/lib/voice-level";
+import { currentVoiceprint, isOwnerVoice, loadVoiceprintModel } from "@/lib/voiceprint";
+import { useVoiceprint } from "@/hooks/useVoiceprint";
 import { duckMusic, runAmazonMusic } from "@/lib/amazon-music";
 import { useNudges } from "@/hooks/useNudges";
 import { PHONE_QUERY, useMedia } from "@/hooks/useMedia";
@@ -281,6 +283,21 @@ export function Dashboard() {
     [chatSendRaw],
   );
   const phone = useMedia(PHONE_QUERY);
+  // 声紋認証：オンなら、登録した声（陽大）のときだけ音声に反応する（文字の入力はこれまでどおり）
+  const voiceprint = useVoiceprint();
+  const ownerOnly = Boolean(voiceprint?.enabled && voiceprint.embedding.length);
+  const verifyVoice = useCallback(async (utterance: Float32Array | null) => {
+    const print = currentVoiceprint();
+    if (!print?.enabled) return true;
+    const audio = utterance ?? recentAudio(4000);
+    if (!audio) return true; // マイクの声を取れない環境では確かめられないので通す
+    return (await isOwnerVoice(audio, print)).ok;
+  }, []);
+  useEffect(() => {
+    // パソコンは直近の声を画面の中に少しだけ取っておいて確かめる（スマホは録った 1 発言で確かめる）
+    setVoiceCapture(ownerOnly && !phone);
+    if (ownerOnly) void loadVoiceprintModel().catch(() => {});
+  }, [ownerOnly, phone]);
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
@@ -291,6 +308,7 @@ export function Dashboard() {
     wakeWord: !phone,
     recorded: phone, // スマホは録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため）
     onAudio: onVoiceAudio,
+    verifyVoice: ownerOnly ? verifyVoice : undefined,
     onWoke: () => void bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;

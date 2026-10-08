@@ -3904,3 +3904,29 @@ body[data-holo-open] .app * {
   content-visibility: auto;
   contain-intrinsic-size: auto 140px;
 }
+
+/* 声紋の登録・確認中の表示 */
+.voiceprint__rec {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(255, 140, 40, 0.35));
+  font-size: 13px;
+}
+.voiceprint__rec q {
+  font-size: 16px;
+  color: var(--cyan);
+  quotes: "「" "」";
+}
+.voiceprint__bar {
+  display: block;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.voiceprint__bar i {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
+  transition: width 0.1s linear;
+}

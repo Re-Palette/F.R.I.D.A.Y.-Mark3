@@ -92,6 +92,7 @@ export function useVoice({
   recorded = false,
   onAudio,
   onWoke,
+  verifyVoice,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -110,6 +111,11 @@ export function useVoice({
   onWoke?: () => void;
   /** 録った声をそのまま会話に送る（recorded のとき。会話のサーバーが文字にするので往復が 1 回で済む） */
   onAudio?: (audio: { mimeType: string; data: string }) => void;
+  /**
+   * 声紋認証（陽大の声か確かめる）。指定すると、呼びかけ・発言・割り込みの前に確かめ、違えば無視する。
+   * utterance は録音で聞いたときの 1 発言（16kHz）。null なら直近のマイクの声で確かめる（パソコン）。
+   */
+  verifyVoice?: (utterance: Float32Array | null) => Promise<boolean>;
 }) {
   const wakeWordOn = useRef(wakeWord);
   /** 開いた時点で自分から聞き始めたところ（ブラウザに止められたら、黙って最初の操作を待つ） */
@@ -144,6 +150,11 @@ export function useVoice({
   onWokeRef.current = onWoke;
   const onBargeInRef = useRef(onBargeIn);
   onBargeInRef.current = onBargeIn;
+  const verifyRef = useRef(verifyVoice);
+  verifyRef.current = verifyVoice;
+  /** 最後に本人の声と確かめた時刻（呼びかけに続けて話した内容を、二重に確かめないため） */
+  const verifiedAt = useRef(0);
+  const rejectTimer = useRef(0);
   /** 割り込み処理（読み上げの停止など。下で定義する関数を後から入れる） */
   const bargeInRef = useRef<() => void>(() => {});
   /** 「フライデー」とだけ呼ばれたときの一言（下で定義する関数を後から入れる） */
@@ -197,6 +208,21 @@ export function useVoice({
   const set = useCallback((s: VoiceState) => {
     stateRef.current = s;
     setState(s);
+  }, []);
+
+  /** 本人の声か（声紋認証を使っていなければ常に true）。違えば少しの間そう表示する */
+  const isOwner = useCallback(async (utterance: Float32Array | null = null): Promise<boolean> => {
+    const verify = verifyRef.current;
+    if (!verify) return true;
+    if (!utterance && Date.now() - verifiedAt.current < 2500) return true;
+    const ok = await verify(utterance).catch(() => true);
+    if (ok) verifiedAt.current = Date.now();
+    else {
+      setInterim("登録した声ではないので反応しません");
+      clearTimeout(rejectTimer.current);
+      rejectTimer.current = window.setTimeout(() => setInterim((t) => (t.startsWith("登録した声") ? "" : t)), 2500);
+    }
+    return ok;
   }, []);
 
   /* ---------- マイク ---------- */
@@ -265,9 +291,14 @@ export function useVoice({
   }, [toStandby]);
 
   const dispatch = useCallback(
-    (text: string) => {
+    async (text: string) => {
       const command = stripWake(text);
       if (!command) return;
+      if (verifyRef.current) {
+        const before = stateRef.current;
+        if (!(await isOwner())) return;
+        if (stateRef.current !== before) return; // 確かめている間に止めた・別の操作をした
+      }
       clearTimeout(followTimer.current);
       setInterim("");
       stopRec(); // この発言の認識は打ち切る（考え中も割り込みに備えて自動で聞き直す）
@@ -275,7 +306,7 @@ export function useVoice({
       set("thinking");
       onCommandRef.current(command);
     },
-    [set, stopRec],
+    [isOwner, set, stopRec],
   );
 
   /* 音声認識の初期化 */
@@ -289,6 +320,8 @@ export function useVoice({
     const rec = new Ctor();
     // 録音で聞くときは、声が聞こえている間は受付時間を延ばす（途中のテキストが出ないため）
     if (rec instanceof RecordedRecognition) {
+      // 声紋認証：録った 1 発言で確かめてから、文字にしたり会話に送ったりする
+      rec.verify = (samples) => (verifyRef.current ? isOwner(samples) : Promise.resolve(true));
       // 録った声は文字にせずそのまま会話に送る（送る先があるとき）
       if (onAudioRef.current) {
         rec.onaudio = (audio) => {
@@ -325,15 +358,13 @@ export function useVoice({
           setInterim(`聞こえた：${text}`);
           return;
         }
-        onWokeRef.current?.();
-        if (command.length >= 2) {
-          set("listening"); // 呼びかけに続けて話した内容。続きがあるかもしれないので少し待つ
-          keepListening();
-          hold(command);
-        } else {
-          setInterim("");
-          acknowledgeRef.current();
+        if (verifyRef.current && !(rec instanceof RecordedRecognition)) {
+          void isOwner().then((ok) => {
+            if (ok && stateRef.current === "standby") woken(command);
+          });
+          return;
         }
+        woken(command);
       } else if (mode === "listening") {
         // 送る直前にもう一度確かめる（遅れて届いた自分の声の聞き取りを送らない）
         if (looksLikeEcho(text, speech.current.speaking)) {
@@ -344,6 +375,19 @@ export function useVoice({
         // 録音の聞き取りは 1 発言をまとめて文字にしてくるので、続きを待たずにすぐ送る
         hold(text, rec instanceof RecordedRecognition ? 0 : AFTER_FINAL_MS);
       }
+    };
+
+    /** 呼びかけられた（本人の声と確かめたあと） */
+    const woken = (command: string) => {
+        onWokeRef.current?.();
+        if (command.length >= 2) {
+          set("listening"); // 呼びかけに続けて話した内容。続きがあるかもしれないので少し待つ
+          keepListening();
+          hold(command);
+        } else {
+          setInterim("");
+          acknowledgeRef.current();
+        }
     };
 
     /** 確定した区切りを溜め、続きが無ければまとめて送る */
@@ -382,6 +426,18 @@ export function useVoice({
         const minLen = mode === "speaking" ? (finalText ? 6 : 8) : finalText ? 3 : 4;
         if (isEcho() || (!stopWord && len < minLen)) {
           pendingRef.current = ""; // 自分の声・物音は無視
+          return;
+        }
+        if (verifyRef.current && !(rec instanceof RecordedRecognition)) {
+          // 本人の声と確かめてから割り込む（テレビやほかの人の声では止めない）
+          const was = mode;
+          pendingRef.current = "";
+          void isOwner().then((ok) => {
+            if (!ok || stateRef.current !== was) return;
+            bargeInRef.current();
+            if (finalText.trim()) handleUtterance(finalText);
+            else setInterim(interimText.trim());
+          });
           return;
         }
         bargeInRef.current();
@@ -472,7 +528,7 @@ export function useVoice({
       runningRef.current = false;
       abortingRef.current = false;
     };
-  }, [dispatch, keepListening, listenFor, looksLikeEcho, recorded, set, startRec]);
+  }, [dispatch, isOwner, keepListening, listenFor, looksLikeEcho, recorded, set, startRec]);
 
   /* 日本語の音声を選ぶ（一覧は非同期に読み込まれる） */
   useEffect(() => {
@@ -884,6 +940,7 @@ export function useVoice({
       clearTimeout(followTimer.current);
       clearTimeout(restartTimer.current);
       clearTimeout(speech.current.guard);
+      clearTimeout(rejectTimer.current);
     },
     [],
   );

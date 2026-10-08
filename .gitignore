@@ -25,3 +25,5 @@ public/mediapipe/
 public/fonts/
 # 添付した PDF を読む pdf.js は build 時に node_modules からコピーする
 public/pdfjs/
+# 声紋認証の AI 実行部品（onnxruntime-web）は build 時に node_modules からコピーする
+public/ort/

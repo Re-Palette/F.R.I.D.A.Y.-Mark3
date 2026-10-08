@@ -68,7 +68,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /** マイクの音を 16kHz に間引く（平均を取る） */
-function downsample(input: Float32Array, from: number): Float32Array {
+export function downsample(input: Float32Array, from: number): Float32Array {
   if (from === RATE) return input.slice();
   const ratio = from / RATE;
   const out = new Float32Array(Math.floor(input.length / ratio));
@@ -102,6 +102,8 @@ export class RecordedRecognition implements RecognitionLike {
    * 指定しなければ /api/stt で文字にして onresult で返す。
    */
   onaudio: ((audio: { mimeType: string; data: string }) => void) | null = null;
+  /** 声紋認証。録った 1 発言が本人の声か確かめる（false なら文字にも送りもせず、聞き直す） */
+  verify: ((samples: Float32Array) => Promise<boolean>) | null = null;
 
   private session = 0;
   private stream: MediaStream | null = null;
@@ -256,6 +258,15 @@ export class RecordedRecognition implements RecognitionLike {
     if (!utterance || utterance.length < RATE * 0.35) {
       cancelEarly();
       return this.finish(id);
+    }
+
+    if (this.verify) {
+      const ok = await this.verify(utterance).catch(() => true);
+      if (id !== this.session) return cancelEarly();
+      if (!ok) {
+        cancelEarly();
+        return this.finish(id);
+      }
     }
 
     // 声のまま渡す（会話のサーバーで文字にする）

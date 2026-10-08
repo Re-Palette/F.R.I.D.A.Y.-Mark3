@@ -10,6 +10,9 @@ import { useBargeIn } from "@/hooks/useBargeIn";
 import { withReadings } from "@/lib/reading";
 import { extensionVersion, hasExtension, KEEP_OPEN_EXTENSION_VERSION, keepOpenWanted, LATEST_EXTENSION_VERSION, syncKeepOpen, versionAtLeast } from "@/lib/tabs";
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
+import { useVoiceprint } from "@/hooks/useVoiceprint";
+import { recordVoice } from "@/lib/voice-record";
+import { cosine, embedVoice, loadVoiceprintModel, normalize, saveVoiceprint, STRICTNESS, type Strictness, type Voiceprint } from "@/lib/voiceprint";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -89,6 +92,178 @@ function Row({ label, state, detail, children }: { label: string; state: "ok" | 
       <span>{detail}</span>
       {children}
     </li>
+  );
+}
+
+/** 登録のときに読んでもらう文（いろいろな音が入るように） */
+const ENROLL_PHRASES = ["フライデー、今日の予定を教えて", "明日の天気と、やることを確認して", "青学の課題の締め切りはいつだっけ"];
+const ENROLL_SECONDS = 4;
+/** 3 回の声どうしがこれより似ていなければ、録り直してもらう（雑音・別の人の声が混ざったとき） */
+const ENROLL_CONSISTENCY = 0.45;
+
+/** 声紋認証（登録・オン/オフ・厳しさ・確かめる・消す） */
+function VoiceprintControls() {
+  const print = useVoiceprint();
+  const [busy, setBusy] = useState<null | "enroll" | "test">(null);
+  const [step, setStep] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [level, setLevel] = useState(0);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const record = useCallback(async () => {
+    setProgress(0);
+    const audio = await recordVoice(ENROLL_SECONDS, (l, p) => {
+      setLevel(l);
+      setProgress(p);
+    });
+    setLevel(0);
+    return embedVoice(audio);
+  }, []);
+
+  const enroll = useCallback(async () => {
+    setNote(null);
+    setBusy("enroll");
+    try {
+      setStep(0);
+      setNote({ ok: true, text: "準備しています…（初回だけ声紋の AI を読み込みます）" });
+      await loadVoiceprintModel();
+      const list: Float32Array[] = [];
+      for (let i = 0; i < ENROLL_PHRASES.length; i++) {
+        setStep(i + 1);
+        setNote(null);
+        const e = await record();
+        if (!e) {
+          setNote({ ok: false, text: "声がうまく録れませんでした。マイクに向かって、はっきり読んでもう一度登録してください。" });
+          return;
+        }
+        list.push(e);
+      }
+      let worst = 1;
+      for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) worst = Math.min(worst, cosine(list[i], list[j]));
+      if (worst < ENROLL_CONSISTENCY) {
+        setNote({ ok: false, text: "3 回の声のばらつきが大きいです。静かな場所で、いつもの声でもう一度登録してください。" });
+        return;
+      }
+      const sum = new Float32Array(list[0].length);
+      for (const e of list) e.forEach((v, k) => (sum[k] += v));
+      const v: Voiceprint = {
+        embedding: Array.from(normalize(sum), (x) => Math.round(x * 1e6) / 1e6),
+        strictness: print?.strictness ?? "normal",
+        enabled: true,
+        samples: list.length,
+        createdAt: new Date().toISOString(),
+      };
+      await saveVoiceprint(v);
+      setNote({ ok: true, text: "登録しました。これからは陽大の声にだけ反応します。" });
+    } catch {
+      setNote({ ok: false, text: "マイクを使えないか、声紋の AI を読み込めませんでした。マイクの許可と通信を確認してください。" });
+    } finally {
+      setBusy(null);
+      setStep(0);
+    }
+  }, [print?.strictness, record]);
+
+  const test = useCallback(async () => {
+    if (!print) return;
+    setNote(null);
+    setBusy("test");
+    try {
+      await loadVoiceprintModel();
+      setStep(-1);
+      const e = await record();
+      if (!e) {
+        setNote({ ok: false, text: "声がうまく録れませんでした。もう一度どうぞ。" });
+        return;
+      }
+      const score = cosine(e, print.embedding);
+      const ok = score >= STRICTNESS[print.strictness];
+      setNote({ ok, text: `${ok ? "本人の声です" : "別の人の声と判定しました"}（近さ ${Math.round(score * 100)} ／ 基準 ${Math.round(STRICTNESS[print.strictness] * 100)}）` });
+    } catch {
+      setNote({ ok: false, text: "マイクを使えないか、声紋の AI を読み込めませんでした。" });
+    } finally {
+      setBusy(null);
+      setStep(0);
+    }
+  }, [print, record]);
+
+  const update = (patch: Partial<Voiceprint>) => print && void saveVoiceprint({ ...print, ...patch });
+
+  return (
+    <>
+      <p className="settings__note">
+        状態：
+        <b style={{ color: "var(--cyan)" }}>{!print ? "未登録（誰の声にも反応します）" : print.enabled ? "オン（陽大の声にだけ反応）" : "オフ（誰の声にも反応します）"}</b>
+      </p>
+      {busy && (
+        <div className="voiceprint__rec" role="status">
+          <b>{step > 0 ? `${step} / ${ENROLL_PHRASES.length}　次の文を読んでください` : step < 0 ? "何か話してください" : "準備中…"}</b>
+          {step > 0 && <q>{ENROLL_PHRASES[step - 1]}</q>}
+          {step !== 0 && (
+            <span className="voiceprint__bar" aria-hidden>
+              <i style={{ width: `${Math.round(progress * 100)}%`, opacity: 0.4 + level * 0.6 }} />
+            </span>
+          )}
+        </div>
+      )}
+      {print && (
+        <>
+          <span className="settings__label">声紋認証</span>
+          <Choice
+            value={print.enabled ? "on" : "off"}
+            options={[
+              { value: "on", label: "陽大の声にだけ反応" },
+              { value: "off", label: "誰の声にも反応" },
+            ]}
+            disabled={Boolean(busy)}
+            onChange={(v) => update({ enabled: v === "on" })}
+          />
+          <span className="settings__label">厳しさ</span>
+          <Choice<Strictness>
+            value={print.strictness}
+            options={[
+              { value: "loose", label: "ゆるい" },
+              { value: "normal", label: "標準" },
+              { value: "strict", label: "厳しい" },
+            ]}
+            disabled={Boolean(busy)}
+            onChange={(v) => update({ strictness: v })}
+          />
+        </>
+      )}
+      <div className="settings__actions">
+        <button type="button" className="ghost-btn" disabled={Boolean(busy)} onClick={() => void enroll()}>
+          <Icon name="mic" size={13} /> {print ? "登録し直す" : "声を登録する"}
+        </button>
+        {print && (
+          <>
+            <button type="button" className="ghost-btn" disabled={Boolean(busy)} onClick={() => void test()}>
+              確かめる
+            </button>
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={Boolean(busy)}
+              onClick={() => {
+                if (!window.confirm("登録した声紋を消しますか？（誰の声にも反応するようになります）")) return;
+                void saveVoiceprint(null);
+                setNote({ ok: true, text: "声紋を消しました。" });
+              }}
+            >
+              消す
+            </button>
+          </>
+        )}
+      </div>
+      {note && (
+        <p className="settings__note" data-ok={note.ok || undefined} role="status">
+          {note.text}
+        </p>
+      )}
+      <p className="settings__note">
+        短い文を 3 回読んで、陽大の声の特徴を登録します。オンの間は、呼びかけ・音声での指示・話の途中の割り込みに、登録した声のときだけ反応します（文字での入力はこれまでどおり）。
+        保存するのは声の特徴を表す数字だけで、声そのものは保存も送信もしません。登録はスマホとパソコンで共有します。うまく反応しないときは「ゆるい」にするか、使う端末で登録し直してください。
+      </p>
+    </>
   );
 }
 
@@ -484,6 +659,10 @@ export const SettingsView = memo(function SettingsView({
             }}
           />
           <p className="settings__note">予定の 20 分前・今日 / 明日が締め切りの ToDo・雨の日の朝に、F.R.I.D.A.Y. のほうから一言話します（画面を開いている間だけ）。</p>
+        </Section>
+
+        <Section title="VOICEPRINT" sub="声紋認証">
+          <VoiceprintControls />
         </Section>
 
         <Section title="REPLY" sub="返答">
