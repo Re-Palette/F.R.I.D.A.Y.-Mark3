@@ -80,6 +80,10 @@ export const HomeHud = memo(function HomeHud({
   // 描画が追いつかない端末では、輪の回転などを止めて軽くする（コアが知らせる）
   const [lite, setLite] = useState(false);
   const onSlow = useCallback(() => setLite(true), []);
+  // 重い端末では、背景の流れる粒・データの線など画面全体の飾りの動きも止める
+  useEffect(() => {
+    if (lite) document.body.dataset.lite = "";
+  }, [lite]);
 
   // 返事のパネル：話しかけたら開き、× で閉じる（次に話しかけるとまた開く）
   const lastQuestion = [...messages].reverse().find((m) => m.role === "user")?.id;

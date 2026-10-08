@@ -270,7 +270,8 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
 
     // なめらかに見えるよう、描くのが速い端末では毎フレーム（60fps）描く。1 回描くのに時間がかかる端末は 30fps に。
     // さらに、画面の更新（requestAnimationFrame）の間隔を 3 秒ごとに測り、
-    // 2 回続けて平均 45ms を超えたら（20fps 未満）、この端末には重いと判断して軽い描き方にする
+    //   - 平均 22ms を超えたら（45fps 未満＝画面全体がカクついている）、コアは 30fps にして画面のほかの動きに余裕を回す
+    //   - 2 回続けて平均 45ms を超えたら（20fps 未満）、この端末には重いと判断して軽い描き方にする
     let gap = 0;
     let drawAvg = 0;
     let prev = 0;
@@ -278,6 +279,8 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
     let frames = 0;
     let windowStart = 0;
     let strikes = 0;
+    /** 画面全体が重いので、コアを 30fps に抑えている */
+    let eased = false;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       if (document.hidden) {
@@ -291,7 +294,12 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
         } else windowStart = now;
         prev = now;
         if (now - windowStart > 3000 && frames) {
-          strikes = sum / frames > 45 ? strikes + 1 : 0;
+          const avg = sum / frames;
+          strikes = avg > 45 ? strikes + 1 : 0;
+          if (avg > 22 && !eased) {
+            eased = true;
+            slowRef.current?.(); // 画面の飾りの動きも止めて、全体をなめらかに
+          }
           sum = frames = 0;
           windowStart = now;
           if (strikes >= 2) {
@@ -307,7 +315,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       draw(now);
       // 1 回描くのにかかった時間（なめらかにならす）。6ms を超えるようなら 30fps に落とす
       drawAvg = drawAvg * 0.95 + (performance.now() - t0) * 0.05;
-      if (!lite) gap = drawAvg > 6 ? 32 : drawAvg < 4 ? 0 : gap;
+      if (!lite) gap = eased || drawAvg > 6 ? 32 : drawAvg < 4 ? 0 : gap;
     };
     if (still) {
       draw(performance.now());

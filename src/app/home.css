@@ -4052,3 +4052,13 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
     display: none;
   }
 }
+
+/* 描画が追いつかない端末：背景の飾り（流れる粒・データの線・光の帯）も止めて、動きを中心のコアに絞る */
+body[data-lite] .bg__particles,
+body[data-lite] .bg__data {
+  display: none;
+}
+body[data-lite] .radar__spinner,
+body[data-lite] .hvoice__flow {
+  animation-play-state: paused;
+}
