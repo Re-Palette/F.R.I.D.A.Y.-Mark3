@@ -12,7 +12,7 @@ import { extensionVersion, hasExtension, KEEP_OPEN_EXTENSION_VERSION, keepOpenWa
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { useVoiceprint } from "@/hooks/useVoiceprint";
 import { probeRoute, useAiRoute } from "@/lib/ai-router";
-import { localAiConfig, localAiModels, localAiPrefs, saveLocalAiPrefs, type LocalAiPrefs } from "@/lib/offline-core";
+import { diagnoseLocalAi, localAiConfig, localAiModels, localAiPrefs, saveLocalAiPrefs, type LocalAiPrefs } from "@/lib/offline-core";
 import { streamLMStudio } from "@/llm/lmstudio";
 import { installOnDeviceSpeech, lastOnDeviceStatus, onDeviceSpeechStatus, type OnDeviceSpeech } from "@/lib/speech";
 import { recordVoice } from "@/lib/voice-record";
@@ -340,28 +340,50 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
     saveLocalAiPrefs(next);
     setTest(null);
   };
+  const [elapsed, setElapsed] = useState(0);
+  const [phase, setPhase] = useState("");
   const runTest = async () => {
     setTesting(true);
     setTest(null);
+    setPhase("LM Studio に接続しています…");
     const started = performance.now();
+    const tick = window.setInterval(() => setElapsed(Math.round((performance.now() - started) / 1000)), 500);
+    setElapsed(0);
     try {
+      // まず届くかを確かめる（届かない理由を具体的に出すため）
+      const check = await diagnoseLocalAi();
+      if (!check.ok) {
+        setTest({ ok: false, text: check.message });
+        return;
+      }
+      setModels(check.models.filter((m) => !/embed/i.test(m)));
+      setPhase("返事を作っています…（初回はモデルの読み込みで 1〜2 分かかることがあります）");
       let text = "";
       let model = "";
       for await (const c of streamLMStudio(localAiConfig(), {
         system: "あなたは F.R.I.D.A.Y.。日本語で 1 文だけ答える。",
         messages: [{ role: "user", content: "こんにちは。調子はどう？" }],
         maxTokens: 120,
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(300_000),
       })) {
         text += c.text;
         if (c.model) model = c.model;
+        if (text) setPhase(`返事が届いています：${text.trim().slice(0, 40)}`);
       }
       setTest({ ok: true, text: `${((performance.now() - started) / 1000).toFixed(1)} 秒で返事がありました（${model}）：${text.trim().slice(0, 60)}` });
       void probeRoute();
     } catch (err) {
-      setTest({ ok: false, text: err instanceof Error ? err.message : "ローカル AI に接続できませんでした。" });
+      const timeout = err instanceof DOMException && err.name === "TimeoutError";
+      setTest({
+        ok: false,
+        text: timeout
+          ? "5 分待っても返事がありませんでした。LM Studio でモデルが読み込めているか、GPU オフロードの設定を確かめてください。"
+          : `${err instanceof Error ? err.message : "ローカル AI に接続できませんでした。"}`,
+      });
     } finally {
+      window.clearInterval(tick);
       setTesting(false);
+      setPhase("");
     }
   };
   return (
@@ -399,9 +421,14 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
       />
       <div className="settings__actions">
         <button type="button" className="ghost-btn" disabled={testing} onClick={() => void runTest()}>
-          {testing ? "試しています…（初回はモデルの読み込みで時間がかかります）" : "ローカル AI を試す"}
+          {testing ? `試しています… ${elapsed} 秒` : "ローカル AI を試す"}
         </button>
       </div>
+      {testing && phase && (
+        <p className="settings__note" role="status">
+          {phase}
+        </p>
+      )}
       {test && (
         <p className="settings__note" data-ok={test.ok || undefined} role="status">
           {test.text}

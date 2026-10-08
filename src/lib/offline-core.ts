@@ -313,7 +313,7 @@ export async function* runLocalConversation(history: ChatMessage[], opts: { voic
     if (opts.signal?.aborted) return;
     const message =
       err instanceof LMStudioError
-        ? `${err.message}${err.code === "LOCAL_AI_UNAVAILABLE" ? " LM Studio を起動し、Local Server を ON（CORS を許可）にしてください。" : ""}`
+        ? `${err.message}${err.code === "LOCAL_AI_UNAVAILABLE" ? LOCAL_AI_HELP : ""}`
         : "ローカル AI（LM Studio）で答えられませんでした。";
     yield { type: "error", code: "LOCAL_AI_UNAVAILABLE", message, retryable: true };
   }
@@ -362,4 +362,28 @@ export function flushOutbox(): Promise<{ synced: number; notes: string[] }> {
     return { synced, notes };
   })();
   return flushing;
+}
+
+/** LM Studio に届かない理由の案内（画面に出す） */
+export const LOCAL_AI_HELP =
+  "① LM Studio の「ローカルモデルAPI」でサーバーが ON か　② 同じ画面の「CORS を有効にする」が ON か　③ Chrome に「このデバイス上の他のアプリ（ローカル ネットワーク）へのアクセス」を許可したか（FRIDAY の画面上部の鍵のマーク → サイトの設定 → ローカル ネットワークへのアクセス を「許可」）を確かめてください。";
+
+/**
+ * LM Studio に届くか、届かないなら理由を調べる（SETTINGS の「試す」用）。
+ *   blocked: すぐ失敗した（サーバーが止まっている・CORS がオフ・Chrome がブロック）
+ *   waiting: 返事が無い（Chrome の許可の確認を待っている・LM Studio が固まっている）
+ */
+export async function diagnoseLocalAi(): Promise<{ ok: true; models: string[] } | { ok: false; reason: "blocked" | "waiting" | "http"; message: string }> {
+  const { baseUrl } = localAiConfig();
+  try {
+    const res = await fetch(`${baseUrl}/models`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return { ok: false, reason: "http", message: `LM Studio がエラーを返しました（${res.status}）。` };
+    const json = (await res.json()) as { data?: { id?: string }[] };
+    return { ok: true, models: (json.data ?? []).map((m) => m.id ?? "").filter(Boolean) };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      return { ok: false, reason: "waiting", message: `LM Studio（${baseUrl}）から返事がありません。Chrome が「アクセスを許可しますか」と聞いていないか、画面の上部を確認してください。${LOCAL_AI_HELP}` };
+    }
+    return { ok: false, reason: "blocked", message: `LM Studio（${baseUrl}）に接続できません。${LOCAL_AI_HELP}` };
+  }
 }
