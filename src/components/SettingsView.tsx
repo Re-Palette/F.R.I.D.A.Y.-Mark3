@@ -11,6 +11,10 @@ import { withReadings } from "@/lib/reading";
 import { extensionVersion, hasExtension, KEEP_OPEN_EXTENSION_VERSION, keepOpenWanted, LATEST_EXTENSION_VERSION, syncKeepOpen, versionAtLeast } from "@/lib/tabs";
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { useVoiceprint } from "@/hooks/useVoiceprint";
+import { probeRoute, useAiRoute } from "@/lib/ai-router";
+import { localAiConfig, localAiModels, localAiPrefs, saveLocalAiPrefs, type LocalAiPrefs } from "@/lib/offline-core";
+import { streamLMStudio } from "@/llm/lmstudio";
+import { installOnDeviceSpeech, lastOnDeviceStatus, onDeviceSpeechStatus, type OnDeviceSpeech } from "@/lib/speech";
 import { recordVoice } from "@/lib/voice-record";
 import { cosine, embedVoice, loadVoiceprintModel, normalize, saveVoiceprint, STRICTNESS, type Strictness, type Voiceprint } from "@/lib/voiceprint";
 import { HudFrame } from "./HudFrame";
@@ -262,6 +266,149 @@ function VoiceprintControls() {
       <p className="settings__note">
         短い文を 3 回読んで、陽大の声の特徴を登録します。オンの間は、呼びかけ・音声での指示・話の途中の割り込みに、登録した声のときだけ反応します（文字での入力はこれまでどおり）。
         保存するのは声の特徴を表す数字だけで、声そのものは保存も送信もしません。登録はスマホとパソコンで共有します。うまく反応しないときは「ゆるい」にするか、使う端末で登録し直してください。
+      </p>
+    </>
+  );
+}
+
+/** オフラインの聞き取り（Chrome の PC の中だけで動く日本語の音声認識）を入れる */
+function OfflineSpeechControls({ hidden }: { hidden: boolean }) {
+  const [status, setStatus] = useState<OnDeviceSpeech | null>(null);
+  const [busy, setBusy] = useState(false);
+  // 自動では Chrome に聞かない（環境によってはページが落ちるため）。前に確かめた結果だけ出す
+  useEffect(() => {
+    if (!hidden) setStatus(lastOnDeviceStatus());
+  }, [hidden]);
+  const check = async () => {
+    setBusy(true);
+    setStatus(await onDeviceSpeechStatus());
+    setBusy(false);
+  };
+  const install = async () => {
+    setBusy(true);
+    await installOnDeviceSpeech();
+    setStatus(await onDeviceSpeechStatus());
+    setBusy(false);
+  };
+  const label: Record<OnDeviceSpeech, string> = {
+    available: "使えます（ネットが切れていても声で話しかけられます）",
+    downloadable: "未導入（下のボタンで入れられます。オンラインのときに 1 回だけ）",
+    downloading: "ダウンロード中…",
+    unavailable: "この Chrome では日本語のオフライン聞き取りに対応していません",
+    unsupported: "このブラウザは非対応です（Chrome を最新にすると使える場合があります）",
+  };
+  return (
+    <>
+      <span className="settings__label">オフラインの聞き取り — この端末だけ</span>
+      <p className="settings__note">
+        状態：<b style={{ color: "var(--cyan)" }}>{status ? label[status] : "まだ確かめていません"}</b>
+      </p>
+      {status !== "available" && status !== "downloadable" && status !== "downloading" && (
+        <div className="settings__actions">
+          <button type="button" className="ghost-btn" disabled={busy} onClick={() => void check()}>
+            {busy ? "確かめています…" : "オフラインで聞き取れるか確かめる"}
+          </button>
+        </div>
+      )}
+      {(status === "downloadable" || status === "downloading") && (
+        <div className="settings__actions">
+          <button type="button" className="ghost-btn" disabled={busy || status === "downloading"} onClick={() => void install()}>
+            <Icon name="mic" size={13} /> {busy ? "入れています…" : "オフラインの聞き取りを入れる"}
+          </button>
+        </div>
+      )}
+      <p className="settings__note">ふだんの聞き取りはインターネットを使います。これを入れておくと、ネットが切れたときは PC の中だけで聞き取ります（声はどこにも送りません）。</p>
+    </>
+  );
+}
+
+/** ローカル AI（オフライン時の LM Studio）の設定。この端末だけ・オフラインでも変えられる */
+function LocalAiControls({ hidden }: { hidden: boolean }) {
+  const route = useAiRoute();
+  const [prefs, setPrefs] = useState<LocalAiPrefs>({ model: "", thinking: false });
+  const [models, setModels] = useState<string[] | null | undefined>(undefined);
+  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  useEffect(() => setPrefs(localAiPrefs()), []);
+  useEffect(() => {
+    if (hidden) return;
+    void localAiModels(AbortSignal.timeout(3000)).then(setModels);
+  }, [hidden]);
+  const update = (patch: Partial<LocalAiPrefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    saveLocalAiPrefs(next);
+    setTest(null);
+  };
+  const runTest = async () => {
+    setTesting(true);
+    setTest(null);
+    const started = performance.now();
+    try {
+      let text = "";
+      let model = "";
+      for await (const c of streamLMStudio(localAiConfig(), {
+        system: "あなたは F.R.I.D.A.Y.。日本語で 1 文だけ答える。",
+        messages: [{ role: "user", content: "こんにちは。調子はどう？" }],
+        maxTokens: 120,
+        signal: AbortSignal.timeout(180_000),
+      })) {
+        text += c.text;
+        if (c.model) model = c.model;
+      }
+      setTest({ ok: true, text: `${((performance.now() - started) / 1000).toFixed(1)} 秒で返事がありました（${model}）：${text.trim().slice(0, 60)}` });
+      void probeRoute();
+    } catch (err) {
+      setTest({ ok: false, text: err instanceof Error ? err.message : "ローカル AI に接続できませんでした。" });
+    } finally {
+      setTesting(false);
+    }
+  };
+  return (
+    <>
+      <p className="settings__note">
+        状態：
+        <b style={{ color: "var(--cyan)" }}>
+          {route.route === "online"
+            ? "オンライン（Gemini で答えています）"
+            : route.route === "offline"
+              ? `オフライン（ローカル AI${route.localModel ? `・${route.localModel}` : ""} で答えています）`
+              : route.route === "unavailable"
+                ? "Gemini にもローカル AI にも接続できません"
+                : "確かめています…"}
+        </b>
+        {models === null && "　LM Studio：未接続（起動して Local Server を ON にしてください）"}
+      </p>
+      <span className="settings__label">使うモデル — この端末だけの設定</span>
+      <select className="settings__select" value={prefs.model} onChange={(e) => update({ model: e.target.value })} disabled={!models?.length && !prefs.model}>
+        <option value="">自動（LM Studio で読み込んでいるモデル）</option>
+        {[...new Set([...(models ?? []), ...(prefs.model ? [prefs.model] : [])])].map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+      <span className="settings__label">答える前に考える（THINKING）</span>
+      <Choice
+        value={prefs.thinking ? "on" : "off"}
+        options={[
+          { value: "off", label: "考えない（速い）" },
+          { value: "on", label: "考える（遅いが丁寧）" },
+        ]}
+        onChange={(v) => update({ thinking: v === "on" })}
+      />
+      <div className="settings__actions">
+        <button type="button" className="ghost-btn" disabled={testing} onClick={() => void runTest()}>
+          {testing ? "試しています…（初回はモデルの読み込みで時間がかかります）" : "ローカル AI を試す"}
+        </button>
+      </div>
+      {test && (
+        <p className="settings__note" data-ok={test.ok || undefined} role="status">
+          {test.text}
+        </p>
+      )}
+      <p className="settings__note">
+        インターネットや Gemini が使えないとき、この PC の LM Studio で答えます（自動で切り替わります）。PC のモデルは「考える」をオンにすると返事まで何分もかかることがあるので、ふだんは「考えない」がおすすめです。返事が遅いときは、LM Studio の設定で GPU を使う（GPU オフロードを最大）にすると速くなります。
       </p>
     </>
   );
@@ -641,6 +788,7 @@ export const SettingsView = memo(function SettingsView({
             }}
           />
           <p className="settings__note">F.R.I.D.A.Y. が自分の声を聞き取ってしまうときは「聞かない」にしてください。</p>
+          <OfflineSpeechControls hidden={hidden} />
           <span className="settings__label">先回りの声かけ — この端末だけの設定</span>
           <Choice
             value={nudgesOn ? "on" : "off"}
@@ -659,6 +807,10 @@ export const SettingsView = memo(function SettingsView({
             }}
           />
           <p className="settings__note">予定の 20 分前・今日 / 明日が締め切りの ToDo・雨の日の朝に、F.R.I.D.A.Y. のほうから一言話します（画面を開いている間だけ）。</p>
+        </Section>
+
+        <Section title="LOCAL AI" sub="オフライン時のローカル AI">
+          <LocalAiControls hidden={hidden} />
         </Section>
 
         <Section title="VOICEPRINT" sub="声紋認証">

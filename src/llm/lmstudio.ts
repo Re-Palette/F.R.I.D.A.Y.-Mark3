@@ -13,6 +13,8 @@ export interface LMStudioConfig {
   baseUrl: string;
   /** 使うモデル。空なら LM Studio で読み込まれているモデル（一覧の最初のもの） */
   model: string;
+  /** 答える前に「考える」か（既定は考えない。PC のモデルは考えると何分もかかることがあるため） */
+  thinking?: boolean;
 }
 
 /** この PC の中を指す URL か（外部の URL は使わない） */
@@ -108,11 +110,16 @@ export async function* streamLMStudio(config: LMStudioConfig, req: AIRequest): A
     model = models[0] ?? "";
     if (!model) throw new LMStudioError("LOCAL_AI_NO_MODEL", "LM Studio でモデルが読み込まれていません。");
   }
-  // Qwen3 系は「考える」を省いて速く答えさせる（ほかのモデルには付けない）
-  const system = /qwen3/i.test(model) ? `${req.system}\n\n/no_think` : req.system;
-  let res: Response;
-  try {
-    res = await fetch(`${config.baseUrl}/chat/completions`, {
+  const thinking = config.thinking === true;
+  // 「考える」を省いて速く答えさせる。Qwen3 系は合図（/no_think）も付ける（ほかのモデルには付けない）
+  const qwen = /qwen3/i.test(model);
+  const system = !thinking && qwen ? `${req.system}\n\n/no_think` : req.system;
+  const messages = req.messages.map((m, i) => ({
+    role: m.role,
+    content: !thinking && qwen && i === req.messages.length - 1 && m.role === "user" ? `${m.content} /no_think` : m.content,
+  }));
+  const send = (extra: boolean) =>
+    fetch(`${config.baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -120,10 +127,20 @@ export async function* streamLMStudio(config: LMStudioConfig, req: AIRequest): A
         stream: true,
         temperature: req.temperature ?? 0.7,
         max_tokens: req.maxTokens ?? 2048,
-        messages: [{ role: "system", content: system }, ...req.messages.map((m) => ({ role: m.role, content: m.content }))],
+        messages: [{ role: "system", content: system }, ...messages],
+        // 対応しているモデル・LM Studio なら「考える」を止める（知らない項目は無視される）
+        ...(extra ? { chat_template_kwargs: { enable_thinking: thinking } } : {}),
       }),
       signal: req.signal,
     });
+  let res: Response;
+  try {
+    res = await send(true);
+    // 追加の項目を受け付けない版なら、付けずに送り直す
+    if (res.status === 400) {
+      const detail = await res.clone().text().catch(() => "");
+      if (/chat_template_kwargs|unrecognized|unknown/i.test(detail)) res = await send(false);
+    }
   } catch (err) {
     if (req.signal?.aborted) throw err;
     throw new LMStudioError("LOCAL_AI_UNAVAILABLE", "ローカル AI（LM Studio）に接続できません。");

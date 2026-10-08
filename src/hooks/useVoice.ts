@@ -25,6 +25,8 @@ import {
   takeSentences,
   toSpeakable,
   unlockAudio,
+  shouldRecognizeLocally,
+  voiceOffline,
   type RecognitionLike,
 } from "@/lib/speech";
 import { withReadings } from "@/lib/reading";
@@ -232,7 +234,7 @@ export function useVoice({
     // 停止処理の途中なら、終了通知（onend）のあとで自動的に再開される
     if (!rec || runningRef.current || abortingRef.current) return;
     // ネットが切れているときは、対応している Chrome なら PC の中だけで聞き取る（日本語の音声データが入っている場合）
-    if ("processLocally" in rec) (rec as { processLocally?: boolean }).processLocally = !navigator.onLine;
+    if ("processLocally" in rec) (rec as { processLocally?: boolean }).processLocally = shouldRecognizeLocally();
     try {
       rec.start();
       runningRef.current = true;
@@ -492,8 +494,12 @@ export function useVoice({
         autoStarting.current = false;
         runningRef.current = false;
         set("off");
-      } else if (e.error === "network") {
-        setError("音声認識サービスに接続できません。ネットワークを確認してください。");
+      } else if (e.error === "network" || e.error === "language-not-supported") {
+        setError(
+          voiceOffline()
+            ? "オフラインでは声の聞き取りが使えません。オンラインのときに SETTINGS → VOICE の「オフラインの聞き取り」を入れてください（今は文字で入力できます）。"
+            : "音声認識サービスに接続できません。ネットワークを確認してください。",
+        );
       } else if (e.error === "audio-capture") {
         setError("マイクが見つかりません。");
       }

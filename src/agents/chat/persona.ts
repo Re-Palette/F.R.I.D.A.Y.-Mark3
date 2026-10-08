@@ -722,3 +722,53 @@ ${company.text}
 
   return out;
 }
+
+/**
+ * オフライン（PC のローカル AI）用の短い人格。PC で動くモデルは、長い指示を読むだけで何分もかかるため、
+ * いつもの人格の要点・いまの ToDo / 予定・記憶の書き方だけに絞る（記憶の欄は画面がその場で探した内容に差し替える）。
+ */
+export function buildCompactInstruction({
+  now,
+  timezone,
+  voice,
+  tasks,
+  reminders,
+  events,
+  recallMark,
+}: {
+  now: Date;
+  timezone: string;
+  voice: boolean;
+  tasks: TasksOverview | null;
+  reminders: Reminder[] | null;
+  events: CalendarEvent[] | null;
+  recallMark: string | null;
+}): string {
+  const lines = (title: string, items: string[], empty: string) => `\n\n# ${title}\n${items.length ? items.join("\n") : empty}`;
+  let out = `あなたは F.R.I.D.A.Y.（フライデー）。${OWNER}（読みは「${OWNER_READING}」）の副社長・参謀・秘書。
+# 話し方
+- 日本語の です・ます。結論から短く。最後に「次に何をするか」を一言添える。お礼には短く返す。
+- 「青学」「ARQO」「Re-Palette」などの短い言葉は、下の情報から意図をくんで答える。
+- 分からないこと・下に無いことは作らず、正直に「分からない」と言う。${
+    voice ? "\n- 返答は読み上げられる。1〜3 文で短く。記号・箇条書き・URL は使わない。" : ""
+  }
+# 主なプロジェクト
+${PROJECTS.map((p) => `- ${p}`).join("\n")}
+# 現在の状況
+- 現在日時: ${formatNow(now, timezone)}（${timezone}）`;
+  if (events) out += lines("予定（今後 7 日）", events.slice(0, 10).map((e) => `- ${e.dayLabel} ${e.rangeLabel} ${e.title}`), "（予定は入っていない）");
+  if (tasks) {
+    out += lines("プロジェクト", tasks.projects.slice(0, 8).map((p) => `- ${p.name}: 進捗 ${p.progress}%${p.next ? ` 次: ${p.next}` : ""}`), "（無し）");
+    out += lines("未完了の ToDo", tasks.todos.slice(0, 10).map((t) => `- ${t.text}${t.due ? `（期限 ${t.due}）` : ""}`), "（無し）");
+  }
+  if (reminders) out += lines("リマインダー", reminders.slice(0, 5).map((r) => `- ${r.label} ${r.text}`), "（無し）");
+  out += `
+
+# 隠しタグ（頼まれたときだけ、返答の最後に 1 行ずつ。画面には出ず、脳に保存される）
+- 覚える（好み・予定・決めたことなど）：<memory>ユーザーを主語にした短い 1 文</memory>
+- ToDo の追加：<todo-add>{"text":"やること","due":"YYYY-MM-DD"}</todo-add>　完了：<todo-done>{"text":"やること"}</todo-done>
+- リマインダー：<reminder>{"at":"YYYY-MM-DDTHH:MM","text":"知らせる内容"}</reminder>
+- 文書を書く：<document title="題名">Markdown の本文</document>（本文では「書きました」と一言だけ）`;
+  if (recallMark) out += `\n\n# 脳から取り出した情報（関係するときだけ自然に活かす）\n${recallMark}`;
+  return out;
+}

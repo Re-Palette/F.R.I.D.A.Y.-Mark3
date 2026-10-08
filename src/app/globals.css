@@ -3961,3 +3961,18 @@ body[data-holo-open] .app * {
 .ai-route[data-state="off"] {
   color: var(--red);
 }
+
+/* SETTINGS のプルダウン（ローカル AI のモデル） */
+.settings__select {
+  width: 100%;
+  padding: 8px 10px;
+  margin: 4px 0 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  border: 1px solid var(--line, rgba(255, 140, 40, 0.35));
+  font: inherit;
+  font-size: 13px;
+}
+.settings__select option {
+  background: #0b0d10;
+}

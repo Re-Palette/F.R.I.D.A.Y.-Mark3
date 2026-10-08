@@ -7,14 +7,19 @@
  *   - 画面（HTML）: まずネットから取り、取れたら控えを新しくする（オンラインなら常に最新版）。取れなければ控えを出す
  *   - /_next/static（版ごとに名前が変わる JS・CSS）: 控えがあればそれを使う。古い版の分は件数の上限で順に消す
  *   - フォント・画像・音声 AI の部品など: 控えを出しつつ裏で新しくする
- *   - /api/*（会話・記憶・予定など）: 控えない（常にネット。オフライン時は画面のローカル AI が代わりに答える）
+ *   - 予定・ToDo・天気・設定などを読むだけの /api: まずネット。取れたら控え、オフラインのときは最後に取れた内容を出す
+ *   - それ以外の /api/*（会話・保存など）: 控えない（常にネット。オフライン時は画面のローカル AI が代わりに答える）
  * 仕組みを変えたら VERSION を上げる（古い控えはまとめて消える）。
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = `friday-shell-${VERSION}`;
 const STATIC = `friday-static-${VERSION}`;
 const ASSETS = `friday-assets-${VERSION}`;
-const KEEP = [SHELL, STATIC, ASSETS];
+const API = `friday-api-${VERSION}`;
+const KEEP = [SHELL, STATIC, ASSETS, API];
+/** オフラインでも最後の内容を見せる、読むだけの API（会話・保存・同期は含めない） */
+const API_READ = /^\/api\/(weather|projects|tasks|reminders|calendar\/events|memory|files|settings|status)$/;
+const API_TIMEOUT_MS = 6000;
 const STATIC_MAX = 400;
 const ASSETS_MAX = 200;
 const NAV_TIMEOUT_MS = 4000;
@@ -154,11 +159,31 @@ async function staleWhileRevalidate(event, name, max) {
   return (await fresh) || Response.error();
 }
 
+/** 読むだけの API：まずネット。取れたら控え、取れなければ最後に取れた内容（ログイン切れ・エラーは控えない） */
+async function apiNetworkFirst(event) {
+  const req = event.request;
+  const key = new URL(req.url).pathname + new URL(req.url).search;
+  const cache = await caches.open(API);
+  try {
+    const res = await Promise.race([
+      fetch(req),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), API_TIMEOUT_MS)),
+    ]);
+    if (res.ok) event.waitUntil(cache.put(key, res.clone()).catch(() => {}));
+    return res;
+  } catch {
+    const hit = await cache.match(key);
+    if (hit) return hit;
+    return new Response(JSON.stringify({ error: "オフラインです。" }), { status: 503, headers: { "Content-Type": "application/json" } });
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // LM Studio（localhost）や外部のサイトには触らない
+  if (API_READ.test(url.pathname)) return event.respondWith(apiNetworkFirst(event));
   if (url.pathname.startsWith("/api/") || url.pathname === "/sw.js") return;
   if (req.mode === "navigate") return event.respondWith(navigation(event));
   if (url.pathname.startsWith("/_next/static/")) return event.respondWith(cacheFirst(req, STATIC, STATIC_MAX));

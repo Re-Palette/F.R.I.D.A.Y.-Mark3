@@ -202,3 +202,88 @@ export function echoScore(heard: string, spoken: string): number {
   for (let i = 0; i < h.length - 1; i++) if (grams.has(h.slice(i, i + 2))) hit++;
   return hit / (h.length - 1);
 }
+
+/* ---------- オフラインの聞き取り（Chrome の PC の中だけで動く音声認識） ---------- */
+
+export type OnDeviceSpeech = "available" | "downloadable" | "downloading" | "unavailable" | "unsupported";
+
+type OnDeviceCtor = {
+  available?: (o: { langs: string[]; processLocally: boolean }) => Promise<string>;
+  install?: (o: { langs: string[]; processLocally: boolean }) => Promise<boolean>;
+  // 古い版の名前
+  availableOnDevice?: (lang: string) => Promise<string>;
+  installOnDevice?: (lang: string) => Promise<boolean>;
+};
+
+const LANG = "ja-JP";
+/**
+ * 日本語を PC の中だけで聞き取れると分かっているか（SETTINGS で確かめた結果を覚えておく）。
+ * Chrome に「使えるか」を聞く処理は、環境によってはページごと落ちることがあるため、自動では呼ばず、
+ * SETTINGS のボタンを押したときだけ呼ぶ。
+ */
+const ON_DEVICE_KEY = "friday.ondevice-speech.v1";
+let onDeviceReady = (() => {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(ON_DEVICE_KEY) === "available";
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * いま PC の中だけで聞き取るべきか。ネットが切れている（またはローカル AI で答えている）ときで、
+ * 日本語の聞き取りデータが入っていれば PC の中で聞き取る（入っていなければ、ふつうの聞き取りを試す）。
+ */
+export function shouldRecognizeLocally(): boolean {
+  if (!onDeviceReady) return false;
+  return (typeof navigator !== "undefined" && !navigator.onLine) || offlineVoice;
+}
+
+/** 前に SETTINGS で確かめた結果（まだなら null） */
+export function lastOnDeviceStatus(): OnDeviceSpeech | null {
+  try {
+    return (localStorage.getItem(ON_DEVICE_KEY) as OnDeviceSpeech | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** 声の聞き取りがネットに届かないとき、オフラインだからか */
+export function voiceOffline(): boolean {
+  return (typeof navigator !== "undefined" && !navigator.onLine) || offlineVoice;
+}
+
+/** 日本語を PC の中だけで聞き取れるか（ネットが切れていても使えるか） */
+export async function onDeviceSpeechStatus(): Promise<OnDeviceSpeech> {
+  const Ctor = getRecognitionCtor() as unknown as OnDeviceCtor | null;
+  if (!Ctor) return "unsupported";
+  try {
+    const r = Ctor.available
+      ? await Ctor.available({ langs: [LANG], processLocally: true })
+      : Ctor.availableOnDevice
+        ? await Ctor.availableOnDevice(LANG)
+        : null;
+    onDeviceReady = r === "available";
+    try {
+      localStorage.setItem(ON_DEVICE_KEY, typeof r === "string" ? r : "unsupported");
+    } catch {
+      /* noop */
+    }
+    if (r === "available" || r === "downloadable" || r === "downloading" || r === "unavailable") return r;
+    return r === null ? "unsupported" : "unavailable";
+  } catch {
+    return "unsupported";
+  }
+}
+
+/** 日本語の聞き取りデータを Chrome に入れる（オンラインのときに 1 回。ボタンの操作の中で呼ぶ） */
+export async function installOnDeviceSpeech(): Promise<boolean> {
+  const Ctor = getRecognitionCtor() as unknown as OnDeviceCtor | null;
+  try {
+    if (Ctor?.install) return await Ctor.install({ langs: [LANG], processLocally: true });
+    if (Ctor?.installOnDevice) return await Ctor.installOnDevice(LANG);
+  } catch {
+    /* 失敗 */
+  }
+  return false;
+}

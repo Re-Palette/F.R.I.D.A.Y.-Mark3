@@ -25,7 +25,7 @@ import { getLocal, setLocal } from "./local-store";
 /* ---------- オフライン用の控え（/api/offline/pack） ---------- */
 
 export interface OfflinePack {
-  version: 1;
+  version: 2;
   at: number;
   timezone: string;
   persona: { text: string; voice: string };
@@ -45,7 +45,9 @@ let packFetching: Promise<boolean> | null = null;
 
 export async function loadPack(): Promise<OfflinePack | null> {
   if (pack !== undefined) return pack;
-  pack = await getLocal<OfflinePack>(PACK_KEY);
+  const stored = await getLocal<OfflinePack>(PACK_KEY);
+  // 古い形の控え（長い人格）は使わず、次にオンラインのときに取り直す
+  pack = stored?.version === 2 ? stored : null;
   return pack;
 }
 
@@ -58,7 +60,7 @@ export function refreshPack(force = false): Promise<boolean> {
       const res = await fetch("/api/offline/pack", { cache: "no-store" });
       if (!res.ok) return false;
       const next = (await res.json()) as OfflinePack;
-      if (next?.version !== 1 || !next.persona?.text) return false;
+      if (next?.version !== 2 || !next.persona?.text) return false;
       pack = next;
       await setLocal(PACK_KEY, next);
       return true;
@@ -75,13 +77,46 @@ export function refreshPack(force = false): Promise<boolean> {
 
 const LOCAL_AI_KEY = "friday.localai.v1";
 
-export function localAiConfig(): { baseUrl: string; model: string } {
+/** SETTINGS で選んだローカル AI の設定（この端末だけ。オフラインでも変えられる） */
+const LOCAL_AI_PREFS_KEY = "friday.localai.prefs.v1";
+
+export interface LocalAiPrefs {
+  /** 使うモデル（空ならサーバーの設定 → LM Studio で読み込み中のモデル） */
+  model: string;
+  /** 答える前に考えるか（既定はオフ＝速い） */
+  thinking: boolean;
+}
+
+export function localAiPrefs(): LocalAiPrefs {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LOCAL_AI_PREFS_KEY) ?? "null") as Partial<LocalAiPrefs> | null;
+    return { model: typeof raw?.model === "string" ? raw.model : "", thinking: raw?.thinking === true };
+  } catch {
+    return { model: "", thinking: false };
+  }
+}
+
+export function saveLocalAiPrefs(prefs: LocalAiPrefs): void {
+  try {
+    localStorage.setItem(LOCAL_AI_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* noop */
+  }
+}
+
+export function localAiConfig(): { baseUrl: string; model: string; thinking: boolean } {
+  const prefs = localAiPrefs();
   try {
     const raw = JSON.parse(localStorage.getItem(LOCAL_AI_KEY) ?? "null") as { baseUrl?: string; model?: string } | null;
-    return { baseUrl: normalizeLMStudioUrl(raw?.baseUrl), model: raw?.model ?? "" };
+    return { baseUrl: normalizeLMStudioUrl(raw?.baseUrl), model: prefs.model || raw?.model || "", thinking: prefs.thinking };
   } catch {
-    return { baseUrl: DEFAULT_LM_STUDIO_URL, model: "" };
+    return { baseUrl: DEFAULT_LM_STUDIO_URL, model: prefs.model, thinking: prefs.thinking };
   }
+}
+
+/** LM Studio で使えるモデルの一覧（SETTINGS 用。つながらなければ null） */
+export function localAiModels(signal?: AbortSignal): Promise<string[] | null> {
+  return listLMStudioModels(localAiConfig().baseUrl, signal);
 }
 
 export function rememberLocalAiConfig(cfg: { baseUrl?: string; model?: string }): void {
@@ -154,11 +189,9 @@ function offlineSection(p: OfflinePack | null): string {
   const when = p ? new Intl.DateTimeFormat("ja-JP", { timeZone: p.timezone, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(p.at) : null;
   return `
 
-# いまの接続状態（オフライン）
-- いまはインターネットに接続できないため、この PC のローカル AI で答えている。人格・記憶・会話の流れはいつもと同じ。
-- Web 検索・ニュース・メール・天気の更新・会社のダッシュボード・Spotify など、インターネットが要る機能は使えない。頼まれたら「現在オフラインのため Web 検索は利用できません。」のように、短く自然に伝え、分かる範囲（脳のノート・記憶・この会話）で手伝う。最新情報を作り話で補わない。
-- ${when ? `上の予定・ToDo・リマインダー・脳のノートは ${when} 時点の控え（「今日」「明日」はその時点から見た言い方）。変わっている可能性があると分かる言い方をする。` : "脳（Obsidian）の控えがまだ無いので、過去のことは覚えていないと正直に伝える。"}
-- 覚えたこと・ToDo・予定・文書は、いつもと同じ隠しタグで書いてよい（オンラインに戻ったら脳とカレンダーに反映される）。`;
+# いまはオフライン（この PC のローカル AI で答えている）
+- Web 検索・ニュース・メール・天気の更新・音楽などネットが要ることは使えない。頼まれたら「現在オフラインのため Web 検索は利用できません。」のように短く伝え、分かる範囲で手伝う。
+- ${when ? `上の予定・ToDo・ノートは ${when} 時点の控え。` : "脳の控えがまだ無いので、過去のことは分からないと正直に伝える。"}`;
 }
 
 /** system prompt を組み立てる（いつもの人格＋その場で探した記憶＋オフラインの説明） */
