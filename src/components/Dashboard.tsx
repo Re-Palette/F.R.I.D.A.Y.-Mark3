@@ -11,7 +11,7 @@ import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useRe
 import { useVoice } from "@/hooks/useVoice";
 import { useBargeIn } from "@/hooks/useBargeIn";
 import { withReadings } from "@/lib/reading";
-import { chime, pickJapaneseVoice } from "@/lib/speech";
+import { chime, pickJapaneseVoice, setOfflineVoice } from "@/lib/speech";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Conversation } from "./Conversation";
 import { Header } from "./Header";
@@ -30,6 +30,8 @@ import { CameraView } from "./CameraView";
 import { recentAudio, setVoiceCapture, startVoiceLevel, stopVoiceLevel, trackSpeech, voiceLevel } from "@/lib/voice-level";
 import { currentVoiceprint, isOwnerVoice, loadVoiceprintModel } from "@/lib/voiceprint";
 import { useVoiceprint } from "@/hooks/useVoiceprint";
+import { probeRoute, startAiRouter, useAiRoute } from "@/lib/ai-router";
+import { registerOfflineShell } from "@/lib/offline-shell";
 import { duckMusic, runAmazonMusic } from "@/lib/amazon-music";
 import { useNudges } from "@/hooks/useNudges";
 import { PHONE_QUERY, useMedia } from "@/hooks/useMedia";
@@ -138,6 +140,14 @@ function useAgentStatus() {
 
 export function Dashboard() {
   const chat = useChat();
+  // AI Router：Gemini（オンライン）と LM Studio（オフライン）のどちらで答えるかを、自分で確かめて切り替える
+  useEffect(() => {
+    startAiRouter();
+    registerOfflineShell(); // ネットが切れても画面を開けるように（Service Worker）
+  }, []);
+  const aiRoute = useAiRoute();
+  const offlineAi = aiRoute.route === "offline" || aiRoute.route === "unavailable";
+  useEffect(() => setOfflineVoice(offlineAi), [offlineAi]);
   const agent = useAgentStatus();
   const [calendarNotice, closeCalendarNotice] = useCalendarNotice();
   const [blockedTab, setBlockedTab] = useState<TabNotice | null>(null);
@@ -301,7 +311,8 @@ export function Dashboard() {
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
-    cloudVoice: agent.tts.provider === "elevenlabs",
+    // オフラインの間は ElevenLabs に届かないので、最初からブラウザ・OS の声で読み上げる
+    cloudVoice: agent.tts.provider === "elevenlabs" && !offlineAi,
     speed: agent.voiceSpeed,
     // スマホは話している間マイクを止める（スピーカーの声を拾う・iPhone で再生と聞き取りがぶつかるのを防ぐ）
     bargeIn: bargeIn && !phone,
@@ -603,7 +614,18 @@ export function Dashboard() {
           />
         </div>
 
-        {agent.status === "offline" && (
+        {aiRoute.route === "unavailable" && (
+          <div className="banner" role="alert">
+            <b>AI UNAVAILABLE</b>
+            <span>
+              {aiRoute.why === "gemini" ? "Gemini が使えず" : "インターネットに接続できず"}、ローカル AI（LM Studio）にも接続できません。LM Studio を起動し、Local Server を ON（CORS を許可）にしてください。
+            </span>
+            <button type="button" className="ghost-btn" onClick={() => void probeRoute()}>
+              再確認
+            </button>
+          </div>
+        )}
+        {agent.status === "offline" && !offlineAi && aiRoute.route !== "switching" && (
           <div className="banner" role="status">
             <b>CHAT AI OFFLINE</b>
             <span>

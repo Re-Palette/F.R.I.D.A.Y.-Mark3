@@ -2,6 +2,7 @@
  * サーバー専用の設定。API キーはここからのみ読み込み、クライアントへは渡さない。
  * （このファイルを "use client" なコンポーネントから import しないこと）
  */
+import { normalizeLMStudioUrl } from "@/llm/lmstudio";
 /**
  * 既定のモデル（左から順に使い、使い切り・未提供なら次へ自動で切り替える）。
  * 無料枠はモデルごとに別枠なので、Flash Lite を 2 つ並べると 1 日の上限が実質 2 倍になる。
@@ -115,4 +116,22 @@ export type SearchMode = "auto" | "always" | "off";
 export function getSearchMode(): SearchMode {
   const v = process.env.FRIDAY_SEARCH?.trim().toLowerCase();
   return v === "always" || v === "off" ? v : "auto";
+}
+
+/**
+ * ローカル AI（LM Studio）の設定。LM_STUDIO_BASE_URL（既定 http://localhost:1234/v1）と LM_STUDIO_MODEL（空なら読み込み中のモデル）。
+ * つなぎ先はこの PC の中だけ（外部の URL は無視して既定に戻す）。秘密の値ではないので画面にも渡せる。
+ */
+export function getLMStudioConfig(): { baseUrl: string; model: string } {
+  return { baseUrl: normalizeLMStudioUrl(process.env.LM_STUDIO_BASE_URL), model: process.env.LM_STUDIO_MODEL?.trim() ?? "" };
+}
+
+/**
+ * サーバー自身が LM Studio に切り替えてよいか。サーバーが PC の上で動いているとき（npm start など）だけ。
+ * Vercel のサーバーからは PC の LM Studio に届かないので、その場合は画面（ブラウザ）が直接 LM Studio を使う。
+ */
+export function serverLocalAi(): { baseUrl: string; model: string } | null {
+  if (process.env.VERCEL) return null;
+  if (!process.env.LM_STUDIO_BASE_URL?.trim() && process.env.FRIDAY_LOCAL_AI !== "on") return null;
+  return getLMStudioConfig();
 }

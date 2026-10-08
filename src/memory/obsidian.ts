@@ -19,69 +19,18 @@ import {
 } from "./github-brain";
 import type { LongTermMemory, MemoryRecord, SaveTurnInput } from "./long-term";
 import { chunkId, similarity, updateIndex, type IndexedChunk } from "./semantic";
+import { bigrams, CHUNK_CHARS, score, toChunks, type Chunk } from "./lexical";
 
 const MAX_NOTES = 400; // 読み込むノート数の上限
 const MAX_NOTE_BYTES = 40_000; // 大きすぎるノートは読まない
 const PROFILE_CHARS = 2000;
 const RECENT_MEMORY_CHARS = 2500;
-const CHUNK_CHARS = 600;
 const TOP_CHUNKS = 4;
 const RECALL_BUDGET_CHARS = 5000;
 /** 意味の近さを測るのに待てる時間（返答を遅らせないため短め。脳の読み込み全体の待ち時間より十分短く） */
 const SEMANTIC_BUDGET_MS = 350;
 /** これより意味が近ければ、言葉が一致しなくても候補にする */
 const SEMANTIC_MIN = 0.62;
-
-/* ---------- 検索（日本語でも効くよう 2 文字ずつの一致で点数化） ---------- */
-
-const STRIP = /[\s、。，．,.!！?？「」『』（）()・…ー〜\-#*_>`[\]|:：/]/g;
-
-function bigrams(text: string): Set<string> {
-  const t = text.replace(STRIP, "").toLowerCase();
-  const out = new Set<string>();
-  for (let i = 0; i < t.length - 1; i++) out.add(t.slice(i, i + 2));
-  return out;
-}
-
-/** よく出るだけで意味の薄い並び（検索のノイズ） */
-const COMMON = new Set(["です", "ます", "した", "ない", "ある", "いる", "する", "こと", "もの", "これ", "それ", "って", "けど", "から", "ので", "よう", "という"]);
-
-function score(query: Set<string>, chunk: string): number {
-  const grams = bigrams(chunk);
-  let hit = 0;
-  for (const g of query) if (!COMMON.has(g) && grams.has(g)) hit++;
-  return hit / Math.sqrt(grams.size + 20);
-}
-
-interface Chunk {
-  path: string;
-  heading: string;
-  text: string;
-}
-
-/** ノートを見出し・段落ごとに区切る */
-function toChunks(path: string, text: string): Chunk[] {
-  const chunks: Chunk[] = [];
-  let heading = path.replace(/\.md$/, "").split("/").pop() ?? path;
-  let buf = "";
-  const flush = () => {
-    const t = buf.trim();
-    if (t) chunks.push({ path, heading, text: t.slice(0, CHUNK_CHARS) });
-    buf = "";
-  };
-  for (const line of text.split("\n")) {
-    const h = /^#{1,6}\s+(.*)$/.exec(line);
-    if (h) {
-      flush();
-      heading = h[1].trim();
-      continue;
-    }
-    if (buf.length + line.length > CHUNK_CHARS) flush();
-    buf += line + "\n";
-  }
-  flush();
-  return chunks;
-}
 
 async function loadAll(files: BrainFile[]): Promise<Map<string, string>> {
   const target = files.filter((f) => f.size <= MAX_NOTE_BYTES).slice(0, MAX_NOTES);
@@ -220,3 +169,32 @@ export async function refreshMemoryIndex(force = false): Promise<number> {
   lastIndexRun = Date.now();
   return updateIndex(await indexableChunks());
 }
+
+/** オフライン用の控えに入れるノートの段落の上限（文字数の合計） */
+const OFFLINE_CHUNK_BUDGET = 450_000;
+
+/**
+ * オフラインでも思い出せるように、脳の中身の控えを作る（画面が端末に保存し、LM Studio で話すときに使う）。
+ * プロフィール・最近の記憶・ノートの段落（会話ログは除く。新しいノートを優先し、上限まで）。
+ */
+export async function offlineSnapshot(): Promise<{ profile: string; memory: string; chunks: Chunk[] }> {
+  const files = await listNotes();
+  const notes = await loadAll(files);
+  const chunks: Chunk[] = [];
+  let budget = OFFLINE_CHUNK_BUDGET;
+  for (const [path, text] of notes) {
+    if (path === PROFILE_PATH || path === MEMORY_PATH || path.startsWith(`${LOG_DIR}/`)) continue;
+    for (const c of toChunks(path, text)) {
+      if (budget <= 0) break;
+      budget -= c.text.length + c.heading.length;
+      chunks.push(c);
+    }
+  }
+  return {
+    profile: (notes.get(PROFILE_PATH) ?? "").slice(0, PROFILE_CHARS),
+    memory: (notes.get(MEMORY_PATH) ?? "").slice(-RECENT_MEMORY_CHARS * 2),
+    chunks,
+  };
+}
+
+export const OFFLINE_RECALL = { PROFILE_CHARS, RECENT_MEMORY_CHARS, TOP_CHUNKS, RECALL_BUDGET_CHARS } as const;

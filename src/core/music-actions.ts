@@ -9,7 +9,8 @@ import type { StreamEvent } from "@/core/types";
 import { SpotifyError, type SpotifyAccess } from "@/integrations/spotify";
 import type { MusicCommand } from "@/lib/music";
 
-export const MUSIC_TAGS = ["music"] as const;
+import { MUSIC_TAGS } from "./tag-names";
+export { MUSIC_TAGS };
 export type MusicTag = (typeof MUSIC_TAGS)[number];
 
 type MusicEvent = Extract<StreamEvent, { type: "music" }>;

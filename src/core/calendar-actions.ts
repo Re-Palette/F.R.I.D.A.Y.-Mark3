@@ -13,7 +13,8 @@ import {
   type NewEventInput,
 } from "@/integrations/google-calendar";
 
-export const CALENDAR_TAGS = ["calendar", "calendar-update", "calendar-delete"] as const;
+import { CALENDAR_TAGS } from "./tag-names";
+export { CALENDAR_TAGS };
 export type CalendarTag = (typeof CALENDAR_TAGS)[number];
 
 type CalendarEventOut = Extract<StreamEvent, { type: "calendar" }>;

@@ -3,6 +3,7 @@
  * 口調・振る舞いを調整したいときはこのファイルだけを編集すればよい。
  */
 import { OWNER, OWNER_READING, PROJECTS } from "./profile";
+import { formatNow } from "@/lib/time";
 import type { LectureDigest } from "@/integrations/brain-notes";
 import { morningSection } from "./morning";
 import { quizSection } from "./quiz";
@@ -78,18 +79,6 @@ export type MusicContext =
 
 /** 未読メール（読まなかったときは null、読めなかったときは error） */
 export type MailData = { list: MailSummary[] } | { error: string } | null;
-
-function formatNow(now: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(now);
-}
 
 const VOICE_RULES = `
 

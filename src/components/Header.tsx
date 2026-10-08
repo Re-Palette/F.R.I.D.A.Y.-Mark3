@@ -1,5 +1,6 @@
 "use client";
 
+import { AiRouteBadge } from "./AiRouteBadge";
 import { memo, useEffect, useState } from "react";
 import { Icon } from "./icons";
 
@@ -101,6 +102,7 @@ export const Header = memo(function Header() {
           </span>
         </div>
         <div className="sys-icons">
+          <AiRouteBadge />
           <span title="音声（今後対応）">
             <Icon name="mic" size={20} />
           </span>

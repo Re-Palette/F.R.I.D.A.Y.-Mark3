@@ -38,3 +38,16 @@ export function labelLocal(date: Date, tz: string): string {
   const time = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
   return `${day.replace(/\s/g, "")} ${time}`;
 }
+
+/** 人格（system prompt）に入れる「現在日時」の書き方（サーバーとオフラインの画面で同じにする） */
+export function formatNow(now: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(now);
+}

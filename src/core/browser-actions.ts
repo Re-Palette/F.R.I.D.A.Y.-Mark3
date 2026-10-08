@@ -6,7 +6,8 @@
  */
 import type { StreamEvent } from "@/core/types";
 
-export const BROWSER_TAGS = ["open-url", "close-tab"] as const;
+import { BROWSER_TAGS } from "./tag-names";
+export { BROWSER_TAGS };
 
 type BrowserEvent = Extract<StreamEvent, { type: "browser" }>;
 

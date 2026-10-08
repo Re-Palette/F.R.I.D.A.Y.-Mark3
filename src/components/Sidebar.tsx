@@ -2,6 +2,8 @@ import { memo } from "react";
 import type { LastRunStats } from "@/hooks/useChat";
 import type { ChatAgentStatus } from "./home/panels";
 import { HudFrame } from "./HudFrame";
+import { aiRouteLabel } from "./AiRouteBadge";
+import { useAiRoute } from "@/lib/ai-router";
 import { Icon, type IconName } from "./icons";
 
 export type View = "home" | "chat" | "projects" | "memory" | "tasks" | "calendar" | "files" | "lecture" | "settings";
@@ -47,7 +49,9 @@ export const Sidebar = memo(function Sidebar({
   sessionCount: number;
   maxContext: number;
 }) {
-  const ok = chatStatus === "online";
+  const route = useAiRoute();
+  // ローカル AI で答えられるときも「動いている」扱い（表示はオフライン用）
+  const ok = chatStatus === "online" || route.route === "offline";
   const ttft = lastRun.ttftMs;
   const ctx = lastRun.contextMessages ?? 0;
 
@@ -87,7 +91,13 @@ export const Sidebar = memo(function Sidebar({
           <div>
             <div className="sys-status__title">SYSTEM STATUS</div>
             <div className={`sys-status__state ${ok ? "is-ok" : chatStatus === "checking" ? "" : "is-warn"}`}>
-              {ok ? "CHAT SYSTEM ONLINE" : chatStatus === "checking" ? "CHECKING…" : "API KEY REQUIRED"}
+              {route.route === "offline" || route.route === "switching" || route.route === "unavailable"
+                ? aiRouteLabel(route).label
+                : ok
+                  ? "CHAT SYSTEM ONLINE"
+                  : chatStatus === "checking"
+                    ? "CHECKING…"
+                    : "API KEY REQUIRED"}
             </div>
           </div>
         </div>

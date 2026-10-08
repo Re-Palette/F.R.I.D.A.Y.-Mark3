@@ -9,7 +9,8 @@
 import type { StreamEvent } from "@/core/types";
 import { advanceCompanyWork, companyConnected, instructCompany } from "@/integrations/company";
 
-export const COMPANY_TAGS = ["company-instruct", "company-advance"] as const;
+import { COMPANY_TAGS } from "./tag-names";
+export { COMPANY_TAGS };
 export type CompanyTag = (typeof COMPANY_TAGS)[number];
 
 type ActionEvent = Extract<StreamEvent, { type: "action" }>;

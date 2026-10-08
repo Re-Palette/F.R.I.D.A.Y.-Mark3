@@ -7,7 +7,8 @@ import type { StreamEvent } from "@/core/types";
 import { CalendarError } from "@/integrations/google-calendar";
 import type { DraftInput } from "@/integrations/gmail";
 
-export const GMAIL_TAGS = ["gmail-draft"] as const;
+import { GMAIL_TAGS } from "./tag-names";
+export { GMAIL_TAGS };
 export type GmailTag = (typeof GMAIL_TAGS)[number];
 
 type DraftEvent = Extract<StreamEvent, { type: "mail-draft" }>;

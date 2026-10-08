@@ -9,7 +9,8 @@ import type { StreamEvent } from "@/core/types";
 import { addReminder } from "@/integrations/reminders";
 import { addTodo, completeTodo, setProgress } from "@/integrations/tasks";
 
-export const BRAIN_TAGS = ["todo-add", "todo-done", "project-progress", "reminder"] as const;
+import { BRAIN_TAGS } from "./tag-names";
+export { BRAIN_TAGS };
 export type BrainTag = (typeof BRAIN_TAGS)[number];
 
 type ActionEvent = Extract<StreamEvent, { type: "action" }>;

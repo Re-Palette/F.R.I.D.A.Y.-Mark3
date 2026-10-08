@@ -3930,3 +3930,34 @@ body[data-holo-open] .app * {
   background: var(--cyan);
   transition: width 0.1s linear;
 }
+
+/* いまどの AI で答えているか（ヘッダーの小さな表示） */
+.ai-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted, rgba(255, 255, 255, 0.7));
+  white-space: nowrap;
+}
+.ai-route i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ai-route[data-state="ok"] i {
+  background: #4ade80;
+  box-shadow: 0 0 6px #4ade80;
+}
+.ai-route[data-state="local"] {
+  color: var(--cyan);
+}
+.ai-route[data-state="warn"] i {
+  background: #facc15;
+}
+.ai-route[data-state="off"] {
+  color: var(--red);
+}

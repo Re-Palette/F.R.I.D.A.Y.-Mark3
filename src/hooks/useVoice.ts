@@ -231,6 +231,8 @@ export function useVoice({
     const rec = recRef.current;
     // 停止処理の途中なら、終了通知（onend）のあとで自動的に再開される
     if (!rec || runningRef.current || abortingRef.current) return;
+    // ネットが切れているときは、対応している Chrome なら PC の中だけで聞き取る（日本語の音声データが入っている場合）
+    if ("processLocally" in rec) (rec as { processLocally?: boolean }).processLocally = !navigator.onLine;
     try {
       rec.start();
       runningRef.current = true;
@@ -646,7 +648,9 @@ export function useVoice({
     return new Promise<void>((resolve) => {
       const u = new SpeechSynthesisUtterance(withReadings(text));
       u.lang = "ja-JP";
-      if (sp.voice) u.voice = sp.voice;
+      // オフラインに切り替わっていたら、PC の中の声を選び直す
+      const voice = sp.voice && (sp.voice.localService || navigator.onLine) ? sp.voice : pickJapaneseVoice(window.speechSynthesis.getVoices());
+      if (voice) u.voice = voice;
       // ElevenLabs の 1.15 ≒ ブラウザの 1.25 として換算
       // 落ち着いた低めの声。文の雰囲気で、ほんの少しだけ変える（心配：ゆっくり・低め／前進：少し明るく）
       const tone = detectTone(text);

@@ -99,13 +99,21 @@ export function takeSentences(text: string, from: number): { sentences: string[]
 
 /** 自然に聞こえやすい日本語音声を優先して選ぶ */
 export function pickJapaneseVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  const ja = voices.filter((v) => /^ja(-|_|$)/i.test(v.lang));
+  // オフラインのときは、インターネットが要る声（Nanami・Google 日本語など）を避け、PC の中の声を使う
+  const offline = typeof navigator !== "undefined" && (!navigator.onLine || offlineVoice);
+  const ja = voices.filter((v) => /^ja(-|_|$)/i.test(v.lang) && (!offline || v.localService));
   const preferred = ["Nanami", "Google 日本語", "Kyoko", "O-ren", "Otoya", "Haruka", "Ayumi", "Keita"];
   for (const name of preferred) {
     const v = ja.find((x) => x.name.includes(name));
     if (v) return v;
   }
   return ja[0] ?? null;
+}
+
+/** ローカル AI で答えている間（インターネットに届かない）は true にする */
+let offlineVoice = false;
+export function setOfflineVoice(on: boolean): void {
+  offlineVoice = on;
 }
 
 /* ---------- 効果音 ---------- */

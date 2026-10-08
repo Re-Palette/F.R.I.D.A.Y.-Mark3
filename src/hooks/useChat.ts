@@ -20,6 +20,9 @@ import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
 import { useSessionSync } from "./useSessionSync";
+import { currentRoute, markGeminiFailed, probeRoute } from "@/lib/ai-router";
+import { runLocalConversation } from "@/lib/offline-core";
+import { shouldFallback } from "@/llm/provider";
 
 export interface UiError {
   code: string;
@@ -361,196 +364,249 @@ export function useChat() {
             return;
           }
         }
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: toApiHistory(history), mode: opts.voice ? "voice" : "text", ...(music ? { music } : {}) }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok || !res.body) {
-          let err: UiError = {
-            code: "UPSTREAM_ERROR",
-            message: `サーバーエラーが発生しました（${res.status}）。`,
-            retryable: true,
-          };
-          try {
-            const json = (await res.json()) as StreamEvent;
-            if (json.type === "error") err = { code: json.code, message: json.message, retryable: json.retryable };
-          } catch {
-            /* noop */
-          }
-          fail(err);
-        } else {
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let pending = "";
-
-          const handle = (event: StreamEvent) => {
-            switch (event.type) {
-              case "transcript": {
-                // 録った声を文字にした結果：発言の表示を置き換える。何も聞き取れなければ、発言ごと取り消して聞き取りに戻る
-                const userId = history[history.length - 1]?.id;
-                if (userId) fullAudio.delete(userId);
-                if (!event.text.trim()) {
-                  finishNow(() => update((prev) => prev.filter((m) => m.id !== userId && m.id !== assistantId)));
-                  opts.onNoSpeech?.();
-                  break;
-                }
-                if (userId) patch(userId, (m) => ({ ...m, content: event.text }));
+        const apiHistory = toApiHistory(history);
+        /** いまローカル AI（LM Studio）で答えているか */
+        let local = false;
+        /** サーバー（Gemini）が使えなかったので、ローカル AI で答え直す */
+        let switchToLocal = currentRoute().route === "offline";
+        const handle = (event: StreamEvent) => {
+          switch (event.type) {
+            case "transcript": {
+              // 録った声を文字にした結果：発言の表示を置き換える。何も聞き取れなければ、発言ごと取り消して聞き取りに戻る
+              const userId = history[history.length - 1]?.id;
+              if (userId) fullAudio.delete(userId);
+              if (!event.text.trim()) {
+                finishNow(() => update((prev) => prev.filter((m) => m.id !== userId && m.id !== assistantId)));
+                opts.onNoSpeech?.();
                 break;
               }
-              case "meta":
-                model = event.model;
-                setLastRun((s) => ({ ...s, model: event.model, contextMessages: event.contextMessages }));
-                break;
-              case "delta":
-                if (ttftMs === undefined) {
-                  ttftMs = Math.round(performance.now() - startedAt);
-                  setPhase("streaming");
-                }
-                {
-                  const now = performance.now();
-                  if (lastDeltaAt) avgGap = Math.min(600, Math.max(30, avgGap * 0.7 + (now - lastDeltaAt) * 0.3));
-                  lastDeltaAt = now;
-                }
-                received += event.text;
-                schedule();
-                break;
-              case "calendar": {
-                const { action, ok, title, when, error } = event;
-                patch(assistantId, (m) => ({ ...m, calendar: [...(m.calendar ?? []), { action, ok, title, when, error }] }));
-                if (ok) window.dispatchEvent(new Event(CALENDAR_CHANGED));
-                break;
+              if (userId) patch(userId, (m) => ({ ...m, content: event.text }));
+              break;
+            }
+            case "meta":
+              model = event.model;
+              setLastRun((s) => ({ ...s, model: event.model, contextMessages: event.contextMessages }));
+              break;
+            case "delta":
+              if (ttftMs === undefined) {
+                ttftMs = Math.round(performance.now() - startedAt);
+                setPhase("streaming");
               }
-              case "document": {
-                const { ok, title, path, content, updated, error, kind } = event;
-                patch(assistantId, (m) => ({ ...m, documents: [...(m.documents ?? []), { ok, title, path, content, updated, error, kind }] }));
-                // 資料の PDF・スライドは、脳にも PDF（スライドは PowerPoint も）を保存する
-                if (ok && kind && path) {
-                  void saveDocFiles({ title, content, kind, path })
-                    .then((files) =>
-                      patch(assistantId, (m) => ({ ...m, documents: m.documents?.map((d) => (d.path === path ? { ...d, files } : d)) })),
-                    )
-                    .catch(() => {});
-                }
-                break;
+              {
+                const now = performance.now();
+                if (lastDeltaAt) avgGap = Math.min(600, Math.max(30, avgGap * 0.7 + (now - lastDeltaAt) * 0.3));
+                lastDeltaAt = now;
               }
-              case "action": {
-                const { kind, ok, label, error } = event;
-                patch(assistantId, (m) => ({ ...m, actions: [...(m.actions ?? []), { kind, ok, label, error }] }));
-                if (ok) window.dispatchEvent(new Event(kind === "reminder" ? REMINDERS_CHANGED : TASKS_CHANGED));
-                break;
+              received += event.text;
+              schedule();
+              break;
+            case "calendar": {
+              const { action, ok, title, when, error } = event;
+              patch(assistantId, (m) => ({ ...m, calendar: [...(m.calendar ?? []), { action, ok, title, when, error }] }));
+              if (ok) window.dispatchEvent(new Event(CALENDAR_CHANGED));
+              break;
+            }
+            case "document": {
+              const { ok, title, path, content, updated, error, kind } = event;
+              patch(assistantId, (m) => ({ ...m, documents: [...(m.documents ?? []), { ok, title, path, content, updated, error, kind }] }));
+              // 資料の PDF・スライドは、脳にも PDF（スライドは PowerPoint も）を保存する
+              if (ok && kind && path) {
+                void saveDocFiles({ title, content, kind, path })
+                  .then((files) =>
+                    patch(assistantId, (m) => ({ ...m, documents: m.documents?.map((d) => (d.path === path ? { ...d, files } : d)) })),
+                  )
+                  .catch(() => {});
               }
-              case "news-settings": {
-                const { ok, time, topics, error } = event;
-                patch(assistantId, (m) => ({ ...m, newsSettings: { ok, time, topics, error } }));
-                window.dispatchEvent(new Event(STATUS_CHANGED));
-                break;
-              }
-              case "browser": {
-                if (event.action === "open") {
-                  const { ok, url, label, error } = event;
-                  if (ok && url) {
-                    void openTab(url, label).then((opened) =>
-                      patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, url, blocked: !opened }] })),
-                    );
-                  } else {
-                    patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, error }] }));
-                  }
+              break;
+            }
+            case "action": {
+              const { kind, ok, label, error } = event;
+              patch(assistantId, (m) => ({ ...m, actions: [...(m.actions ?? []), { kind, ok, label, error }] }));
+              if (ok) window.dispatchEvent(new Event(kind === "reminder" ? REMINDERS_CHANGED : TASKS_CHANGED));
+              break;
+            }
+            case "news-settings": {
+              const { ok, time, topics, error } = event;
+              patch(assistantId, (m) => ({ ...m, newsSettings: { ok, time, topics, error } }));
+              window.dispatchEvent(new Event(STATUS_CHANGED));
+              break;
+            }
+            case "browser": {
+              if (event.action === "open") {
+                const { ok, url, label, error } = event;
+                if (ok && url) {
+                  void openTab(url, label).then((opened) =>
+                    patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, url, blocked: !opened }] })),
+                  );
                 } else {
-                  void closeTabs(event.target).then(({ closed, reason }) => {
-                    const label = closed ? `${closed} 件のタブ` : reason ? "閉じられませんでした" : "閉じられるタブがありません";
-                    patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "close", ok: closed > 0, label, error: reason }] }));
-                    if (reason) window.dispatchEvent(new CustomEvent(TAB_BLOCKED, { detail: { reason } }));
-                  });
+                  patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "open", ok, label, error }] }));
                 }
-                break;
+              } else {
+                void closeTabs(event.target).then(({ closed, reason }) => {
+                  const label = closed ? `${closed} 件のタブ` : reason ? "閉じられませんでした" : "閉じられるタブがありません";
+                  patch(assistantId, (m) => ({ ...m, tabs: [...(m.tabs ?? []), { action: "close", ok: closed > 0, label, error: reason }] }));
+                  if (reason) window.dispatchEvent(new CustomEvent(TAB_BLOCKED, { detail: { reason } }));
+                });
               }
-              case "stage":
-                setStage(event.stage);
-                break;
-              case "hologram":
-                // 返答の文は、ホログラムの拡大表示に説明の字幕として出す
-                if (event.subject) void requestHologram(event.subject, { explainFor: assistantId });
-                else clearHologram();
-                break;
-              case "sources": {
-                const { sources } = event;
-                patch(assistantId, (m) => ({ ...m, sources }));
-                break;
+              break;
+            }
+            case "stage":
+              setStage(event.stage);
+              break;
+            case "hologram":
+              // 返答の文は、ホログラムの拡大表示に説明の字幕として出す
+              if (event.subject) void requestHologram(event.subject, { explainFor: assistantId });
+              else clearHologram();
+              break;
+            case "sources": {
+              const { sources } = event;
+              patch(assistantId, (m) => ({ ...m, sources }));
+              break;
+            }
+            case "music": {
+              const { ok, label, error, command } = event;
+              if (command) {
+                // Amazon Music：拡張機能に頼んで、開いている Web プレーヤーを操作する
+                void runAmazonMusic(command).then((r) => patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), r] })));
+              } else {
+                patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), { ok, label, error }] }));
               }
-              case "music": {
-                const { ok, label, error, command } = event;
-                if (command) {
-                  // Amazon Music：拡張機能に頼んで、開いている Web プレーヤーを操作する
-                  void runAmazonMusic(command).then((r) => patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), r] })));
-                } else {
-                  patch(assistantId, (m) => ({ ...m, music: [...(m.music ?? []), { ok, label, error }] }));
-                }
-                break;
+              break;
+            }
+            case "focus": {
+              // 集中モード：タイマーを動かし、頼まれたら作業用の音楽をかける（Amazon Music の拡張機能があるとき）
+              if (event.stop) stopFocus();
+              else if (event.start) {
+                const st = startFocus(event.start.minutes, event.start.task ?? "", event.start.music !== false);
+                if (st.music) void runAmazonMusic({ action: "play", query: "集中 作業用 BGM", kind: "playlist" }).catch(() => {});
               }
-              case "focus": {
-                // 集中モード：タイマーを動かし、頼まれたら作業用の音楽をかける（Amazon Music の拡張機能があるとき）
-                if (event.stop) stopFocus();
-                else if (event.start) {
-                  const st = startFocus(event.start.minutes, event.start.task ?? "", event.start.music !== false);
-                  if (st.music) void runAmazonMusic({ action: "play", query: "集中 作業用 BGM", kind: "playlist" }).catch(() => {});
-                }
-                break;
-              }
-              case "mail-draft": {
-                const { ok, to, subject, error } = event;
-                patch(assistantId, (m) => ({ ...m, drafts: [...(m.drafts ?? []), { ok, to, subject, error }] }));
-                break;
-              }
-              case "memory":
-                patch(assistantId, (m) => ({ ...m, memories: [...(m.memories ?? []), event.text] }));
-                break;
-              case "done": {
-                const totalMs = Math.round(performance.now() - startedAt);
-                if (!received.trim()) {
-                  fail({
-                    code: "EMPTY",
-                    message: "F.R.I.D.A.Y. から応答がありませんでした。もう一度試してください。",
-                    retryable: true,
-                  });
-                  break;
-                }
-                finish(() => {
-                  const text = received;
-                  const prepMs = event.prepMs;
-                  patch(assistantId, (m) => ({ ...m, content: text, status: "done", meta: { model, ttftMs, totalMs, prepMs } }));
-                  setLastRun((s) => ({ ...s, ttftMs, totalMs, model }));
+              break;
+            }
+            case "mail-draft": {
+              const { ok, to, subject, error } = event;
+              patch(assistantId, (m) => ({ ...m, drafts: [...(m.drafts ?? []), { ok, to, subject, error }] }));
+              break;
+            }
+            case "memory":
+              patch(assistantId, (m) => ({ ...m, memories: [...(m.memories ?? []), event.text] }));
+              break;
+            case "done": {
+              const totalMs = Math.round(performance.now() - startedAt);
+              if (!received.trim()) {
+                fail({
+                  code: "EMPTY",
+                  message: "F.R.I.D.A.Y. から応答がありませんでした。もう一度試してください。",
+                  retryable: true,
                 });
                 break;
               }
-              case "error":
-                fail({ code: event.code, message: event.message, retryable: event.retryable });
+              finish(() => {
+                const text = received;
+                const prepMs = event.prepMs;
+                patch(assistantId, (m) => ({ ...m, content: text, status: "done", meta: { model, ttftMs, totalMs, prepMs } }));
+                setLastRun((s) => ({ ...s, ttftMs, totalMs, model }));
+              });
+              break;
+            }
+            case "error":
+              // Gemini に届かない・使えない（まだ一文字も出していない）→ ローカル AI で答え直す
+              if (!local && !received && shouldFallback(event.code) && !controller.signal.aborted) {
+                switchToLocal = true;
                 break;
-            }
-          };
-
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            pending += decoder.decode(value, { stream: true });
-            let nl: number;
-            while ((nl = pending.indexOf("\n")) >= 0) {
-              const line = pending.slice(0, nl).trim();
-              pending = pending.slice(nl + 1);
-              if (!line) continue;
-              try {
-                handle(JSON.parse(line) as StreamEvent);
-              } catch {
-                /* 壊れた行は無視 */
               }
-            }
+              fail({ code: event.code, message: event.message, retryable: event.retryable });
+              break;
           }
-          if (!settled) {
-            fail({ code: "NETWORK_ERROR", message: "通信が途中で切れました。もう一度試してください。", retryable: true });
+        };
+
+        /** ローカル AI（Offline Core）で答える。イベントの形はサーバーと同じなので、表示はそのまま */
+        const runLocal = async () => {
+          local = true;
+          const last = apiHistory[apiHistory.length - 1];
+          if (last?.audio && !last.content.trim()) {
+            fail({ code: "LOCAL_AI_UNAVAILABLE", message: "オフラインのため、録った声を文字にできません。文字で入力するか、オンラインに戻ってから話しかけてください。", retryable: true });
+            return;
+          }
+          for await (const event of runLocalConversation(apiHistory, { voice: Boolean(opts.voice), signal: controller.signal })) {
+            if (event.type === "error") {
+              // ローカル AI にも届かない → 状態を確かめ直す（表示を「LOCAL AI UNAVAILABLE」に）
+              const offline = currentRoute().route === "offline" && currentRoute().why === "network";
+              handle(offline ? event : { ...event, message: `Gemini にもローカル AI にも接続できません。${event.message}` });
+              void probeRoute();
+            } else handle(event);
+          }
+          if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
+          if (!settled) fail({ code: "LOCAL_AI_UNAVAILABLE", message: "ローカル AI の応答が途中で切れました。もう一度試してください。", retryable: true });
+        };
+
+        if (!switchToLocal) {
+          let res: Response | null = null;
+          try {
+            res = await fetch("/api/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ messages: apiHistory, mode: opts.voice ? "voice" : "text", ...(music ? { music } : {}) }),
+              signal: controller.signal,
+            });
+          } catch (err) {
+            if (controller.signal.aborted) throw err;
+            switchToLocal = true; // サーバーに届かない（ネットが切れた）
+            markGeminiFailed("network");
+          }
+          if (res && (!res.ok || !res.body)) {
+            let err: UiError = {
+              code: "UPSTREAM_ERROR",
+              message: `サーバーエラーが発生しました（${res.status}）。`,
+              retryable: true,
+            };
+            try {
+              const json = (await res.json()) as StreamEvent;
+              if (json.type === "error") err = { code: json.code, message: json.message, retryable: json.retryable };
+            } catch {
+              /* noop */
+            }
+            // サーバーには届いたが Gemini が使えない（キー・枠など）→ ローカル AI へ。ログイン切れ・不正な依頼はそのまま知らせる
+            if (shouldFallback(err.code) && res.status !== 401) {
+              switchToLocal = true;
+              markGeminiFailed("gemini");
+            } else fail(err);
+          } else if (res?.body) {
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let pending = "";
+            try {
+              while (!switchToLocal) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                pending += decoder.decode(value, { stream: true });
+                let nl: number;
+                while ((nl = pending.indexOf("\n")) >= 0) {
+                  const line = pending.slice(0, nl).trim();
+                  pending = pending.slice(nl + 1);
+                  if (!line) continue;
+                  try {
+                    handle(JSON.parse(line) as StreamEvent);
+                  } catch {
+                    /* 壊れた行は無視 */
+                  }
+                }
+              }
+            } catch (err) {
+              // まだ何も表示していないうちに通信が切れたら、ローカル AI で答え直す
+              if (controller.signal.aborted || received) throw err;
+              switchToLocal = true;
+              markGeminiFailed("network");
+            }
+            if (switchToLocal) {
+              void reader.cancel().catch(() => {});
+              if (!controller.signal.aborted) markGeminiFailed("gemini");
+            } else if (!settled) {
+              markGeminiFailed("network");
+              fail({ code: "NETWORK_ERROR", message: "通信が途中で切れました。もう一度試してください。", retryable: true });
+            }
           }
         }
+        if (switchToLocal && !settled) await runLocal();
       } catch (err) {
         if (controller.signal.aborted) {
           finishNow(() => {

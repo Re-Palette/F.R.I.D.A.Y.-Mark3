@@ -8,7 +8,7 @@ import { isAttachmentPath } from "@/lib/brain-paths";
 import { appendQuizResult, QUIZ_LOG_PATH, saveFileNote } from "@/integrations/brain-notes";
 import { parseFocus } from "@/lib/focus-command";
 import { routeRequest } from "@/core/router";
-import { getContextConfig, getGeminiConfig, getTimezone, settingsHint } from "@/lib/config";
+import { getContextConfig, getGeminiConfig, getTimezone, serverLocalAi, settingsHint } from "@/lib/config";
 import { FridayError, toFridayError } from "@/lib/errors";
 import { buildConversationWindow } from "@/memory/context";
 import { getLongTermMemory, type SaveTurnInput } from "@/memory/long-term";
@@ -18,6 +18,7 @@ import type { AgentContext } from "@/agents/types";
 import { BRAIN_TAGS, runBrainActions } from "./brain-actions";
 import { CALENDAR_TAGS, runCalendarActions } from "./calendar-actions";
 import { TagFilter, toFact } from "./hidden-tags";
+import { CORE_TAG_LIMITS, CORE_TAGS } from "./tag-names";
 import { BROWSER_TAGS, toBrowserEvent } from "./browser-actions";
 import { GMAIL_TAGS, runGmailActions } from "./gmail-actions";
 import { MUSIC_TAGS, runMusicActions } from "./music-actions";
@@ -136,7 +137,8 @@ function toAudio(v: unknown): ChatMessage["audio"] | undefined {
 
 /** 事前チェック（ストリーム開始前に HTTP ステータスで返したいエラー） */
 export function preflight(): void {
-  if (!getGeminiConfig().apiKey) {
+  // キーが無くても、PC 上のローカル AI が使える設定なら会話を始める（Gemini を飛ばして LM Studio で答える）
+  if (!getGeminiConfig().apiKey && !serverLocalAi()) {
     throw new FridayError(
       "MISSING_API_KEY",
       `Gemini API キーが設定されていません。${settingsHint("GEMINI_API_KEY")}`,
@@ -196,12 +198,7 @@ export async function* handleConversation(
     let finishReason: string | undefined;
     let prepMs: number | undefined;
     let reply = "";
-    const tags = new TagFilter(["memory", "news-settings", "document", "slides", "file-note", "focus", "quiz-result", ...CALENDAR_TAGS, ...BRAIN_TAGS, ...BROWSER_TAGS, "hologram", ...GMAIL_TAGS, ...MUSIC_TAGS, ...COMPANY_TAGS] as const, {
-      document: 30_000,
-      slides: 30_000,
-      "gmail-draft": 8000,
-      "file-note": 6000,
-    });
+    const tags = new TagFilter(CORE_TAGS, CORE_TAG_LIMITS);
     const sources: { title: string; uri: string }[] = [];
     // ページを開く・閉じるは待たせたくないので、タグが閉じた時点ですぐ画面に送る
     const browserSent = { "open-url": 0, "close-tab": 0, hologram: 0 };

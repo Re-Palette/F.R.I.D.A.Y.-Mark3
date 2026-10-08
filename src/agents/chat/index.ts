@@ -25,6 +25,7 @@ import { latestWeeklyReview } from "@/integrations/weekly";
 import { asksForUsage, usageReport } from "@/integrations/usage";
 import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
+import { withLocalFallback } from "@/llm/providers";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MemoryRecord } from "@/memory/long-term";
 import { buildSystemInstruction, type MailData, type MusicContext } from "./persona";
@@ -40,6 +41,13 @@ const REVIEW_BUDGET_MS = 3000;
 
 /** この長さ未満の普通の発言は、Gemini に考えさせる量を最小にして最初の一言を速くする */
 const QUICK_REPLY_CHARS = 120;
+
+/** ローカル AI で答えるときに足す説明（検索などネットが要る機能は使えない） */
+export const OFFLINE_NOTE = `
+
+# いまの接続状態
+- いまは Gemini に接続できないため、この PC のローカル AI で答えている。Web 検索・ニュース・メール・天気の更新・会社のダッシュボードなど、インターネットが要る機能は使えない。
+- それらを頼まれたら「現在オフラインのため Web 検索は利用できません。」のように、短く自然に伝え、分かる範囲（脳のノート・記憶・会話）で手伝う。最新情報を作り話で補わない。`;
 
 /** 時間内に終わらなければ fallback を返す（失敗も fallback） */
 async function within<T>(task: Promise<T>, ms: number, fallback: T, label: string): Promise<T> {
@@ -218,9 +226,7 @@ export const chatAgent: Agent = {
           : config;
 
     let first = true;
-    for await (const chunk of streamGemini({
-      config: runConfig,
-      systemInstruction: buildSystemInstruction({
+    const systemInstruction = buildSystemInstruction({
         now: ctx.now,
         timezone: ctx.timezone,
         memories,
@@ -248,11 +254,17 @@ export const chatAgent: Agent = {
         lectureDocs,
         usage,
         voice: ctx.voice,
+      });
+    // Gemini が使えなければ、同じ人格・記憶・会話のままローカル AI（LM Studio）で答える（サーバーが PC 上で動いているときだけ）
+    for await (const chunk of withLocalFallback(
+      streamGemini({ config: runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search }),
+      () => ({
+        system: `${systemInstruction}${OFFLINE_NOTE}`,
+        messages: ctx.messages.map((m) => ({ role: m.role, content: m.content })),
+        signal: ctx.signal,
+        maxTokens: Math.min(runConfig.maxOutputTokens, 4000),
       }),
-      contents,
-      signal: ctx.signal,
-      googleSearch: search,
-    })) {
+    )) {
       // 準備（脳・カレンダー・天気）にかかった時間を最初の塊で知らせる（画面に表示して遅さの原因を見分ける）
       yield first ? { ...chunk, prepMs } : chunk;
       first = false;
