@@ -11,6 +11,7 @@
  * - 「フライデー、〇〇」と続けて言えば、そのまま〇〇を送る。
  * - 返答の読み上げ中はマイクを止める（自分の声を拾わないため）。
  * - 読み上げ後 8 秒間は呼びかけなしで続けて話せる。
+ * - 拍手 2 回でも起動できる（boot。起動の音と一言のあと、呼びかけなしで聞く）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -35,6 +36,8 @@ import { trackSpeech } from "@/lib/voice-level";
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
 const FOLLOW_UP_MS = 8000;
+/** 拍手 2 回で起動したときの一言 */
+const BOOT_LINE = "全システム、起動しました。";
 /** 聞き取り途中の文字がこの時間変わらなければ「話し終わった」とみなす（ブラウザの確定待ちより速い） */
 const END_OF_SPEECH_MS = 800;
 /** ブラウザが 1 区切りを確定したあと、続きを話し始めるのを待つ時間（息継ぎで途中送信しないため） */
@@ -884,6 +887,32 @@ export function useVoice({
     else if (s === "listening" && !wakeWordOn.current) listenFor(FOLLOW_UP_MS);
   }, [enable, listenFor]);
 
+  /**
+   * 拍手 2 回：全システム起動。音声モードがオフならオンにし、読み上げ中なら止めて、
+   * 起動の音と「全システム、起動しました。」のあと、呼びかけなしで次の一言を聞く。
+   */
+  const boot = useCallback(() => {
+    if (!recRef.current) return;
+    setError(null);
+    unlockAudio();
+    if (stateRef.current === "off") enable();
+    cancelSpeech();
+    onWokeRef.current?.();
+    chime("boot");
+    const sp = speech.current;
+    sp.id = `boot-${Date.now()}`;
+    sp.spokenUpTo = 0;
+    sp.carry = "";
+    sp.chunks = 1;
+    sp.finished = true; // 読み終えたら afterSpeech が聞き取りに移る
+    sp.armedAt = 0;
+    sp.queue = [{ text: BOOT_LINE }];
+    const gen = sp.gen;
+    window.setTimeout(() => {
+      if (speech.current.gen === gen && stateRef.current !== "off") void speakNext();
+    }, 450); // 起動の音が鳴り終わってから話す
+  }, [cancelSpeech, enable, speakNext]);
+
   /** 応答がエラー等で終わり、読み上げるものがないとき */
   const replyFinished = useCallback(() => {
     const sp = speech.current;
@@ -960,6 +989,7 @@ export function useVoice({
     toggle,
     talkNow,
     wake,
+    boot,
     speak,
     interject,
     cancelSpeech,

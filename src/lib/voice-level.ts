@@ -8,6 +8,7 @@
  */
 import { getAudioContext } from "./speech";
 import { downsample } from "./recorded-recognition";
+import { DoubleClapDetector } from "./clap";
 
 export const voiceLevel = {
   /** 0〜1（なめらかにしてある） */
@@ -98,6 +99,56 @@ export function recentAudio(ms: number): Float32Array | null {
   const start = (ringPos - n + ring.length) % ring.length;
   for (let i = 0; i < n; i++) out[i] = ring[(start + i) % ring.length];
   return out;
+}
+
+/* ---------- 拍手 2 回で起動。マイクを開いている間だけ、音の大きさとザラつきを見て判定する（録音・送信しない） ---------- */
+let clapHandler: (() => void) | null = null;
+let clap: { proc: ScriptProcessorNode; mute: GainNode } | null = null;
+
+function attachClap() {
+  if (clap || !clapHandler || !source || !ctx) return;
+  try {
+    const c = ctx;
+    const detector = new DoubleClapDetector(c.sampleRate, () => clapHandler?.());
+    const proc = c.createScriptProcessor(1024, 1, 1);
+    const mute = c.createGain();
+    mute.gain.value = 0;
+    // 裏のタブでも動くよう、画面の描画（requestAnimationFrame）ではなく音の処理の中で判定する
+    proc.onaudioprocess = (e) => {
+      // F.R.I.D.A.Y. が声を出している間は判定しない（自分の声・音楽の打音で起動しないように）
+      if (speechCount > 0 || voiceLevel.speaking) {
+        detector.reset();
+        return;
+      }
+      detector.push(e.inputBuffer.getChannelData(0));
+    };
+    source.connect(proc);
+    proc.connect(mute);
+    mute.connect(c.destination); // つながっていないと動かないブラウザがあるため（音は出さない）
+    clap = { proc, mute };
+  } catch {
+    clap = null;
+  }
+}
+
+function detachClap() {
+  if (!clap) return;
+  clap.proc.onaudioprocess = null;
+  try {
+    source?.disconnect(clap.proc);
+  } catch {
+    /* noop */
+  }
+  clap.proc.disconnect();
+  clap.mute.disconnect();
+  clap = null;
+}
+
+/** 拍手 2 回で呼ぶ処理（null で止める）。マイクを開いている間（音声モードがオンの間）だけ聞く */
+export function setClapHandler(handler: (() => void) | null): void {
+  clapHandler = handler;
+  if (handler) attachClap();
+  else detachClap();
 }
 
 /** iPhone・iPad（読み上げの音を Web Audio に通すと鳴らなくなることがあるので、測らない） */
@@ -207,6 +258,7 @@ export function startVoiceLevel(): Promise<void> {
       // 測るだけ（スピーカーにはつながない）
       source.connect(analyser);
       attachCapture();
+      attachClap();
       voiceLevel.live = true;
     } catch {
       // マイクを使えない環境では、話している間の揺れだけ
@@ -222,6 +274,7 @@ export function startVoiceLevel(): Promise<void> {
 export function stopVoiceLevel(): void {
   wanted = false;
   detachCapture();
+  detachClap();
   source?.disconnect();
   source = null;
   analyser = null;

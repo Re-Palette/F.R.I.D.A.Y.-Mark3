@@ -10,6 +10,7 @@ import { STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
 import { useVoice } from "@/hooks/useVoice";
 import { useBargeIn } from "@/hooks/useBargeIn";
+import { useClapWake } from "@/hooks/useClapWake";
 import { withReadings } from "@/lib/reading";
 import { chime, pickJapaneseVoice } from "@/lib/speech";
 import { Composer, type ComposerHandle } from "./Composer";
@@ -27,7 +28,7 @@ import { bringToFront, hasExtension, openTabNow, syncKeepOpen, TAB_BLOCKED, type
 import { setHoloExplain, useHoloState } from "@/lib/hologram-model";
 import { asksToLook, captureFrame, getCameraState, openCamera, toggleCamera, useCameraState } from "@/lib/camera";
 import { CameraView } from "./CameraView";
-import { recentAudio, setVoiceCapture, startVoiceLevel, stopVoiceLevel, trackSpeech, voiceLevel } from "@/lib/voice-level";
+import { recentAudio, setClapHandler, setVoiceCapture, startVoiceLevel, stopVoiceLevel, trackSpeech, voiceLevel } from "@/lib/voice-level";
 import { currentVoiceprint, isOwnerVoice, loadVoiceprintModel } from "@/lib/voiceprint";
 import { useVoiceprint } from "@/hooks/useVoiceprint";
 import { duckMusic, runAmazonMusic } from "@/lib/amazon-music";
@@ -148,6 +149,7 @@ export function Dashboard() {
     return () => window.removeEventListener(TAB_BLOCKED, onBlocked);
   }, []);
   const [bargeIn] = useBargeIn();
+  const [clapWake] = useClapWake();
   // 「〇〇のホログラムを作って」と頼まれたら、見える HOME に戻る
   const holoStatus = useHoloState().status;
   const narrow = useNarrow();
@@ -314,6 +316,12 @@ export function Dashboard() {
   const { speak, cancelSpeech, replyFinished } = voice;
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
+
+  // 拍手 2 回で全システム起動（パソコン。マイクを開いている音声モードの間だけ聞く。「フライデー」の呼びかけもそのまま使える）
+  useEffect(() => {
+    setClapHandler(clapWake && !phone ? () => voiceRef.current.boot() : null);
+    return () => setClapHandler(null);
+  }, [clapWake, phone]);
 
   // 音声で話しかけた発言への応答を、届いた文から順に読み上げる
   const lastMsg = chat.messages[chat.messages.length - 1];
