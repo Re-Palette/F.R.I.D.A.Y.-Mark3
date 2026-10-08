@@ -84,7 +84,11 @@ export const HomeHud = memo(function HomeHud({
   // 返事のパネル：話しかけたら開き、× で閉じる（次に話しかけるとまた開く）
   const lastQuestion = [...messages].reverse().find((m) => m.role === "user")?.id;
   const [closedFor, setClosedFor] = useState<string | undefined>();
-  const showResponse = Boolean(lastQuestion) && closedFor !== lastQuestion;
+  // 声で話したときは、話した内容・返事の字幕を HOME に出さない（読み上げだけ。会話は CHAT に残る）。
+  // ただし資料・PDF・スライドを作ったときは、ダウンロードできるように出す
+  const lastReply = [...messages].reverse().find((m) => m.role === "assistant");
+  const voiceTurn = Boolean(lastReply?.voice) && !lastReply?.documents?.some((d) => d.ok);
+  const showResponse = Boolean(lastQuestion) && closedFor !== lastQuestion && !voiceTurn;
 
   // AGENTS のタブは一覧を HUD の小窓で開く（ほかのタブはそれぞれの画面へ）
   const [tab, setTab] = useState<HomeTab | null>(null);

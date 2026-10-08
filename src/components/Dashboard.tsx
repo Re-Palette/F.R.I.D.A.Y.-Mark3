@@ -767,7 +767,8 @@ export function Dashboard() {
           onSend={send}
           onStop={stopAll}
           voiceState={voice.state}
-          voiceInterim={voice.interim}
+          // 聞き取った言葉（字幕）は出さず、「聞いています」「登録した声ではない」などの短い案内だけ出す
+          voiceInterim={/^(聞いています|登録した声)/.test(voice.interim) ? voice.interim : ""}
           onVoiceToggle={voice.toggle}
           screenOn={screen.on}
           onScreenToggle={toggleScreen}
