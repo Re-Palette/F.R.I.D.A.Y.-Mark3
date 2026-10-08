@@ -143,11 +143,12 @@ export function unlockAudio(): void {
 }
 
 /** 呼びかけに反応したときの短い効果音 */
-export function chime(kind: "wake" | "end" = "wake"): void {
+export function chime(kind: "wake" | "end" | "boot" = "wake"): void {
   if (!audioCtx) return;
   try {
     const t = audioCtx.currentTime;
-    const tones = kind === "wake" ? [880, 1320] : [990, 660];
+    // boot：拍手 2 回で全システムを起動したときの、上がっていく 4 音
+    const tones = kind === "wake" ? [880, 1320] : kind === "boot" ? [523, 784, 1047, 1568] : [990, 660];
     tones.forEach((freq, i) => {
       const osc = audioCtx!.createOscillator();
       const gain = audioCtx!.createGain();

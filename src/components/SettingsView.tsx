@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { useBargeIn } from "@/hooks/useBargeIn";
+import { useClapWake } from "@/hooks/useClapWake";
 import { withReadings } from "@/lib/reading";
 import { extensionVersion, hasExtension, KEEP_OPEN_EXTENSION_VERSION, keepOpenWanted, LATEST_EXTENSION_VERSION, syncKeepOpen, versionAtLeast } from "@/lib/tabs";
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
@@ -688,6 +689,7 @@ export const SettingsView = memo(function SettingsView({
   const [speed, setSpeed] = useState(0.95);
   const [notify, setNotify] = useState<string>("default");
   const [bargeIn, setBargeIn] = useBargeIn();
+  const [clapWake, setClapWake] = useClapWake();
   const [nudgesOn, setNudgesOn] = useState(true);
   useEffect(() => setNudgesOn(nudgesEnabled()), []);
 
@@ -818,6 +820,21 @@ export const SettingsView = memo(function SettingsView({
           />
           <p className="settings__note">F.R.I.D.A.Y. が自分の声を聞き取ってしまうときは「聞かない」にしてください。</p>
           <OfflineSpeechControls hidden={hidden} />
+          <span className="settings__label">拍手 2 回で起動 — この端末だけの設定</span>
+          <Choice
+            value={clapWake ? "on" : "off"}
+            options={[
+              { value: "on", label: "起動する" },
+              { value: "off", label: "起動しない" },
+            ]}
+            onChange={(v) => {
+              setClapWake(v === "on");
+              setMessage({ ok: true, text: v === "on" ? "パン、パンと拍手 2 回で全システムを起動します。" : "拍手では起動しません（「フライデー」の呼びかけは使えます）。" });
+            }}
+          />
+          <p className="settings__note">
+            パソコンで音声会話がオンの間、「フライデー」の呼びかけに加えて、拍手 2 回でも起動します（裏のタブでも）。拍手は声紋認証の対象外です。物音で起動してしまうときは「起動しない」にしてください。
+          </p>
           <span className="settings__label">先回りの声かけ — この端末だけの設定</span>
           <Choice
             value={nudgesOn ? "on" : "off"}
