@@ -241,3 +241,14 @@ describe("E.D.I.T.H. の名前の書かれ方（文字起こしの揺れ）", ()
     setAiMode("friday");
   });
 });
+
+describe("立体平面地図の位置", async () => {
+  const { toPlane, fromPlane, MAP_W } = await import("../src/lib/edith-globe-data");
+  it("緯度・経度 ⇄ 地図板の位置（北が奥、東が右）", () => {
+    const [x, , z] = toPlane(35.7, 139.7);
+    const back = fromPlane(x, z);
+    assert.ok(Math.abs(back.lat - 35.7) < 1e-9 && Math.abs(back.lon - 139.7) < 1e-9);
+    assert.ok(toPlane(60, 0)[2] < toPlane(-30, 0)[2], "北ほど奥");
+    assert.ok(Math.abs(toPlane(0, 180)[0] - MAP_W / 2) < 1e-9, "東の端");
+  });
+});
