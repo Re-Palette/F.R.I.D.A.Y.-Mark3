@@ -23,9 +23,12 @@ describe("F.R.I.D.A.Y. ⇄ K.A.R.E.N. の切り替え", () => {
   for (const t of ["カレンって何？", "今日の予定は？", "ロケットのホログラムを作って", "フライデー、天気は？", "カレンダーを見せて", "カレントディレクトリ", ""]) {
     it(`「${t}」は切り替えない`, () => assert.equal(detectModeCommand(t), null));
   }
-  it("呼びかけを取り除いたあとの「に戻して」「終了」も F.R.I.D.A.Y. に戻る", () => {
-    assert.equal(detectModeCommand("に戻して"), "to-friday");
-    assert.equal(detectModeCommand("終了"), "to-friday");
+  it("呼びかけを取り除いたあとの「に戻して」「終了」「を呼んで」も F.R.I.D.A.Y. に戻る", () => {
+    for (const t of ["に戻して", "戻って", "戻りたい", "終了", "を呼んで", "お願い"]) assert.equal(detectModeCommand(t), "to-friday", t);
+  });
+  it("「フライデーを呼んで」「FRIDAYお願い」も F.R.I.D.A.Y. に戻る", () => {
+    assert.equal(detectModeCommand("フライデーを呼んで"), "to-friday");
+    assert.equal(detectModeCommand("FRIDAYお願い"), "to-friday");
   });
 });
 

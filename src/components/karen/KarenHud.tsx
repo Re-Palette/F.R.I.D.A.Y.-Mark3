@@ -149,13 +149,15 @@ export interface KarenHudProps {
   voiceState: VoiceState;
   /** K.A.R.E.N. への指示（声・文字と同じ入り口） */
   onCommand: (text: string) => void;
-  /** マイク（音声会話の開始・停止） */
+  /** マイク（いま聞く） */
   onMic: () => void;
+  /** F.R.I.D.A.Y. に戻る（制作中なら確かめる） */
+  onBack: () => void;
   /** 状況を声で返す */
   io: KarenIo;
 }
 
-export const KarenHud = memo(function KarenHud({ active, messages, voiceState, onCommand, onMic, io }: KarenHudProps) {
+export const KarenHud = memo(function KarenHud({ active, messages, voiceState, onCommand, onMic, onBack, io }: KarenHudProps) {
   const st = useKarenState();
   const scene = useScene();
   const projects = useProjects();
@@ -304,7 +306,7 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, o
           <button type="button" title="形を足す（球体・立方体など）" aria-pressed={panel === "add"} onClick={() => setPanel((p) => (p === "add" ? null : "add"))}>
             {Icon.cube}
           </button>
-          <button type="button" title="F.R.I.D.A.Y. に戻る" onClick={() => onCommand("FRIDAYに戻して")}>
+          <button type="button" title="F.R.I.D.A.Y. に戻る" onClick={onBack}>
             {Icon.spark}
           </button>
           <button type="button" title="シーン設定" aria-pressed={panel === "scene"} onClick={() => setPanel((p) => (p === "scene" ? null : "scene"))}>
@@ -312,6 +314,13 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, o
           </button>
         </nav>
         <div className="khead__right">
+          {/* タップで F.R.I.D.A.Y. に戻る（声なら「FRIDAYに戻して」「カレン終了」） */}
+          <button type="button" className="kback" onClick={onBack} title="F.R.I.D.A.Y. に戻る（声：「FRIDAYに戻して」）">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+            F.R.I.D.A.Y.
+          </button>
           {now && (
             <span className="khead__time">
               {now.getFullYear()}.{fmt2(now.getMonth() + 1)}.{fmt2(now.getDate())} <em>{DOW[now.getDay()]}</em> {fmt2(now.getHours())}:{fmt2(now.getMinutes())}:{fmt2(now.getSeconds())}

@@ -259,12 +259,13 @@ export function Dashboard() {
       };
       if (cmd === "to-karen" && mode === "friday") {
         setAiMode("karen");
-        karenIo.speak?.("K.A.R.E.N.、起動します。");
+        // 名前（カレン・フライデー）は言わない：直後にその名前で呼ぶと、自分の声の聞き返しと間違えて無視してしまうため
+        karenIo.speak?.("クリエイティブモードを起動します。");
         settle();
         return true;
       }
       if (cmd === "to-friday" && mode === "karen") {
-        if (requestExit(karenIo)) karenIo.speak?.("F.R.I.D.A.Y. に戻ります。");
+        if (requestExit(karenIo)) karenIo.speak?.("通常モードに戻ります。");
         settle();
         return true;
       }
@@ -652,7 +653,9 @@ export function Dashboard() {
           messages={chat.messages}
           voiceState={voice.state}
           onCommand={(t) => void send(t)}
-          onMic={() => (voice.state === "listening" ? voice.toggle() : voice.talkNow())}
+          // マイクはいつも「いま聞く」（押して音声がオフになってしまわないように）。読み上げ中なら止めて聞く
+          onMic={() => voice.talkNow()}
+          onBack={() => void send("FRIDAYに戻して")}
           io={karenIo}
         />
       )}

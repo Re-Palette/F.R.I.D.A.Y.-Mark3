@@ -70,7 +70,9 @@ export function detectModeCommand(text: string): "to-karen" | "to-friday" | null
   // F.R.I.D.A.Y. に戻る
   if (FRIDAY.test(t) && /(戻|もど|切り替|代わ|かわ|交代|に変え)/.test(t)) return "to-friday";
   // 呼びかけ（「フライデー」「カレン」）を取り除いたあとの「に戻して」「終了」（K.A.R.E.N. の間だけ意味がある）
-  if (/^(に|へ)?(戻|もど)(して|って|る|ろう)$/.test(t) || /^(終了|おわり|終わり|おしまい)(して)?$/.test(t)) return "to-friday";
+  if (/^(に|へ)?(戻|もど)(して|って|る|ろう|りたい)$/.test(t) || /^(終了|おわり|終わり|おしまい)(して)?$/.test(t)) return "to-friday";
+  if (/^(を|に)?(呼んで|よんで|呼び出して|お願い|おねがい|代わって|かわって|交代)$/.test(t)) return "to-friday";
+  if (FRIDAY.test(t) && /(呼|よん|お願い|おねがい)/.test(t)) return "to-friday";
   if (/(通常|ふつう|普通|いつもの)(の)?モード(に|へ)?(戻|もど|切り替)/.test(t)) return "to-friday";
   if (KAREN.test(t) && /(終了|終わ|おわ|閉じ|オフ|停止|おやすみ|ありがとう(、|\s)?(もう)?(いい|大丈夫))/.test(t)) return "to-friday";
   if (/クリエイティブモード(を)?(終了|終わ|やめ|オフ)/.test(t)) return "to-friday";
