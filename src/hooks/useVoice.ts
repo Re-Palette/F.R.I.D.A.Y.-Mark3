@@ -562,7 +562,13 @@ export function useVoice({
     };
 
     recRef.current = rec;
+    // 聞き取りの方式を途中で切り替えたとき（Chrome → 録音）は、新しい方式ですぐ聞き直す
+    const resume = window.setTimeout(() => {
+      const st = stateRef.current;
+      if (recRef.current === rec && ((st === "standby" && wakeWordOn.current) || st === "listening")) startRec();
+    }, 0);
     return () => {
+      clearTimeout(resume);
       rec.onresult = rec.onerror = rec.onend = null;
       try {
         rec.abort();
@@ -979,6 +985,12 @@ export function useVoice({
     let loud = 0;
     let lastRestart = 0;
     let stalls: number[] = [];
+    /** 短い発声（「フライデー」など）を音量で見分ける：始まった時刻・続いた長さ */
+    let burstStart = 0;
+    let burstMs = 0;
+    /** 発声のあと、聞き取りの結果が来なかった回数（来たら 0 に戻す） */
+    let misses: number[] = [];
+    let checkAt: { at: number; since: number } | null = null;
     const t = window.setInterval(() => {
       const s = stateRef.current;
       // 録音方式は、話し終わったときだけ結果が出るので見張らない
@@ -987,6 +999,25 @@ export function useVoice({
         return;
       }
       const now = Date.now();
+      // 短い発声のあと 3 秒たっても結果が 1 つも来なければ「聞き取れなかった」。2 回続いたら（1 分以内）Chrome の聞き取りは使えない
+      if (voiceLevel.value > 0.25) {
+        if (!burstStart) burstStart = now;
+        burstMs += 500;
+      } else if (burstStart) {
+        if (burstMs >= 500 && burstMs <= 4000) checkAt = { at: now + 3000, since: burstStart };
+        burstStart = 0;
+        burstMs = 0;
+      }
+      if (checkAt && now >= checkAt.at) {
+        const heard = lastResultAt.current >= checkAt.since;
+        misses = heard ? [] : [...misses.filter((x) => now - x < 60_000), now];
+        checkAt = null;
+        if (misses.length >= 2 && onStallRef.current) {
+          misses = [];
+          onStallRef.current();
+          return;
+        }
+      }
       loud = voiceLevel.value > 0.2 ? loud + 1 : Math.max(0, loud - 0.5);
       // 声らしい音が合わせて 3 秒以上あったのに、8 秒間 結果が無い（聞き取りを始めてからの 8 秒も数える）
       const quietSince = Math.max(lastResultAt.current, recStartedAt.current);

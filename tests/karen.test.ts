@@ -32,6 +32,16 @@ describe("F.R.I.D.A.Y. ⇄ K.A.R.E.N. の切り替え", () => {
   });
 });
 
+describe("声の呼びかけ（フライデー）：文字起こしの揺れも拾う", () => {
+  for (const t of ["フライデー", "フライデイ、今日の天気は", "フライ・デー", "Friday", "フライディ", "ふらいでー"]) {
+    it(`「${t}」で起きる`, () => {
+      setAiMode("friday");
+      assert.equal(splitWake(t).woke, true);
+    });
+  }
+  it("「フライデイ、今日の天気は」→ 用件は「今日の天気は」", () => assert.equal(splitWake("フライデイ、今日の天気は").command, "今日の天気は"));
+});
+
 describe("声の呼びかけ（カレン）", () => {
   it("F.R.I.D.A.Y. の間：「カレン、起動」は名前ごと渡して切り替えの言葉として見分ける。「カレンダー」では起きない", () => {
     setAiMode("friday");
