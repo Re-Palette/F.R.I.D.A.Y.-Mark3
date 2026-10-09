@@ -419,7 +419,8 @@ export function useVoice({
         if (command.length >= 2) {
           set("listening"); // 呼びかけに続けて話した内容。続きがあるかもしれないので少し待つ
           keepListening();
-          hold(command);
+          // 録音の聞き取りは 1 発言をまとめて文字にしてくるので、待たずにすぐ送る
+          hold(command, rec instanceof RecordedRecognition ? 0 : AFTER_FINAL_MS);
         } else {
           setInterim("");
           acknowledgeRef.current();
@@ -557,7 +558,8 @@ export function useVoice({
         // 自分で止めた直後はすぐ再開（話し始めの言葉を取りこぼさない）。それ以外は少し待つ
         // オフラインで聞き取りが使えないときは 3 秒ごとに試し直す（すぐ繰り返すとマイクを何度も開け閉めして重い）
         const netDown = Date.now() - netErrorAt.current < 2000;
-        restartTimer.current = window.setTimeout(startRec, netDown ? 3000 : wasAborting ? 0 : 200);
+        // 録音の聞き取りは区切りのたびにすぐ聞き直す（続けて話した言葉を取りこぼさない）
+        restartTimer.current = window.setTimeout(startRec, netDown ? 3000 : wasAborting || rec instanceof RecordedRecognition ? 0 : 200);
       }
     };
 

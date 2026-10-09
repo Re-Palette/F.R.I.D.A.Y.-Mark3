@@ -363,6 +363,11 @@ function loop(now: number) {
   voiceLevel.onset *= Math.exp(-dt * 7);
 }
 
+/** いま開いているマイク（録音の聞き取りと共有する）。開いていなければ null */
+export function sharedMicStream(): MediaStream | null {
+  return stream?.getAudioTracks().some((t) => t.readyState === "live") ? stream : null;
+}
+
 /** マイクの音量を測り始める（何度呼んでもよい） */
 export function startVoiceLevel(): Promise<void> {
   wanted = true;

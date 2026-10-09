@@ -6,6 +6,7 @@
  * 1 回の start() で 1 発言（ブラウザの音声認識の continuous=false と同じ）。
  */
 import { getAudioContext, type RecognitionErrorEvent, type RecognitionLike, type RecognitionResultEvent } from "./speech";
+import { sharedMicStream } from "./voice-level";
 
 /** 送る音声の速さ（16kHz・モノラル。声の文字起こしには十分で、軽い） */
 const RATE = 16_000;
@@ -18,7 +19,9 @@ const MAX_UTTER_MS = 30_000;
 /** 話し始めの直前も少し残す（最初の音を切らないように） */
 const PRE_ROLL_MS = 350;
 /** これだけ黙ったら、話し終わりの判定を待たずに文字起こしを先に始める */
-const EARLY_SEND_MS = 300;
+const EARLY_SEND_MS = 200;
+/** 画面の音声操作が使っていない AudioContext（毎回作り直さない） */
+let fallbackCtx: AudioContext | null = null;
 
 /** 音声を送って文字にしてもらう */
 async function sendForText(samples: Float32Array, signal: AbortSignal): Promise<string> {
@@ -110,6 +113,8 @@ export class RecordedRecognition implements RecognitionLike {
   private nodes: AudioNode[] = [];
   private controller: AbortController | null = null;
   private ended = true;
+  /** 先に聞き取りを終えた発言の文字起こし（話した順に結果を渡す） */
+  private delivering: Promise<void> = Promise.resolve();
 
   start(): void {
     if (!this.ended) throw new Error("already started");
@@ -160,16 +165,21 @@ export class RecordedRecognition implements RecognitionLike {
   }
 
   private async run(id: number) {
-    const ctx = getAudioContext() ?? new AudioContext();
+    const ctx = getAudioContext() ?? (fallbackCtx ??= new AudioContext());
     if (ctx.state !== "running") await ctx.resume().catch(() => {});
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-    });
+    // パソコンは、音量を測るために開いているマイクをそのまま使う（発言のたびに開き直さないので、話し始めを取りこぼさず速い）
+    const shared = sharedMicStream();
+    const stream =
+      shared ??
+      (await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      }));
     if (id !== this.session) {
-      stream.getTracks().forEach((t) => t.stop());
+      if (!shared) stream.getTracks().forEach((t) => t.stop());
       return;
     }
-    this.stream = stream;
+    // 共有のマイクは閉じない（閉じるのは音量を測る側）
+    this.stream = shared ? null : stream;
     const source = ctx.createMediaStreamSource(stream);
     const proc = ctx.createScriptProcessor(2048, 1, 1);
     const mute = ctx.createGain();
@@ -257,6 +267,29 @@ export class RecordedRecognition implements RecognitionLike {
     // 短すぎる音（せき・物音）は送らない
     if (!utterance || utterance.length < RATE * 0.35) {
       cancelEarly();
+      return this.finish(id);
+    }
+
+    // マイクを開いたままにできるときは、文字にしている間も次の発言を聞く（先に聞き取りを終えて、結果はあとで渡す）
+    if (shared && !this.onaudio) {
+      const pending = early as { controller: AbortController; promise: Promise<string> } | null;
+      const text = (async () => {
+        if (this.verify && !(await this.verify(utterance).catch(() => true))) {
+          pending?.controller.abort();
+          return "";
+        }
+        return pending?.promise ?? sendForText(utterance, new AbortController().signal);
+      })();
+      const before = this.delivering;
+      this.delivering = (async () => {
+        const got = await text.then(
+          (t) => ({ ok: true as const, t }),
+          () => ({ ok: false as const, t: "" }),
+        );
+        await before;
+        if (!got.ok) this.onerror?.({ error: "network" });
+        else if (got.t) this.onresult?.(result(got.t));
+      })();
       return this.finish(id);
     }
 
