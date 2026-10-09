@@ -4054,7 +4054,6 @@ body[data-lite] .bg__particles,
 body[data-lite] .bg__data {
   display: none;
 }
-body[data-lite] .radar__spinner,
 body[data-lite] .hvoice__flow {
   animation-play-state: paused;
 }
@@ -4064,7 +4063,6 @@ body[data-local-busy] .bg__particles,
 body[data-local-busy] .bg__data {
   display: none;
 }
-body[data-local-busy] .radar__spinner,
 body[data-local-busy] .radar__blip,
 body[data-local-busy] .hvoice__flow,
 body[data-local-busy] .hactivity__live i,

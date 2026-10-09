@@ -871,9 +871,9 @@ export function Dashboard() {
         )}
 
         {/* 文字起こし：聞こえた言葉と、聞き取りの様子（結果が返らないときにどこで止まっているか） */}
-        {voice.state !== "off" && (voice.diag || (voice.interim && voice.interim !== "…")) && (
+        {voice.state !== "off" && aiMode === "friday" && (voice.diag || voice.interim || voice.state === "listening") && (
           <p className="vcap" aria-live="polite" data-diag={voice.diag ? "" : undefined}>
-            {voice.diag || voice.interim}
+            {voice.diag || (voice.interim === "…" ? "呼びかけを聞き取りました…" : voice.interim) || "聞いています…"}
           </p>
         )}
 

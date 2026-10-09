@@ -181,79 +181,9 @@ let clapHandler: (() => void) | null = null;
 /** 1 回目の拍手で呼ぶ（起動の準備を先に始める） */
 let clapPrime: (() => void) | null = null;
 let clap: { proc: ScriptProcessorNode; mute: GainNode; from: MediaStreamAudioSourceNode } | null = null;
-/**
- * 拍手を聞くための、加工しないマイクの音。
- * 声のためのマイク（雑音を消す・音量を自動で整える）は、拍手のような一瞬の大きな音を「雑音」として小さくしてしまうので、
- * 拍手だけは同じマイクを加工なしでもう 1 本開いて聞く。開けなければ、声のためのマイクで聞く。
- */
-let rawStream: MediaStream | null = null;
-let rawSource: MediaStreamAudioSourceNode | null = null;
-let rawOpening: Promise<void> | null = null;
-
-/** 加工しないマイクを使うか（声の聞き取りとぶつかると分かったら、この端末では使わない） */
-const RAW_KEY = "friday.clap.raw";
-function rawAllowed(): boolean {
-  try {
-    return localStorage.getItem(RAW_KEY) !== "off";
-  } catch {
-    return true;
-  }
-}
-
-/**
- * 拍手用の加工しないマイクを使うのをやめる（声の聞き取りがマイクの音を受け取れなくなったときの対策）。
- * 拍手は、声のためのマイクで聞き続ける。やめたら true（もともと使っていなければ false）
- */
-export function disableRawClapMic(): boolean {
-  const had = Boolean(rawSource || rawOpening) || rawAllowed();
-  try {
-    localStorage.setItem(RAW_KEY, "off");
-  } catch {
-    /* noop */
-  }
-  if (rawSource) {
-    detachClap();
-    closeRawMic();
-    attachClap();
-  }
-  return had;
-}
-
-function openRawMic() {
-  if (rawSource || rawOpening || !clapHandler || !stream || !ctx || !rawAllowed()) return;
-  const deviceId = stream.getAudioTracks()[0]?.getSettings().deviceId;
-  rawOpening = (async () => {
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        video: false,
-      });
-      if (!clapHandler || !ctx || !stream) {
-        s.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      rawStream = s;
-      rawSource = ctx.createMediaStreamSource(s);
-      // 声のためのマイクで聞き始めていたら、加工しない方に付け替える
-      detachClap();
-      attachClap();
-    } catch {
-      /* 開けなければ、声のためのマイクで聞く */
-    } finally {
-      rawOpening = null;
-    }
-  })();
-}
-
-function closeRawMic() {
-  rawSource?.disconnect();
-  rawSource = null;
-  rawStream?.getTracks().forEach((t) => t.stop());
-  rawStream = null;
-}
-
 function attachClap() {
-  const from = rawSource ?? source;
+  // 拍手も声と同じマイクで聞く（同じマイクを加工なしでもう 1 本開くと、Chrome の声の聞き取りが音を受け取れなくなることがあったため）
+  const from = source;
   if (clap || !clapHandler || !from || !ctx) return;
   try {
     const c = ctx;
@@ -281,7 +211,6 @@ function attachClap() {
   } catch {
     clap = null;
   }
-  openRawMic();
 }
 
 function detachClap() {
@@ -302,10 +231,7 @@ export function setClapHandler(handler: (() => void) | null, prime: (() => void)
   clapHandler = handler;
   clapPrime = prime;
   if (handler) attachClap();
-  else {
-    detachClap();
-    closeRawMic();
-  }
+  else detachClap();
 }
 
 /** iPhone・iPad（読み上げの音を Web Audio に通すと鳴らなくなることがあるので、測らない） */
@@ -482,7 +408,6 @@ export function stopVoiceLevel(): void {
   wanted = false;
   detachCapture();
   detachClap();
-  closeRawMic();
   source?.disconnect();
   source = null;
   analyser = null;
