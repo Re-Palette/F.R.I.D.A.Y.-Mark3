@@ -98,6 +98,7 @@ export function useVoice({
   onAudio,
   onWoke,
   verifyVoice,
+  onStall,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -121,6 +122,11 @@ export function useVoice({
    * utterance は録音で聞いたときの 1 発言（16kHz）。null なら直近のマイクの声で確かめる（パソコン）。
    */
   verifyVoice?: (utterance: Float32Array | null) => Promise<boolean>;
+  /**
+   * Chrome の音声認識が、声は届いているのに聞き取れない状態を続けて見つけたとき（2 回目）。
+   * 呼び出し側は、録音してサーバーで文字にする方式に切り替えられる
+   */
+  onStall?: () => void;
 }) {
   const wakeWordOn = useRef(wakeWord);
   /** 開いた時点で自分から聞き始めたところ（ブラウザに止められたら、黙って最初の操作を待つ） */
@@ -173,6 +179,8 @@ export function useVoice({
   onAudioRef.current = onAudio;
   const onWokeRef = useRef(onWoke);
   onWokeRef.current = onWoke;
+  const onStallRef = useRef(onStall);
+  onStallRef.current = onStall;
   const onBargeInRef = useRef(onBargeIn);
   onBargeInRef.current = onBargeIn;
   const verifyRef = useRef(verifyVoice);
@@ -970,9 +978,11 @@ export function useVoice({
   useEffect(() => {
     let loud = 0;
     let lastRestart = 0;
+    let stalls: number[] = [];
     const t = window.setInterval(() => {
       const s = stateRef.current;
-      if ((s !== "listening" && s !== "standby") || !runningRef.current || !voiceLevel.live || voiceLevel.talking) {
+      // 録音方式は、話し終わったときだけ結果が出るので見張らない
+      if ((s !== "listening" && s !== "standby") || !runningRef.current || !voiceLevel.live || voiceLevel.talking || recRef.current instanceof RecordedRecognition) {
         loud = 0;
         return;
       }
@@ -984,6 +994,13 @@ export function useVoice({
         lastRestart = now;
         loud = 0;
         lastResultAt.current = now;
+        stalls = [...stalls.filter((x) => now - x < 3 * 60_000), now];
+        if (stalls.length >= 2 && onStallRef.current) {
+          // 2 回続いた：Chrome の音声認識ではこの PC の声を聞き取れていない → 呼び出し側が録音方式に切り替える
+          stalls = [];
+          onStallRef.current();
+          return;
+        }
         setDiag("声は届いていますが、聞き取りの結果が返ってこないので、聞き取りをやり直しました。もう一度話してください。");
         window.setTimeout(() => setDiag((v) => (v.startsWith("声は届いて") ? "" : v)), 6000);
         const rec = recRef.current;

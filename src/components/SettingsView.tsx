@@ -17,6 +17,7 @@ import { DEFAULT_PREFS as DEFAULT_LOCAL_PREFS, describeLocalAiError, diagnoseLoc
 import { installOnDeviceSpeech, lastOnDeviceStatus, onDeviceSpeechStatus, type OnDeviceSpeech } from "@/lib/speech";
 import { recordVoice } from "@/lib/voice-record";
 import { cosine, embedVoice, loadVoiceprintModel, normalize, saveVoiceprint, STRICTNESS, type Strictness, type Voiceprint } from "@/lib/voiceprint";
+import { setVoiceInputMode, useVoiceInput, type VoiceInputMode } from "@/lib/voice-input";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -864,6 +865,7 @@ export const SettingsView = memo(function SettingsView({
           />
           <p className="settings__note">F.R.I.D.A.Y. が自分の声を聞き取ってしまうときは「聞かない」にしてください。</p>
           <OfflineSpeechControls hidden={hidden} />
+          <VoiceInputControls onMessage={(text) => setMessage({ ok: true, text })} />
           <span className="settings__label">拍手 2 回で起動 — この端末だけの設定</span>
           <Choice
             value={clapWake ? "on" : "off"}
@@ -1071,3 +1073,36 @@ export const SettingsView = memo(function SettingsView({
     </section>
   );
 });
+
+/** 声の聞き取りの方式（Chrome の音声認識／録音してサーバーで文字にする） */
+function VoiceInputControls({ onMessage }: { onMessage: (text: string) => void }) {
+  const input = useVoiceInput();
+  return (
+    <>
+      <span className="settings__label">声の聞き取り方式 — この端末だけの設定</span>
+      <Choice
+        value={input.mode}
+        options={[
+          { value: "auto", label: "自動" },
+          { value: "chrome", label: "Chrome の聞き取り" },
+          { value: "recorded", label: "録音して文字にする" },
+        ]}
+        onChange={(v) => {
+          setVoiceInputMode(v as VoiceInputMode);
+          onMessage(
+            v === "recorded"
+              ? "録音してサーバーで文字にする方式にしました（ChatGPT などと同じ方式。Chrome で選んだマイクを使います）。"
+              : v === "chrome"
+                ? "Chrome の聞き取りにしました。"
+                : "自動にしました（Chrome の聞き取りで声を聞き取れないときは、録音して文字にする方式に切り替えます）。",
+          );
+        }}
+      />
+      <p className="settings__note">
+        {input.recorded ? "いまは「録音して文字にする」方式で聞いています。" : "いまは Chrome の聞き取りで聞いています。"}
+        マイクの音量は動くのに声に反応しないときは「録音して文字にする」を選んでください（Chrome の聞き取りは Windows の「既定の録音デバイス」を使うため、
+        Chrome で選んだマイクと違うと声が届きません）。録音方式は、話した 1 発言ごとの音声を文字にするためだけにサーバーへ送ります（保存はしません）。
+      </p>
+    </>
+  );
+}

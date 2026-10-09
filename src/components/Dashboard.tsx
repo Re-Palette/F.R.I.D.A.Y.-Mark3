@@ -41,6 +41,7 @@ import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 import { asksAboutScreen, captureScreen, getScreenState, toggleScreen, useScreenState } from "@/lib/screen";
 import { refreshCalendarCache } from "@/lib/calendar-cache";
 import { detectModeCommand, getAiMode, setAiMode, useAiMode } from "@/lib/ai-mode";
+import { autoSwitchToRecorded, useVoiceInput } from "@/lib/voice-input";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { dispatchKaren } from "@/lib/karen-state";
 import { KarenHud } from "./karen/KarenHud";
@@ -388,6 +389,8 @@ export function Dashboard() {
     setVoiceCapture(ownerOnly && !phone);
     if (ownerOnly) void loadVoiceprintModel().catch(() => {});
   }, [ownerOnly, phone]);
+  // 声の聞き取りの方式（Chrome の音声認識／録音してサーバーで文字にする）
+  const voiceInput = useVoiceInput();
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
@@ -397,8 +400,20 @@ export function Dashboard() {
     // スマホは話している間マイクを止める（スピーカーの声を拾う・iPhone で再生と聞き取りがぶつかるのを防ぐ）
     bargeIn: bargeIn && !phone,
     wakeWord: !phone,
-    recorded: phone, // スマホは録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため）
-    onAudio: onVoiceAudio,
+    // スマホ・録音方式を選んだパソコンは、録った音声をサーバーで文字にする（ブラウザの音声認識が声を拾わないことがあるため）
+    recorded: phone || voiceInput.recorded,
+    // 録った声をそのまま会話に送るのはスマホだけ（パソコンは文字にして「フライデー」の呼びかけ・K.A.R.E.N. の指示を見分ける）
+    onAudio: phone ? onVoiceAudio : undefined,
+    onStall: () => {
+      if (!autoSwitchToRecorded()) return;
+      setReminder({
+        id: `voice-input-${Date.now()}`,
+        at: Date.now(),
+        label: "",
+        title: "VOICE",
+        text: "Chrome の音声認識がこの PC の声を聞き取れていないので、録音してサーバーで文字にする方式（ChatGPT などと同じ）に切り替えました。もう一度話しかけてください。SETTINGS → VOICE で戻せます。",
+      });
+    },
     verifyVoice: ownerOnly ? verifyVoice : undefined,
     onWoke: () => bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
