@@ -137,7 +137,7 @@ function toAudio(v: unknown): ChatMessage["audio"] | undefined {
 
 /** 事前チェック（ストリーム開始前に HTTP ステータスで返したいエラー） */
 export function preflight(): void {
-  // キーが無くても、PC 上のローカル AI が使える設定なら会話を始める（Gemini を飛ばして LM Studio で答える）
+  // キーが無くても、PC 上のローカル AI が使える設定なら会話を始める（Gemini を飛ばしてローカル AI＝Ollama で答える）
   if (!getGeminiConfig().apiKey && !serverLocalAi()) {
     throw new FridayError(
       "MISSING_API_KEY",

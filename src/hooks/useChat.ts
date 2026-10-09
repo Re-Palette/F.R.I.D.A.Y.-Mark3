@@ -366,7 +366,7 @@ export function useChat() {
           }
         }
         const apiHistory = toApiHistory(history);
-        /** いまローカル AI（LM Studio）で答えているか */
+        /** いまローカル AI（Ollama）で答えているか */
         let local = false;
         /** サーバー（Gemini）が使えなかったので、ローカル AI で答え直す */
         let switchToLocal = currentRoute().route === "offline";

@@ -3,7 +3,7 @@
  *   - 人格（いつもの人格の要点だけの短い版。PC のローカル AI は長い指示を読むのが遅いため。記憶の欄は画面がその場で探した内容に差し替える）
  *   - 脳（Obsidian）のプロフィール・最近の記憶・ノートの段落
  *   - その時点の ToDo・リマインダー・カレンダー（今後 7 日）
- * ネットが切れたら、画面はこの控えと LM Studio で答える。API キー・PC のファイルの場所は含めない。
+ * ネットが切れたら、画面はこの控えとローカル AI（Ollama）で答える。API キー・PC のファイルの場所は含めない。
  */
 import { buildCompactInstruction } from "@/agents/chat/persona";
 import { CalendarAccess, refreshTokenFrom } from "@/integrations/google-calendar";

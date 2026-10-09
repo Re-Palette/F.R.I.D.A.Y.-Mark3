@@ -45,10 +45,9 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | | — | プッシュ通知の鍵（SETTINGS → PUSH の「鍵を作る」で作成） |
 | `VAPID_SUBJECT` | | `mailto:friday@example.com` | プッシュ通知の送り主（`mailto:自分のメール`） |
 | `FRIDAY_TIMEZONE` | | `Asia/Tokyo` | 「今日」の判断に使うタイムゾーン |
-| `LM_STUDIO_BASE_URL` | | `http://localhost:1234/v1` | オフライン時に使うローカル AI（LM Studio）の場所。**この PC の中（localhost / 127.0.0.1）だけ**。外部の URL を書いても既定に戻します |
-| `LM_STUDIO_MODEL` | | （読み込み中のモデル） | 使うモデル名（例: `qwen3.5-9b`）。空なら LM Studio で読み込んでいるモデルを使います |
 | `OLLAMA_BASE_URL` | | `http://localhost:11434` | ローカル AI（Ollama）の場所。**この PC の中だけ**（外部の URL は既定に戻します） |
-| `FRIDAY_LOCAL_AI` | | — | `on` にすると、PC 上でサーバーを動かしている（`npm start`）ときに、サーバー自身も Gemini が使えなければ LM Studio に切り替えます（Vercel では無視） |
+| `OLLAMA_MODEL` | | `qwen3:0.6b` | ローカル AI の既定のモデル（SETTINGS で選んだモデルが優先） |
+| `FRIDAY_LOCAL_AI` | | — | `on` にすると、PC 上でサーバーを動かしている（`npm start`）ときに、サーバー自身も Gemini が使えなければ Ollama で答えます（Vercel では無視。`OLLAMA_BASE_URL` を設定しても有効） |
 
 `.env.local` は `.gitignore` 済みです。API キーをソースコードに書いたりコミットしたりしないでください。
 
@@ -289,47 +288,41 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
 
 ```
 FRIDAY ── AI Router ─┬─ ONLINE  → Gemini（Vercel のサーバーの FRIDAY Core）
-                     └─ OFFLINE → LM Studio（PC のローカル AI。画面の Offline Core）
+                     ├─ 短い日常会話 → Ollama（PC のローカル AI。ツールは使わない）
+                     └─ OFFLINE → Ollama（PC のローカル AI。画面の Offline Core）
           人格・記憶（Obsidian）・会話・Tool（隠しタグ）は FRIDAY 側にあり、AI が替わっても同じ
 ```
 
-- **自動で切り替わります**（選ぶ必要はありません）。開いたとき・ネットの切断 / 復帰・画面に戻ったときに、サーバーが Gemini に実際に届くかを確かめ（`/api/ai/health`）、届かなければ LM Studio に届くかを確かめます。会話の途中で Gemini に届かなくなったときも、まだ一文字も出していなければ、その発言から LM Studio で答え直します。オフライン中は 20 秒ごとに Gemini に戻れるか確かめ、戻れたら次の発言から Gemini で答えます（返答の途中では替えません）。
+- **自動で切り替わります**（選ぶ必要はありません）。開いたとき・ネットの切断 / 復帰・画面に戻ったときに、サーバーが Gemini に実際に届くかを確かめ（`/api/ai/health`）、届かなければローカル AI（Ollama）に届くかを確かめます。会話の途中で Gemini に届かなくなったときも、まだ一文字も出していなければ、その発言から Ollama で答え直します。オフライン中は 20 秒ごとに Gemini に戻れるか確かめ、戻れたら次の発言から Gemini で答えます（返答の途中では替えません）。
 - ヘッダーの右上に小さく **● ONLINE · Gemini ／ ● OFFLINE · LOCAL AI ／ ● SWITCHING · Gemini → Local AI ／ ● LOCAL AI UNAVAILABLE** と出ます。両方使えないときは「AI UNAVAILABLE」の帯で知らせます。
 - **ネットが切れていても画面が開きます**：一度オンラインで開くと、Service Worker（`public/sw.js`）が画面（HTML・JS・CSS・フォント・画像）を端末に控えます。画面はいつもネットを先に見るので、オンラインなら常に最新版になり、古い版の控えは件数の上限で順に消えます（仕組みを変えたら `sw.js` の `VERSION` を上げると古い控えはまとめて消えます）。`/api/*` は控えません。
-- **速さ**：PC のモデルは長い指示を読むだけで時間がかかるため、オフラインでは人格の要点だけの短い指示（約 1,000 字）と、短めの記憶・直近の会話だけを渡し、「考える（THINKING）」も止めて答えさせます。SETTINGS → **LOCAL AI** で、使うモデル・「考える」のオン / オフ（既定はオフ）を選べ、「ローカル AI を試す」で返事までの時間を確かめられます（この端末だけの設定で、オフラインでも変えられます）。
-- **記憶・人格**：オンラインの間に、人格の要点と、脳（Obsidian）のプロフィール・最近の記憶・ノートの段落、その時点の ToDo・予定の控えを端末（IndexedDB）に保存します（`/api/offline/pack`。10 分ごとに更新）。オフラインでは、その控えからサーバーと同じ方法（言葉の一致）で関係するノートを探して LM Studio に渡します。会話の流れは画面に残っている会話（Gemini で話した分も含む）をそのまま渡すので、「さっきの続き」も通じます。
+- **速さ**：PC のモデルは長い指示を読むだけで時間がかかるため、オフラインでは人格の要点だけの短い指示（約 1,000 字）と、短めの記憶・直近の会話だけを渡し、「考える（THINKING）」も止めて答えさせます。SETTINGS → **LOCAL AI** で、使うモデル・「考える」のオン / オフ（既定はオフ）を選べ、「接続テスト」で返事までの時間を確かめられます（この端末だけの設定で、オフラインでも変えられます）。
+- **記憶・人格**：オンラインの間に、人格の要点と、脳（Obsidian）のプロフィール・最近の記憶・ノートの段落、その時点の ToDo・予定の控えを端末（IndexedDB）に保存します（`/api/offline/pack`。10 分ごとに更新）。オフラインでは、その控えからサーバーと同じ方法（言葉の一致）で関係するノートを探して Ollama に渡します（num_ctx 2048 に収まるよう少なめ）。会話の流れは画面に残っている会話（Gemini で話した分も含む）をそのまま渡すので、「さっきの続き」も通じます。
 - **オフライン中に書いたこと**（覚えたこと・ToDo・リマインダー・予定・文書・会話ログ）は端末に溜め、オンラインに戻ったら `/api/offline/sync` でサーバーの Core に渡して、いつもと同じ処理で脳とカレンダーに反映します。それまでも、オフラインの会話の中では思い出せます。
 - **オフラインでも見られるもの**：予定・ToDo・プロジェクト・リマインダー・天気・記憶・SETTINGS の画面は、最後にオンラインで取れた内容を出します（Service Worker が読むだけの API の結果を端末に控えます。保存・会話・同期の API は控えません）。設定の変更のうち、脳に保存するもの（読み上げの速さなど）はオンラインのときに保存してください。
 - **オフラインでは使えないもの**：Web 検索・ニュース・メール・天気の更新・会社のダッシュボード・Spotify / Amazon Music・3D ホログラム・写真 / ファイルの読み取り。頼むと「現在オフラインのため Web 検索は利用できません。」のように答えます。
 - **声**：オフラインの間は ElevenLabs に届かないので、PC の中の声（Windows の Haruka / Ayumi など）で読み上げます。聞き取り（Chrome の音声認識）はふつうインターネットが要りますが、SETTINGS → VOICE の **「オフラインの聞き取り」** で「確かめる」→「入れる」を押しておくと（オンラインのときに 1 回）、ネットが切れたときは Chrome が PC の中だけで聞き取ります（声はどこにも送りません）。この Chrome が対応していない場合はそう表示されるので、オフラインでは文字で入力してください（「使えるか」の確認は、環境によってはページが落ちることがあるため、ボタンを押したときだけ行います）。スマホの音声会話（録った声をサーバーで文字にする）はオフラインでは使えません。
 - **Obsidian について**：F.R.I.D.A.Y. は Obsidian の Vault を GitHub リポジトリ経由で読んでいます（PC のフォルダを直接は読みません。インストールしたアプリ（PWA）から PC の任意のファイルは読めないため）。オフラインで使うのは最後にオンラインで取った控えで、オフライン中に Obsidian で書き足したノートは、オンラインに戻ってリポジトリに同期されてから読めるようになります。
 
-#### Ollama（ローカル AI・おすすめ。Surface Go 3 のような軽い PC 向け）
+#### Ollama（ローカル AI。Surface Go 3 のような軽い PC でも動く）
 
-- SETTINGS → **LOCAL AI** で「Ollama」を選ぶと（既定）、ローカル AI として Ollama（`http://localhost:11434` の `/api/chat`）を使います。モデルは Ollama に入っているものから選べます（既定 `qwen3:0.6b`。`qwen3:1.7b`・`friday-fast:latest` など）。
+- ローカル AI は **Ollama だけ**を使います（`http://localhost:11434` の `/api/chat`。LM Studio には対応しません）。SETTINGS → **LOCAL AI** でモデル選択と接続テストができます。モデルは Ollama に入っているものから選べます（既定 `qwen3:0.6b`。`qwen3:1.7b`・`friday-fast:latest` など）。
 - 送る設定：返事は少しずつ受け取る（stream）、「考える」処理は止める（`think: false`。設定でオンにもできる）、`keep_alive: 30m`（30 分はモデルをメモリに置いて次の返事を速く）、`num_ctx: 2048`、短い会話の返事の長さ `num_predict` は **60（短い・既定）／120（普通）** を SETTINGS で選べます。指示は日本語で答えるように書いてあります。
 - **friday-fast** のようにモデル自身に指示（Modelfile の SYSTEM）が入っているモデルには、FRIDAY 側の指示を送りません（モデルの指示をそのまま使う）。
 - **短い日常会話はローカル AI**：あいさつ・お礼・相づち・気分のひとこと（「こんにちは」「ありがとう」「了解」「疲れた」など、決まった形の短い発言）だけは、オンラインでもローカル AI がすぐ答えます。予定・ToDo・記憶・検索・メール・音楽・資料・会社・授業などの言葉が入っている発言、日時や数字・お願いが入っている発言、直前に FRIDAY が質問していたときの返事、写真・ファイル付き、長い相談、判断に迷うものは、**いつもどおり Gemini（FRIDAY Core）**で答えます（`src/lib/quick-chat.ts`）。SETTINGS でオフにもできます。
 - **ローカル AI にツールの権限は渡しません**：短い会話の返事に隠しタグ（記憶・ToDo・予定・ページを開くなど）があっても実行せず取り除くだけです。会話ログ（脳）には残します（ツールの中身は送らない）。
 - **失敗したとき**：ローカル AI に届かない・モデル未導入・時間切れ（最初の文字まで 15 秒）のときは、まだ何も表示していなければ、その発言を Gemini で答え直します（同じ発言を二重に処理しないよう、ローカル AI が途中まで答えていた場合は答え直さず、そこまでとエラーを表示）。次に確かめるまで、短い会話も Gemini で答えます。
-- オフライン時は、これまでどおり Offline Core が答え、覚えたこと・ToDo などは端末に溜めて、オンラインに戻ったらサーバーの Core が反映します。使うローカル AI は Ollama / LM Studio から選べます（Ollama のときは num_ctx 2048 に収まるよう、記憶・会話を少なめに渡します）。
+- オフライン時は、これまでどおり Offline Core が答え、覚えたこと・ToDo などは端末に溜めて、オンラインに戻ったらサーバーの Core が反映します。num_ctx 2048 に収まるよう、記憶・会話を少なめに渡します。
 - **初回だけ PC で設定**：Ollama は既定では FRIDAY（Vercel のアドレス）からの接続を受け付けないため、Windows の「環境変数を編集」でユーザー環境変数 `OLLAMA_ORIGINS` に **FRIDAY のアドレスだけ**（例：`https://f-r-i-d-a-y-mark3.vercel.app`。SETTINGS に正しいアドレスが出ます）を設定し、Ollama を終了して起動し直してください。`*`（すべて許可）にはしないでください。Chrome に「ローカル ネットワークへのアクセス」を聞かれたら「許可」を押します。
 - テスト：`npm test`（模擬の Ollama サーバーで、接続・設定値・friday-fast・各エラー・短い会話の判定を確かめます。本物の Ollama は使いません）。
 
-#### LM Studio の準備（初回だけ）
-
-1. LM Studio でモデル（例: Qwen3.5 9B）をダウンロードして読み込む。
-2. Developer（Local Server）で **Start Server**（ポート 1234）。設定の **Enable CORS** をオン（インストールした F.R.I.D.A.Y. の画面から直接つなぐため）。「ネットワークに公開（Serve on Local Network）」は**オフのまま**でかまいません（この PC の中だけで使います）。
-3. 初めてローカル AI に切り替わるとき、Chrome が「このサイトにデバイス上の他のアプリへのアクセスを許可しますか」と聞いてきたら「許可」を押す。
-4. モデルやポートを変えたら、Vercel の Environment Variables に `LM_STUDIO_MODEL` / `LM_STUDIO_BASE_URL` を設定（オンラインのときに画面が覚えます）。
-
-起動は、いつもどおりインストールした FRIDAY のアイコンをクリックするだけです（`npm run dev` やモデルの選択は要りません）。LM Studio はオフラインで使う前に起動しておいてください（PC の起動時に自動で立ち上げる設定にしておくと便利です）。
+起動は、いつもどおりインストールした FRIDAY のアイコンをクリックするだけです（`npm run dev` やモデルの選択は要りません）。Ollama は PC の起動時に自動で立ち上がります（タスクトレイのラマのアイコン）。
 
 #### 構成（将来のデスクトップ版に向けて）
 
-- `src/llm/provider.ts`：AI の共通の形（AIProvider）。`src/llm/providers.ts`（Gemini・サーバー側の切り替え）と `src/llm/lmstudio.ts`（LM Studio・OpenAI 互換。サーバーでも画面でも動く）。
+- `src/llm/provider.ts`：AI の共通の形（AIProvider）。`src/llm/providers.ts`（Gemini・サーバー側の切り替え）と `src/llm/ollama.ts`（Ollama。サーバーでも画面でも動く）。`src/lib/local-ai.ts`：画面側のローカル AI の設定と接続。`src/lib/quick-chat.ts`：短い日常会話の判定。
 - `src/lib/ai-router.ts`：画面側の AI Router。`src/lib/offline-core.ts`：画面側の Offline Core。`src/core/tag-names.ts`・`src/memory/lexical.ts`：サーバーと画面で共有する Tool の名前と記憶の探し方。
-- サーバーを PC 上で動かす（Electron / Tauri などに包む）と、`FRIDAY_LOCAL_AI=on` でサーバーの FRIDAY Core 自身が LM Studio を使えるので、そのまま完全ローカルのデスクトップ版に発展できます。
+- サーバーを PC 上で動かす（Electron / Tauri などに包む）と、`FRIDAY_LOCAL_AI=on` でサーバーの FRIDAY Core 自身が Ollama を使えるので、そのまま完全ローカルのデスクトップ版に発展できます。
 
 ### 端末をまたいだ会話の共有
 

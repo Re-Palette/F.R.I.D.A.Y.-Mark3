@@ -1,5 +1,5 @@
 /**
- * POST /api/offline/sync — オフライン中（LM Studio で話していた間）の会話を、オンラインに戻ってから脳に反映する。
+ * POST /api/offline/sync — オフライン中（ローカル AI＝Ollama で話していた間）の会話を、オンラインに戻ってから脳に反映する。
  *   { turns: [{ id, at, user, assistant, voice, captures, attrs }] }
  * captures は返答の隠しタグの中身（覚えたこと・ToDo・リマインダー・予定・文書など）。オンラインのときと同じ処理（FRIDAY Core の Tool）で実行する。
  * 戻り値: { done: [id…], notes: [文…] }

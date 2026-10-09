@@ -28,7 +28,8 @@ import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import { withLocalFallback } from "@/llm/providers";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { MemoryRecord } from "@/memory/long-term";
-import { buildSystemInstruction, type MailData, type MusicContext } from "./persona";
+import { buildCompactInstruction, buildSystemInstruction, type MailData, type MusicContext } from "./persona";
+import { buildConversationWindow } from "@/memory/context";
 
 /**
  * 脳・カレンダー・天気を集めるのに待てる時間。間に合わなければ無しで返答する（返答の速さ優先）。
@@ -255,14 +256,22 @@ export const chatAgent: Agent = {
         usage,
         voice: ctx.voice,
       });
-    // Gemini が使えなければ、同じ人格・記憶・会話のままローカル AI（LM Studio）で答える（サーバーが PC 上で動いているときだけ）
+    // Gemini が使えなければ、ローカル AI（Ollama）で答える（サーバーが PC 上で動いているときだけ）。
+    // Ollama が読める長さ（num_ctx 2048）に収まるよう、人格の要点・記憶の一部・直近の会話だけを渡す
     for await (const chunk of withLocalFallback(
       streamGemini({ config: runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search }),
       () => ({
-        system: `${systemInstruction}${OFFLINE_NOTE}`,
-        messages: ctx.messages.map((m) => ({ role: m.role, content: m.content })),
+        system: `${buildCompactInstruction({
+          now: ctx.now,
+          timezone: ctx.timezone,
+          voice: ctx.voice,
+          tasks,
+          reminders,
+          events,
+          recallMark: ctx.memory.connected ? memories.map((m) => `## ${m.title ?? m.source}\n${m.content}`).join("\n\n").slice(0, 1200) : null,
+        })}${OFFLINE_NOTE}`,
+        messages: buildConversationWindow(ctx.messages, { maxMessages: 6, maxChars: 1500 }).messages.map((m) => ({ role: m.role, content: m.content })),
         signal: ctx.signal,
-        maxTokens: Math.min(runConfig.maxOutputTokens, 4000),
       }),
     )) {
       // 準備（脳・カレンダー・天気）にかかった時間を最初の塊で知らせる（画面に表示して遅さの原因を見分ける）

@@ -141,7 +141,7 @@ function useAgentStatus() {
 
 export function Dashboard() {
   const chat = useChat();
-  // AI Router：Gemini（オンライン）と LM Studio（オフライン）のどちらで答えるかを、自分で確かめて切り替える
+  // AI Router：Gemini（オンライン）とローカル AI＝Ollama（短い会話・オフライン）のどちらで答えるかを、自分で確かめて切り替える
   useEffect(() => {
     startAiRouter();
     registerOfflineShell(); // ネットが切れても画面を開けるように（Service Worker）
@@ -627,7 +627,7 @@ export function Dashboard() {
           <div className="banner" role="alert">
             <b>AI UNAVAILABLE</b>
             <span>
-              {aiRoute.why === "gemini" ? "Gemini が使えず" : "インターネットに接続できず"}、ローカル AI（LM Studio）にも接続できません。LM Studio を起動し、Local Server を ON（CORS を許可）にしてください。
+              {aiRoute.why === "gemini" ? "Gemini が使えず" : "インターネットに接続できず"}、ローカル AI（Ollama）にも接続できません。Ollama を起動し、SETTINGS → LOCAL AI の「接続テスト」で確かめてください。
             </span>
             <button type="button" className="ghost-btn" onClick={() => void probeRoute()}>
               再確認

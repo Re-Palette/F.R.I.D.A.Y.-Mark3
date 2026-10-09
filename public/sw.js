@@ -182,7 +182,7 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // LM Studio（localhost）や外部のサイトには触らない
+  if (url.origin !== self.location.origin) return; // ローカル AI（Ollama・localhost）や外部のサイトには触らない
   if (API_READ.test(url.pathname)) return event.respondWith(apiNetworkFirst(event));
   if (url.pathname.startsWith("/api/") || url.pathname === "/sw.js") return;
   if (req.mode === "navigate") return event.respondWith(navigation(event));

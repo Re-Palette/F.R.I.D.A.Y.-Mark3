@@ -174,7 +174,7 @@ export async function refreshMemoryIndex(force = false): Promise<number> {
 const OFFLINE_CHUNK_BUDGET = 450_000;
 
 /**
- * オフラインでも思い出せるように、脳の中身の控えを作る（画面が端末に保存し、LM Studio で話すときに使う）。
+ * オフラインでも思い出せるように、脳の中身の控えを作る（画面が端末に保存し、ローカル AI（Ollama）で話すときに使う）。
  * プロフィール・最近の記憶・ノートの段落（会話ログは除く。新しいノートを優先し、上限まで）。
  */
 export async function offlineSnapshot(): Promise<{ profile: string; memory: string; chunks: Chunk[] }> {

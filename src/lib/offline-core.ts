@@ -1,7 +1,7 @@
 /**
  * Offline Core — ネットが切れて Vercel のサーバー（FRIDAY Core）に届かないときに、画面の中で動く小さな Core。
  *
- *   画面 → Offline Core → LM Studio（この PC のローカル AI）
+ *   画面 → Offline Core → Ollama（この PC のローカル AI）
  *            ├── 人格：オンライン中にサーバーから受け取った、いつもと同じ system prompt（控え）
  *            ├── 記憶：控えておいた Obsidian の脳（プロフィール・記憶・ノート）から、サーバーと同じ方法で探す
  *            ├── 会話：画面に残っている会話（Gemini で話した分も含む）
@@ -21,7 +21,6 @@ import { buildConversationWindow } from "@/memory/context";
 import { bigrams, score, type Chunk } from "@/memory/lexical";
 import { describeLocalAiError, localAiConfig, localAiHelp, streamLocal } from "./local-ai";
 import { OllamaError } from "@/llm/ollama";
-import { LMStudioError } from "@/llm/lmstudio";
 import { getLocal, setLocal } from "./local-store";
 
 /* ---------- オフライン用の控え（/api/offline/pack） ---------- */
@@ -75,7 +74,7 @@ export function refreshPack(force = false): Promise<boolean> {
   return packFetching;
 }
 
-/* ---------- ローカル AI の設定と使う先（Ollama / LM Studio）は local-ai.ts。これまでの名前でも使えるようにしておく ---------- */
+/* ---------- ローカル AI（Ollama）の設定と接続は local-ai.ts。これまでの名前でも使えるようにしておく ---------- */
 
 export { checkLocalAi, diagnoseLocalAi, localAiConfig, localAiModels, localAiPrefs, rememberLocalAiConfig, saveLocalAiPrefs, type LocalAiPrefs } from "./local-ai";
 
@@ -174,12 +173,10 @@ const ONLINE_ONLY: Partial<Record<(typeof CORE_TAGS)[number], string>> = {
 const SYNC_LATER = ["memory", "document", "slides", "todo-add", "todo-done", "project-progress", "reminder", "calendar", "calendar-update", "calendar-delete"] as const;
 
 export async function* runLocalConversation(history: ChatMessage[], opts: { voice: boolean; signal?: AbortSignal }): AsyncGenerator<StreamEvent> {
-  const p = await loadPack();
   const cfg = localAiConfig();
-  const ollama = cfg.engine === "ollama";
-  // Ollama は読める長さ（num_ctx 2048）が短いので、直近の会話を少なめに渡す
-  const window = buildConversationWindow(history, ollama ? { maxMessages: 6, maxChars: 1500 } : (p?.context ?? { maxMessages: 24, maxChars: 24000 }));
-  const system = await buildSystem(window.messages, opts.voice, ollama);
+  // Ollama は読める長さ（num_ctx 2048）が短いので、直近の会話と記憶を少なめに渡す
+  const window = buildConversationWindow(history, { maxMessages: 6, maxChars: 1500 });
+  const system = await buildSystem(window.messages, opts.voice, true);
   const tags = new TagFilter(CORE_TAGS, CORE_TAG_LIMITS);
   let reply = "";
   let model = cfg.model;
@@ -198,7 +195,7 @@ export async function* runLocalConversation(history: ChatMessage[], opts: { voic
       content: `${m.content}${m.image ? "\n（カメラの映像はオフラインでは見られません）" : ""}${m.files?.length ? "\n（添付ファイルはオフラインでは読めません）" : ""}`,
     }));
     // オフライン中はこの会話が ToDo・記憶などの保留（隠しタグ）も書くので、短い会話（60/120）より長めに書ける上限にする
-    for await (const chunk of streamLocal({ system, messages, signal: opts.signal, maxTokens: opts.voice ? 600 : 3000, numPredict: opts.voice ? 200 : 512 }, cfg)) {
+    for await (const chunk of streamLocal({ system, messages, signal: opts.signal, numPredict: opts.voice ? 200 : 512 }, cfg)) {
       if (chunk.model) {
         model = chunk.model;
         yield { type: "meta", agent: "chat", model: `LOCAL AI (${model})`, contextMessages: window.messages.length };
@@ -262,7 +259,7 @@ export async function* runLocalConversation(history: ChatMessage[], opts: { voic
     yield { type: "done", finishReason };
   } catch (err) {
     if (opts.signal?.aborted) return;
-    const message = describeLocalAiError(err, cfg.engine);
+    const message = describeLocalAiError(err);
     yield { type: "error", code: "LOCAL_AI_UNAVAILABLE", message, retryable: true };
   }
 }
@@ -312,8 +309,8 @@ export function flushOutbox(): Promise<{ synced: number; notes: string[] }> {
   return flushing;
 }
 
-/** LM Studio に届かない理由の案内（これまでの名前。いまは local-ai.ts の localAiHelp を使う） */
-export const LOCAL_AI_HELP = localAiHelp("lmstudio");
+/** ローカル AI（Ollama）に届かないときの案内（これまでの名前。中身は local-ai.ts の localAiHelp） */
+export const LOCAL_AI_HELP = localAiHelp();
 
 /* ---------- 短い日常会話をローカル AI で答える（オンライン中。ツールは使わせない） ---------- */
 
@@ -351,7 +348,7 @@ export async function* runQuickChat(history: ChatMessage[], opts: { voice: boole
   try {
     yield { type: "stage", stage: "think" };
     const messages = window.messages.map((m) => ({ role: m.role, content: m.content }));
-    for await (const chunk of streamLocal({ system: quickSystem(opts.voice), messages, signal: ctrl.signal, maxTokens: cfg.replyLength, numPredict: cfg.replyLength }, cfg)) {
+    for await (const chunk of streamLocal({ system: quickSystem(opts.voice), messages, signal: ctrl.signal, numPredict: cfg.replyLength }, cfg)) {
       clearTimeout(timer);
       if (chunk.model) yield { type: "meta", agent: "chat", model: `LOCAL · ${chunk.model}`, contextMessages: window.messages.length };
       if (!chunk.text) continue;
@@ -386,14 +383,8 @@ export async function* runQuickChat(history: ChatMessage[], opts: { voice: boole
             : err.code === "OLLAMA_UNAVAILABLE"
               ? "unavailable"
               : "error"
-        : err instanceof LMStudioError
-          ? err.code === "LOCAL_AI_NO_MODEL"
-            ? "no-model"
-            : err.code === "LOCAL_AI_UNAVAILABLE"
-              ? "unavailable"
-              : "error"
-          : "error";
-    yield { type: "error", code: `QUICK_${code.toUpperCase().replace("-", "_")}`, message: describeLocalAiError(err, cfg.engine), retryable: true };
+        : "error";
+    yield { type: "error", code: `QUICK_${code.toUpperCase().replace("-", "_")}`, message: describeLocalAiError(err), retryable: true };
   } finally {
     clearTimeout(timer);
     opts.signal?.removeEventListener("abort", onAbort);

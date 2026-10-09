@@ -13,8 +13,7 @@ import { extensionVersion, hasExtension, KEEP_OPEN_EXTENSION_VERSION, keepOpenWa
 import { NUDGES_KEY, nudgesEnabled } from "@/hooks/useNudges";
 import { useVoiceprint } from "@/hooks/useVoiceprint";
 import { checkLocalStatus, probeRoute, useAiRoute, useLocalStatus } from "@/lib/ai-router";
-import { DEFAULT_PREFS as DEFAULT_LOCAL_PREFS, describeLocalAiError, diagnoseLocalAi, engineLabel, localAiConfig, localAiHelp, localAiModels, localAiPrefs, saveLocalAiPrefs, streamLocal, type LocalAiPrefs, type LocalEngine } from "@/lib/local-ai";
-import { pickLMStudioModel } from "@/llm/lmstudio";
+import { DEFAULT_PREFS as DEFAULT_LOCAL_PREFS, describeLocalAiError, diagnoseLocalAi, localAiConfig, localAiHelp, localAiModels, localAiPrefs, saveLocalAiPrefs, streamLocal, type LocalAiPrefs } from "@/lib/local-ai";
 import { installOnDeviceSpeech, lastOnDeviceStatus, onDeviceSpeechStatus, type OnDeviceSpeech } from "@/lib/speech";
 import { recordVoice } from "@/lib/voice-record";
 import { cosine, embedVoice, loadVoiceprintModel, normalize, saveVoiceprint, STRICTNESS, type Strictness, type Voiceprint } from "@/lib/voiceprint";
@@ -323,7 +322,7 @@ function OfflineSpeechControls({ hidden }: { hidden: boolean }) {
   );
 }
 
-/** ローカル AI（オフライン時の LM Studio）の設定。この端末だけ・オフラインでも変えられる */
+/** ローカル AI（Ollama）の設定。この端末だけ・オフラインでも変えられる */
 function LocalAiControls({ hidden }: { hidden: boolean }) {
   const route = useAiRoute();
   const status = useLocalStatus();
@@ -343,27 +342,25 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
   }, []);
   useEffect(() => {
     if (!hidden) refreshModels();
-  }, [hidden, prefs.engine, refreshModels]);
+  }, [hidden, refreshModels]);
   const update = (patch: Partial<LocalAiPrefs>) => {
     const next = { ...prefs, ...patch };
     setPrefs(next);
     saveLocalAiPrefs(next);
     setTest(null);
-    if (patch.engine || patch.ollamaModel !== undefined || patch.model !== undefined) void checkLocalStatus();
+    if (patch.ollamaModel !== undefined) void checkLocalStatus();
   };
-  const ollama = prefs.engine === "ollama";
-  const name = engineLabel(prefs.engine);
   const [elapsed, setElapsed] = useState(0);
   const [phase, setPhase] = useState("");
+  /** 接続テスト：Ollama に届くか → 選んだモデルが入っているか → 実際に 1 文答えてもらう */
   const runTest = async () => {
     setTesting(true);
     setTest(null);
-    setPhase(`${name} に接続しています…`);
+    setPhase("Ollama に接続しています…");
     const started = performance.now();
     const tick = window.setInterval(() => setElapsed(Math.round((performance.now() - started) / 1000)), 500);
     setElapsed(0);
     try {
-      // まず届くかを確かめる（届かない理由を具体的に出すため）
       const check = await diagnoseLocalAi();
       if (!check.ok) {
         setTest({ ok: false, text: check.message });
@@ -371,15 +368,12 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
         return;
       }
       setModels(check.models.filter((m) => !/embed/i.test(m)));
-      const cfg = localAiConfig();
-      const using = cfg.model || (cfg.engine === "lmstudio" ? await pickLMStudioModel(cfg.baseUrl) : "") || "?";
-      setPhase(`${using} で返事を作っています…（初回はモデルの読み込みで時間がかかることがあります）`);
+      setPhase(`${localAiConfig().model} で返事を作っています…（初回はモデルの読み込みで時間がかかることがあります）`);
       let text = "";
       let model = "";
       for await (const c of streamLocal({
         system: "あなたは F.R.I.D.A.Y.。必ず日本語で 1 文だけ答える。",
         messages: [{ role: "user", content: "こんにちは。調子はどう？" }],
-        maxTokens: 120,
         signal: AbortSignal.timeout(300_000),
       })) {
         text += c.text;
@@ -393,9 +387,7 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
       const timeout = err instanceof DOMException && err.name === "TimeoutError";
       setTest({
         ok: false,
-        text: timeout
-          ? `5 分待っても返事がありませんでした。${ollama ? "より小さいモデル（qwen3:0.6b）を選ぶか、Ollama を再起動して" : "LM Studio の「読み込み済みのインスタンス」で大きなモデル（9B など）をすべて取り出してから、LM Studio を一度終了して起動し直し、"}もう一度試してください。`
-          : describeLocalAiError(err, prefs.engine),
+        text: timeout ? "5 分待っても返事がありませんでした。より小さいモデル（qwen3:0.6b）を選ぶか、Ollama を再起動してもう一度試してください。" : describeLocalAiError(err),
       });
       void checkLocalStatus();
     } finally {
@@ -404,82 +396,57 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
       setPhase("");
     }
   };
-  const currentModel = ollama ? prefs.ollamaModel : prefs.model;
   const statusText = !status
     ? "確かめています…"
     : status.ok
-      ? `接続できています（${status.model ?? currentModel}）`
+      ? `接続できています（${status.model ?? prefs.ollamaModel}）`
       : status.problem === "no-model"
-        ? `接続できますが、モデル「${currentModel}」が入っていません`
+        ? `接続できますが、モデル「${prefs.ollamaModel}」が入っていません`
         : status.problem === "timeout"
           ? "返事が時間内に届きませんでした（モデルの読み込み中の可能性があります）"
-          : `接続できません（${name} が起動していない、または接続が許可されていません）`;
+          : "接続できません（Ollama が起動していない、または接続が許可されていません）";
   return (
     <>
       <p className="settings__note">
         いまの答え方：
         <b style={{ color: "var(--cyan)" }}>
           {route.route === "online"
-            ? `オンライン（Gemini${prefs.quickLocal ? "。短い会話はローカル AI" : ""}）`
+            ? `オンライン（Gemini${prefs.quickLocal ? "。短い会話は Ollama" : ""}）`
             : route.route === "offline"
-              ? `オフライン（ローカル AI${route.localModel ? `・${route.localModel}` : ""} で答えています）`
+              ? `オフライン（Ollama${route.localModel ? `・${route.localModel}` : ""} で答えています）`
               : route.route === "unavailable"
-                ? "Gemini にもローカル AI にも接続できません"
+                ? "Gemini にも Ollama にも接続できません"
                 : "確かめています…"}
         </b>
       </p>
-      <span className="settings__label">ローカル AI — この端末だけの設定</span>
-      <Choice<LocalEngine>
-        value={prefs.engine}
-        options={[
-          { value: "ollama", label: "Ollama（軽い・おすすめ）" },
-          { value: "lmstudio", label: "LM Studio" },
-        ]}
-        onChange={(v) => update({ engine: v })}
-      />
       <p className="settings__note" data-ok={status?.ok || undefined} role="status">
-        {name}：{statusText}
-        {status && !status.ok && <> — {localAiHelp(prefs.engine, status.problem === "no-model" ? "no-model" : "unavailable")}</>}
+        Ollama：{statusText}
+        {status && !status.ok && <> — {localAiHelp(status.problem === "no-model" ? "no-model" : "unavailable")}</>}
       </p>
-      <span className="settings__label">使うモデル</span>
-      {ollama ? (
-        <select className="settings__select" value={prefs.ollamaModel} onChange={(e) => update({ ollamaModel: e.target.value })}>
-          {[...new Set([prefs.ollamaModel, ...(models ?? [])])].map((m) => (
-            <option key={m} value={m}>
-              {m}
-              {models && !models.some((x) => x === m || x === `${m}:latest`) ? "（未導入）" : ""}
-              {/^friday-fast/.test(m) ? "（モデル自身の指示を使う）" : ""}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <select className="settings__select" value={prefs.model} onChange={(e) => update({ model: e.target.value })} disabled={!models?.length && !prefs.model}>
-          <option value="">自動（LM Studio で読み込んでいるモデル）</option>
-          {[...new Set([...(models ?? []), ...(prefs.model ? [prefs.model] : [])])].map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      )}
-      {ollama && (
-        <>
-          <span className="settings__label">短い会話の返事の長さ</span>
-          <Choice<"60" | "120">
-            value={String(prefs.replyLength) as "60" | "120"}
-            options={[
-              { value: "60", label: "短い（60）" },
-              { value: "120", label: "普通（120）" },
-            ]}
-            onChange={(v) => update({ replyLength: v === "120" ? 120 : 60 })}
-          />
-        </>
-      )}
+      <span className="settings__label">使うモデル — この端末だけの設定</span>
+      <select className="settings__select" value={prefs.ollamaModel} onChange={(e) => update({ ollamaModel: e.target.value })}>
+        {[...new Set([prefs.ollamaModel, ...(models ?? [])])].map((m) => (
+          <option key={m} value={m}>
+            {m}
+            {models && !models.some((x) => x === m || x === `${m}:latest`) ? "（未導入）" : ""}
+            {/^friday-fast/.test(m) ? "（モデル自身の指示を使う）" : ""}
+          </option>
+        ))}
+      </select>
+      <span className="settings__label">短い会話の返事の長さ</span>
+      <Choice<"60" | "120">
+        value={String(prefs.replyLength) as "60" | "120"}
+        options={[
+          { value: "60", label: "短い（60）" },
+          { value: "120", label: "普通（120）" },
+        ]}
+        onChange={(v) => update({ replyLength: v === "120" ? 120 : 60 })}
+      />
       <span className="settings__label">短い日常会話（あいさつ・お礼・相づち）</span>
       <Choice
         value={prefs.quickLocal ? "on" : "off"}
         options={[
-          { value: "on", label: "ローカル AI で答える" },
+          { value: "on", label: "Ollama で答える" },
           { value: "off", label: "いつもどおり Gemini" },
         ]}
         onChange={(v) => update({ quickLocal: v === "on" })}
@@ -495,10 +462,10 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
       />
       <div className="settings__actions">
         <button type="button" className="ghost-btn" disabled={testing} onClick={() => void runTest()}>
-          {testing ? `試しています… ${elapsed} 秒` : "ローカル AI を試す"}
+          {testing ? `テストしています… ${elapsed} 秒` : "接続テスト"}
         </button>
         <button type="button" className="ghost-btn" disabled={testing} onClick={refreshModels}>
-          状態を確かめ直す
+          状態とモデルを読み直す
         </button>
       </div>
       {testing && phase && (
@@ -512,13 +479,11 @@ function LocalAiControls({ hidden }: { hidden: boolean }) {
         </p>
       )}
       <p className="settings__note">
-        短い日常会話は、オンラインでもこの PC のローカル AI がすぐ答えます（予定・ToDo・記憶・検索などの操作や、複雑な相談はいつもどおり Gemini）。ローカル AI は操作（ツール）を実行しません。インターネットや Gemini が使えないときは、ローカル AI が代わりに答え、記憶・ToDo などはオンラインに戻ったときに反映します。
+        ローカル AI は、この PC の Ollama だけを使います。短い日常会話はオンラインでも Ollama がすぐ答えます（予定・ToDo・記憶・検索などの操作や、複雑な相談はいつもどおり Gemini）。Ollama は操作（ツール）を実行しません。インターネットや Gemini が使えないときは Ollama が代わりに答え、記憶・ToDo などはオンラインに戻ったときに反映します。
       </p>
-      {ollama && (
-        <p className="settings__note">
-          Ollama を初めて使うとき：Windows の「環境変数を編集」で、ユーザー環境変数 <b>OLLAMA_ORIGINS</b> に <b>{origin || "（FRIDAY のアドレス）"}</b> だけを設定し（「*」で全部を許可しない）、Ollama を終了して起動し直してください。
-        </p>
-      )}
+      <p className="settings__note">
+        初めて使うとき：Windows の「環境変数を編集」で、ユーザー環境変数 <b>OLLAMA_ORIGINS</b> に <b>{origin || "（FRIDAY のアドレス）"}</b> だけを設定し（「*」で全部を許可しない）、Ollama を終了して起動し直してください。
+      </p>
     </>
   );
 }
@@ -934,7 +899,7 @@ export const SettingsView = memo(function SettingsView({
           <p className="settings__note">予定の 20 分前・今日 / 明日が締め切りの ToDo・雨の日の朝に、F.R.I.D.A.Y. のほうから一言話します（画面を開いている間だけ）。</p>
         </Section>
 
-        <Section title="LOCAL AI" sub="ローカル AI（Ollama / LM Studio）">
+        <Section title="LOCAL AI" sub="ローカル AI（Ollama）">
           <LocalAiControls hidden={hidden} />
         </Section>
 

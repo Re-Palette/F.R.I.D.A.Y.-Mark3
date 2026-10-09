@@ -4,14 +4,14 @@
  *   FRIDAY Core（人格・記憶・会話の流れ・Tool＝隠しタグ）
  *        │  同じ system prompt・同じ会話・同じ隠しタグの決まり
  *        ├── GeminiProvider   （オンライン。サーバーで動く。API キーはサーバーだけ）
- *        └── LMStudioProvider （オフライン。PC の LM Studio。OpenAI 互換 API）
+ *        └── OllamaProvider   （ローカル。PC の Ollama。短い日常会話とオフライン時）
  *
  * モデルごとに Core を作り分けない。Provider は「system prompt と会話を受け取り、文字を少しずつ返す」ことだけをする。
  * 記憶はモデルに持たせない（毎回 Core が system prompt と会話に入れて渡す）ので、途中でモデルが替わっても続きを話せる。
  * Tool（予定・ToDo・記憶・文書など）は、返答の中の隠しタグを Core が読み取って実行するので、どのモデルでも同じ。
  */
 
-export type AIProviderId = "gemini" | "lmstudio" | "ollama";
+export type AIProviderId = "gemini" | "ollama";
 
 export interface AIMessage {
   role: "user" | "assistant";

@@ -11,12 +11,12 @@ export function aiRouteLabel(s: AiRouteState): { state: "ok" | "local" | "warn" 
       return {
         state: "local",
         label: "OFFLINE · LOCAL AI",
-        title: `${s.why === "gemini" ? "Gemini が使えないため" : "インターネットに接続できないため"}、この PC のローカル AI（LM Studio${s.localModel ? `・${s.localModel}` : ""}）で答えています`,
+        title: `${s.why === "gemini" ? "Gemini が使えないため" : "インターネットに接続できないため"}、この PC のローカル AI（Ollama${s.localModel ? `・${s.localModel}` : ""}）で答えています`,
       };
     case "switching":
       return { state: "warn", label: "SWITCHING · Gemini → Local AI", title: "ローカル AI に切り替えています" };
     case "unavailable":
-      return { state: "off", label: "LOCAL AI UNAVAILABLE", title: "Gemini にもローカル AI（LM Studio）にも接続できません" };
+      return { state: "off", label: "LOCAL AI UNAVAILABLE", title: "Gemini にもローカル AI（Ollama）にも接続できません" };
     default:
       return { state: "warn", label: "CHECKING…", title: "接続を確かめています" };
   }

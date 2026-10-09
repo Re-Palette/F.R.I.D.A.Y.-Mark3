@@ -2,11 +2,11 @@
  * AI Router（画面側）— いまどの AI で答えるかを、F.R.I.D.A.Y. 自身が判断する。
  *
  *   ONLINE              Gemini に実際に届く                    → Gemini（サーバーの FRIDAY Core）
- *   GEMINI_UNAVAILABLE  サーバーには届くが Gemini が使えない     → LM Studio（Offline Core）
- *   OFFLINE             サーバーにも届かない（ネットが切れた）   → LM Studio（Offline Core）
+ *   GEMINI_UNAVAILABLE  サーバーには届くが Gemini が使えない     → Ollama（Offline Core）
+ *   OFFLINE             サーバーにも届かない（ネットが切れた）   → Ollama（Offline Core）
  *   LOCAL_AI_UNAVAILABLE どちらも使えない                       → はっきりエラーを出す
  *
- * navigator.onLine だけは信用せず、/api/ai/health（サーバーが Gemini に実際に問い合わせる）と LM Studio の /v1/models で確かめる。
+ * navigator.onLine だけは信用せず、/api/ai/health（サーバーが Gemini に実際に問い合わせる）と Ollama の /api/tags で確かめる。
  * 切り替えは発言と発言の間でだけ起こる（返答の途中でモデルが替わって会話が壊れないように）。
  * 会話・記憶・人格はモデルの外（画面の会話と FRIDAY Core）にあるので、替わっても続きを話せる。
  */
@@ -44,7 +44,7 @@ const RECHECK_ONLINE_MS = 5 * 60_000;
 
 let probing: Promise<AiRouteState> | null = null;
 
-/* ---------- ローカル AI（Ollama / LM Studio）の状態。短い会話をローカルで答えてよいかの判断と、SETTINGS の表示に使う ---------- */
+/* ---------- ローカル AI（Ollama）の状態。短い会話をローカルで答えてよいかの判断と、SETTINGS の表示に使う ---------- */
 
 export interface LocalStatus {
   ok: boolean;
