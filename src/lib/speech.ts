@@ -4,7 +4,7 @@
  *  - 読み上げ: speechSynthesis
  */
 
-import { detectModeCommand, getAiMode } from "./ai-mode";
+import { detectModeCommand, EDITH_NAME_SRC, getAiMode } from "./ai-mode";
 
 /* ---------- 音声認識 ---------- */
 
@@ -67,7 +67,7 @@ const KAREN_WAKE_RE = new RegExp(
 
 /** E.D.I.T.H. の呼び方（イーディス / エディス / E.D.I.T.H.）。これも発言の頭で呼んだときだけ */
 const EDITH_WAKE_RE = new RegExp(
-  `^[\\s、。「]*${WAKE_LEAD}(?:[イい][\\s・]*[ーぃィ]?[\\s・]*(?:ディ|でぃ|デ|で)[\\s・]*[スす]|エディス|えでぃす|e\\.?\\s*d\\.?\\s*i\\.?\\s*t\\.?\\s*h\\.?(?![a-z]))${WAKE_TAIL}`,
+  `^[\\s、。「]*${WAKE_LEAD}(?:${EDITH_NAME_SRC})${WAKE_TAIL}`,
   "i",
 );
 

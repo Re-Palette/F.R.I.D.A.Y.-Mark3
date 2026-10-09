@@ -212,3 +212,32 @@ describe("モードごとに、そのモードの名前でだけ反応する・�
     });
   }
 });
+
+describe("E.D.I.T.H. の名前の書かれ方（文字起こしの揺れ）", () => {
+  for (const name of ["EDITH", "Edith", "E.D.I.T.H.", "イーディス", "イディス", "イーデス", "エディス", "エーディス", "いでぃす", "エディット"]) {
+    it(`「${name}を開いて」→ E.D.I.T.H.（どのモードからでも）`, () => {
+      assert.equal(detectModeCommand(`${name}を開いて`), "to-edith");
+      for (const mode of ["friday", "karen"] as const) {
+        setAiMode(mode);
+        const r = splitWake(`${name}を開いて`);
+        assert.equal(r.woke, true, mode);
+        assert.equal(detectModeCommand(r.command), "to-edith", mode);
+      }
+      setAiMode("friday");
+    });
+  }
+  it("「開けて」「オープンして」でも開く", () => {
+    assert.equal(detectModeCommand("イーディス開けて"), "to-edith");
+    assert.equal(detectModeCommand("EDITHをオープンして"), "to-edith");
+  });
+  it("「かわいいです」「いいですね、お願い」のような普通の言葉では切り替えない", () => {
+    assert.equal(detectModeCommand("かわいいです、お願い"), null);
+    assert.equal(detectModeCommand("いいですね、開いて"), null);
+  });
+  it("E.D.I.T.H. の間は「イディス、〜」「EDITH、〜」でも起きる", () => {
+    setAiMode("edith");
+    assert.deepEqual(splitWake("イディス、ニュースは"), { woke: true, command: "ニュースは" });
+    assert.deepEqual(splitWake("EDITH、天気は"), { woke: true, command: "天気は" });
+    setAiMode("friday");
+  });
+});

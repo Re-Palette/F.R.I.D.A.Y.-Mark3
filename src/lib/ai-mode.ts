@@ -57,7 +57,13 @@ export function useAiMode(): AiMode {
 /** 名前の呼び方（K.A.R.E.N. / KAREN / カレン / かれん） */
 const KAREN = /(k\.?\s*a\.?\s*r\.?\s*e\.?\s*n\.?(?![a-z])|カレン(?![ダトシ])|かれん|(?:可憐|花蓮|華蓮|夏蓮|佳蓮)(?!な))/i;
 /** E.D.I.T.H. の呼び方（E.D.I.T.H. / EDITH / イーディス / エディス） */
-const EDITH = /(e\.?\s*d\.?\s*i\.?\s*t\.?\s*h\.?(?![a-z])|イーディス|いーでぃす|エディス|イーディー(?=[、。,\s]|を|に|$))/i;
+/**
+ * E.D.I.T.H. の名前の書かれ方（文字起こしの揺れも拾う）：EDITH / E.D.I.T.H. / Edith / イーディス / イディス / イーデス / エディス / エーディス /
+ * エディット / いーでぃす / いでぃす / えでぃす。「かわいいです」の「いです」のような普通の言葉は拾わない（ひらがなは「でぃ」のときだけ）。
+ */
+export const EDITH_NAME_SRC =
+  "e\\.?\\s*d\\.?\\s*i\\.?\\s*t\\.?\\s*h\\.?(?![a-z])|イ[ー・\\s]?(?:ディ|デ)ー?ス|エ[ー・\\s]?(?:ディ|デ)ス|エディット|イーディー(?=[、。,\\s]|を|に|$)|[いえ]ー?でぃす";
+const EDITH = new RegExp(`(${EDITH_NAME_SRC})`, "i");
 const FRIDAY = /(f\.?\s*r\.?\s*i\.?\s*d\.?\s*a\.?\s*y\.?|フライデー|ふらいでー)/i;
 
 /**
@@ -71,7 +77,7 @@ export function detectModeCommand(text: string): "to-karen" | "to-friday" | "to-
   if (!t || t.length > 40) return null;
   if (/(って|とは|って何|ってなに|について)/.test(t) && !/(呼|起動|切り替|戻|開)/.test(t)) return null;
   // 「〇〇を開いて」：名前の AI のモードへ（「カレンを開いて」「イーディスを開いて」「フライデーを開いて」）
-  if (/(開いて|ひらいて|開く|ひらく|開け|オープン|立ち上げ)/.test(t)) {
+  if (/(開いて|ひらいて|開く|ひらく|開け|あけて|オープン|open|立ち上げ)/i.test(t)) {
     if (EDITH.test(t)) return "to-edith";
     if (KAREN.test(t)) return "to-karen";
     if (FRIDAY.test(t)) return "to-friday";
