@@ -264,6 +264,12 @@ export function Dashboard() {
       const settle = () => {
         if (opts.voice) window.setTimeout(() => voiceRef.current?.replyFinished(), 0);
       };
+      // いまのモードを「開いて」と言われたら、何もしない（制作の指示・質問として送らない）
+      // （F.R.I.D.A.Y. の間の「終了」などは、ほかの意味（タイマーの終了など）もあるので、これまでどおり AI に渡す）
+      if ((cmd === "to-edith" && mode === "edith") || (cmd === "to-karen" && mode === "karen") || (cmd === "to-friday" && mode === "friday" && /開|ひら/.test(text))) {
+        settle();
+        return true;
+      }
       if (cmd === "to-edith" && mode !== "edith") {
         setAiMode("edith");
         karenIo.speak?.("グローバルインテリジェンスモードを起動します。");

@@ -18,7 +18,7 @@ const { landRings, landDots, toXYZ, toLatLon } = await import("../src/lib/edith-
 const { splitTables } = await import("../src/lib/edith-text");
 
 describe("E.D.I.T.H. への切り替え", () => {
-  for (const t of ["イーディスを呼んで", "E.D.I.T.H.を起動", "EDITHお願い", "イーディス", "グローバルモードに切り替えて"]) {
+  for (const t of ["イーディスを呼んで", "E.D.I.T.H.を起動", "EDITHお願い", "イーディスを開いて", "グローバルモードに切り替えて"]) {
     it(`「${t}」→ E.D.I.T.H.`, () => assert.equal(detectModeCommand(t), "to-edith"));
   }
   for (const t of ["イーディス終了", "グローバルモードを終了", "フライデーに戻して"]) {
@@ -173,4 +173,42 @@ describe("REAL-TIME NEWS の取得（模擬の Gemini。本物の Google は使�
       delete process.env.GEMINI_API_KEY;
     }
   });
+});
+
+describe("モードごとに、そのモードの名前でだけ反応する・「〇〇を開いて」で切り替え", () => {
+  it("「〇〇を開いて」で、その AI のモードへ", () => {
+    assert.equal(detectModeCommand("カレンを開いて"), "to-karen");
+    assert.equal(detectModeCommand("イーディスを開いて"), "to-edith");
+    assert.equal(detectModeCommand("フライデーを開いて"), "to-friday");
+    assert.equal(detectModeCommand("Spotifyを開いて"), null, "アプリを開く頼みは切り替えではない");
+  });
+  for (const [mode, own, others] of [
+    ["friday", "フライデー、天気は", ["カレン", "カレン、球体を作って", "イーディス、ニュースは"]],
+    ["karen", "カレン、球体を作って", ["フライデー", "フライデー、天気は", "イーディス", "イーディス、ニュースは"]],
+    ["edith", "イーディス、ニュースは", ["フライデー", "フライデー、天気は", "カレン", "カレン、球体を作って"]],
+  ] as const) {
+    it(`${mode} の間：自分の名前で起き、ほかの名前だけ・ほかの名前への用件では起きない`, () => {
+      setAiMode(mode);
+      assert.equal(splitWake(own).woke, true, own);
+      for (const t of others) assert.equal(splitWake(t).woke, false, t);
+      setAiMode("friday");
+    });
+  }
+  for (const [mode, text, to] of [
+    ["friday", "カレンを開いて", "to-karen"],
+    ["friday", "イーディスを開いて", "to-edith"],
+    ["karen", "イーディスを開いて", "to-edith"],
+    ["karen", "フライデーを開いて", "to-friday"],
+    ["edith", "カレンを開いて", "to-karen"],
+    ["edith", "フライデーに戻して", "to-friday"],
+    ["karen", "カレン、イーディスを開いて", "to-edith"],
+  ] as const) {
+    it(`${mode} の間：「${text}」でモードを変える`, () => {
+      setAiMode(mode);
+      const r = splitWake(text);
+      assert.equal(r.woke, true);
+      assert.equal(detectModeCommand(r.command), to);
+      setAiMode("friday");
+    });
+  }
 });

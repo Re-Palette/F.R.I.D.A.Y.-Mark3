@@ -14,7 +14,7 @@ const { parseKarenCommand, startsCreation } = await import("../src/lib/karen-int
 const { reduce, INITIAL, busy } = await import("../src/lib/karen-state");
 
 describe("F.R.I.D.A.Y. ⇄ K.A.R.E.N. の切り替え", () => {
-  for (const t of ["K.A.R.E.N.を呼び出して", "カレン、起動", "KARENを呼んで", "クリエイティブモードに切り替えて", "3D制作を始めたい", "カレン"]) {
+  for (const t of ["K.A.R.E.N.を呼び出して", "カレン、起動", "KARENを呼んで", "クリエイティブモードに切り替えて", "3D制作を始めたい", "カレンを開いて"]) {
     it(`「${t}」→ K.A.R.E.N.`, () => assert.equal(detectModeCommand(t), "to-karen"));
   }
   for (const t of ["FRIDAYに戻して", "フライデーに戻って", "通常モードに戻って", "カレン終了", "クリエイティブモードを終了"]) {
@@ -23,8 +23,11 @@ describe("F.R.I.D.A.Y. ⇄ K.A.R.E.N. の切り替え", () => {
   for (const t of ["カレンって何？", "今日の予定は？", "ロケットのホログラムを作って", "フライデー、天気は？", "カレンダーを見せて", "カレントディレクトリ", ""]) {
     it(`「${t}」は切り替えない`, () => assert.equal(detectModeCommand(t), null));
   }
-  it("呼びかけを取り除いたあとの「に戻して」「終了」「を呼んで」も F.R.I.D.A.Y. に戻る", () => {
-    for (const t of ["に戻して", "戻って", "戻りたい", "終了", "を呼んで", "お願い"]) assert.equal(detectModeCommand(t), "to-friday", t);
+  it("呼びかけを取り除いたあとの「に戻して」「終了」も F.R.I.D.A.Y. に戻る", () => {
+    for (const t of ["に戻して", "戻って", "戻りたい", "終了"]) assert.equal(detectModeCommand(t), "to-friday", t);
+  });
+  it("名前だけ（「カレン」）・「お願い」だけでは切り替えない", () => {
+    for (const t of ["カレン", "お願い", "を呼んで"]) assert.equal(detectModeCommand(t), null, t);
   });
   it("「フライデーを呼んで」「FRIDAYお願い」も F.R.I.D.A.Y. に戻る", () => {
     assert.equal(detectModeCommand("フライデーを呼んで"), "to-friday");
@@ -216,7 +219,8 @@ describe("K.A.R.E.N. の間は「フライデー」では起きない", () => {
     setAiMode("karen");
     assert.equal(splitWake("フライデー").woke, false);
     assert.equal(splitWake("フライデー、今日の天気は").woke, false);
-    assert.deepEqual(splitWake("フライデーに戻して"), { woke: true, command: "に戻して" });
+    assert.deepEqual(splitWake("フライデーに戻して"), { woke: true, command: "フライデーに戻して" });
+    assert.equal(detectModeCommand(splitWake("フライデーに戻して").command), "to-friday");
     assert.equal(detectModeCommand(splitWake("フライデー、通常モードに戻って").command), "to-friday");
     assert.deepEqual(splitWake("カレン、球体を作って"), { woke: true, command: "球体を作って" });
     setAiMode("friday");

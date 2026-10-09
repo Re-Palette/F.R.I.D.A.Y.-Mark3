@@ -69,12 +69,17 @@ const FRIDAY = /(f\.?\s*r\.?\s*i\.?\s*d\.?\s*a\.?\s*y\.?|フライデー|ふら�
 export function detectModeCommand(text: string): "to-karen" | "to-friday" | "to-edith" | null {
   const t = text.trim().replace(/[。、！!？?\s]+/g, " ").trim();
   if (!t || t.length > 40) return null;
-  if (/(って|とは|って何|ってなに|について)/.test(t) && !/(呼|起動|切り替|戻)/.test(t)) return null;
+  if (/(って|とは|って何|ってなに|について)/.test(t) && !/(呼|起動|切り替|戻|開)/.test(t)) return null;
+  // 「〇〇を開いて」：名前の AI のモードへ（「カレンを開いて」「イーディスを開いて」「フライデーを開いて」）
+  if (/(開いて|ひらいて|開く|ひらく|開け|オープン|立ち上げ)/.test(t)) {
+    if (EDITH.test(t)) return "to-edith";
+    if (KAREN.test(t)) return "to-karen";
+    if (FRIDAY.test(t)) return "to-friday";
+  }
   // F.R.I.D.A.Y. に戻る
   if (FRIDAY.test(t) && /(戻|もど|切り替|代わ|かわ|交代|に変え)/.test(t)) return "to-friday";
   // 呼びかけ（「フライデー」「カレン」）を取り除いたあとの「に戻して」「終了」（K.A.R.E.N. の間だけ意味がある）
   if (/^(に|へ)?(戻|もど)(して|って|る|ろう|りたい)$/.test(t) || /^(終了|おわり|終わり|おしまい)(して)?$/.test(t)) return "to-friday";
-  if (/^(を|に)?(呼んで|よんで|呼び出して|お願い|おねがい|代わって|かわって|交代)$/.test(t)) return "to-friday";
   if (FRIDAY.test(t) && /(呼|よん|お願い|おねがい)/.test(t)) return "to-friday";
   if (/(通常|ふつう|普通|いつもの)(の)?モード(に|へ)?(戻|もど|切り替)/.test(t)) return "to-friday";
   if (KAREN.test(t) && /(終了|終わ|おわ|閉じ|オフ|停止|おやすみ|ありがとう(、|\s)?(もう)?(いい|大丈夫))/.test(t)) return "to-friday";
@@ -82,11 +87,12 @@ export function detectModeCommand(text: string): "to-karen" | "to-friday" | "to-
   if (EDITH.test(t) && /(終了|終わ|おわ|閉じ|オフ|停止|おやすみ)/.test(t)) return "to-friday";
   if (/(グローバル|インテリジェンス)(情報)?モード(を)?(終了|終わ|やめ|オフ)/.test(t)) return "to-friday";
   // K.A.R.E.N. を呼ぶ
-  if (KAREN.test(t) && /(呼|よ(ん|び)|起動|きどう|出して|だして|開いて|切り替|お願い|おねがい|に代わ|にかわ|交代|頼む|$)/.test(t)) return "to-karen";
+  // 名前だけ（「カレン」）では切り替えない。呼ぶ・起動・切り替えの言葉があるときだけ
+  if (KAREN.test(t) && /(呼|よ(ん|び)|起動|きどう|出して|だして|開いて|切り替|お願い|おねがい|に代わ|にかわ|交代|頼む)/.test(t)) return "to-karen";
   if (/クリエイティブ(モード)?(に|へ)?(切り替|変え|入|して|起動|お願い)/.test(t)) return "to-karen";
   if (/(3d|３d|３Ｄ|3D)(の)?(制作|製作|モデリング|作業)(を)?(始め|はじめ|したい|やりたい|開始)/i.test(t)) return "to-karen";
   // E.D.I.T.H. を呼ぶ
-  if (EDITH.test(t) && /(呼|よ(ん|び)|起動|きどう|出して|だして|開いて|切り替|お願い|おねがい|に代わ|にかわ|交代|頼む|$)/.test(t)) return "to-edith";
+  if (EDITH.test(t) && /(呼|よ(ん|び)|起動|きどう|出して|だして|開いて|切り替|お願い|おねがい|に代わ|にかわ|交代|頼む)/.test(t)) return "to-edith";
   if (/(グローバル|インテリジェンス)(情報)?(モード)?(に|へ)?(切り替|変え|入|起動|お願い)/.test(t)) return "to-edith";
   return null;
 }

@@ -72,32 +72,26 @@ const EDITH_WAKE_RE = new RegExp(
 );
 
 /**
- * 呼びかけを見分ける。いまの AI の名前で呼んだら、名前を取り除いた用件を返す。
- * ほかの AI の名前で呼んだときは、切り替えの指示として名前ごと渡す（「カレン、起動」「イーディス、起動」）。
- * F.R.I.D.A.Y. 以外の AI の間は「フライデー」では起きない（「フライデーに戻して」のような戻る指示だけ受け付ける）。
+ * 呼びかけを見分ける。いまのモードの AI の名前で呼んだときだけ起きて、名前を取り除いた用件を返す。
+ * ほかの AI の名前では起きない。ただし「カレンを開いて」「イーディスを開いて」「フライデーに戻して」のような
+ * 切り替えの指示だけは、名前ごと渡して受け付ける（モードを変えるため）。
  */
 export function splitWake(text: string): { woke: boolean; command: string } {
   const mode = getAiMode();
-  const f = WAKE_RE.exec(text);
-  if (f) {
-    const command = text.slice(f[0].length).trim();
-    if (mode === "friday") return { woke: true, command };
-    return detectModeCommand(command) === "to-friday" ? { woke: true, command } : { woke: false, command: "" };
-  }
-  const k = KAREN_WAKE_RE.exec(text);
-  if (k) return { woke: true, command: mode === "karen" ? text.slice(k[0].length).trim() : text.trim() };
-  const e = EDITH_WAKE_RE.exec(text);
-  if (e) return { woke: true, command: mode === "edith" ? text.slice(e[0].length).trim() : text.trim() };
+  const own = mode === "karen" ? KAREN_WAKE_RE : mode === "edith" ? EDITH_WAKE_RE : WAKE_RE;
+  const m = own.exec(text);
+  if (m) return { woke: true, command: text.slice(m[0].length).trim() };
+  const other = [WAKE_RE, KAREN_WAKE_RE, EDITH_WAKE_RE].some((re) => re !== own && re.test(text));
+  if (other && detectModeCommand(text)) return { woke: true, command: text.trim() };
   return { woke: false, command: "" };
 }
 
 /** 発言の先頭に付いた呼びかけを取り除く（「フライデー、今日の予定は？」→「今日の予定は？」） */
 export function stripWake(text: string): string {
-  const m = WAKE_RE.exec(text);
-  if (m) return text.slice(m[0].length).trim();
   const mode = getAiMode();
-  const k = mode === "karen" ? KAREN_WAKE_RE.exec(text) : mode === "edith" ? EDITH_WAKE_RE.exec(text) : null;
-  return k ? text.slice(k[0].length).trim() : text.trim();
+  const own = mode === "karen" ? KAREN_WAKE_RE : mode === "edith" ? EDITH_WAKE_RE : WAKE_RE;
+  const m = own.exec(text);
+  return m ? text.slice(m[0].length).trim() : text.trim();
 }
 
 /* ---------- 読み上げ用の整形 ---------- */
