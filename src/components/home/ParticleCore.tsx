@@ -117,6 +117,8 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
     // 毎回作ると重い「にじむ光・同心円・細かい粒」と「太陽」は、大きさが変わったときだけ別の canvas に描いておく
     const back = document.createElement("canvas");
     const sun = document.createElement("canvas");
+    // 球の立体感（左上の照り・縁の光・右下の影）。網の上に重ねる
+    const shade = document.createElement("canvas");
     const prerender = (R: number) => {
       const size = Math.ceil(R * 2.3);
       back.width = back.height = size;
@@ -150,6 +152,32 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       grad.addColorStop(1, "rgba(255, 100, 0, 0)");
       g.fillStyle = grad;
       g.fillRect(0, 0, sr * 2, sr * 2);
+
+      // 光は左上から：右下を少し暗く、縁に細い光の輪（ガラスの球のふち）、左上に小さな照り
+      const hs = Math.ceil(R * 1.05);
+      shade.width = shade.height = hs * 2;
+      const d = shade.getContext("2d")!;
+      d.beginPath();
+      d.arc(hs, hs, R, 0, Math.PI * 2);
+      d.clip();
+      const dark = d.createRadialGradient(hs - R * 0.35, hs - R * 0.4, R * 0.2, hs - R * 0.1, hs - R * 0.12, R * 1.25);
+      dark.addColorStop(0, "rgba(0, 0, 0, 0)");
+      dark.addColorStop(0.55, "rgba(0, 0, 0, 0)");
+      dark.addColorStop(1, "rgba(20, 6, 0, 0.42)");
+      d.fillStyle = dark;
+      d.fillRect(0, 0, hs * 2, hs * 2);
+      const rim = d.createRadialGradient(hs, hs, R * 0.82, hs, hs, R);
+      rim.addColorStop(0, "rgba(255, 170, 80, 0)");
+      rim.addColorStop(0.85, "rgba(255, 180, 90, 0.16)");
+      rim.addColorStop(1, "rgba(255, 210, 150, 0.04)");
+      d.fillStyle = rim;
+      d.fillRect(0, 0, hs * 2, hs * 2);
+      const spec = d.createRadialGradient(hs - R * 0.42, hs - R * 0.46, 0, hs - R * 0.42, hs - R * 0.46, R * 0.42);
+      spec.addColorStop(0, "rgba(255, 246, 225, 0.26)");
+      spec.addColorStop(0.4, "rgba(255, 220, 170, 0.08)");
+      spec.addColorStop(1, "rgba(255, 200, 140, 0)");
+      d.fillStyle = spec;
+      d.fillRect(0, 0, hs * 2, hs * 2);
     };
     const fit = () => {
       const dpr = lite || lowRes ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
@@ -302,6 +330,10 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
           ctx.fillRect(sx[i] - hs, sy[i] - hs, k.size, k.size);
         }
       }
+
+      // 球の立体感（照り・縁の光・影）。球と一緒に呼吸する
+      const hz = shade.width * breath;
+      ctx.drawImage(shade, cx - hz / 2, cy - hz / 2, hz, hz);
 
       // 中心の太陽（描いておいた絵を脈に合わせて拡大して貼る。ここだけ光を足し合わせる）
       ctx.globalCompositeOperation = "lighter";

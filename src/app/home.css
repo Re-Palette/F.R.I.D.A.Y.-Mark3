@@ -4071,3 +4071,97 @@ body[data-local-busy] .hactivity__live i,
 body[data-local-busy] .hmode__value i {
   animation-play-state: paused;
 }
+
+/* ==========================================================================
+   立体感：光は左上から当たる、という 1 つの約束でそろえる。
+     上の縁に細いハイライト（光が当たる面）・下の縁に影（光が当たらない面）
+     面は上が明るく下が暗いグラデーション・左上の角にやわらかな照り返し
+   どれも止まった絵（動かさない）なので、描くのは最初の 1 回だけで動きは重くならない。
+   ========================================================================== */
+
+:root {
+  /* 枠の光（外へのにじみ・内側の光）に、上の縁のハイライトと下の縁の影、下に落ちる影を足す */
+  --amber-glow:
+    0 0 10px rgba(255, 110, 10, 0.45),
+    inset 0 0 12px rgba(255, 110, 10, 0.14),
+    inset 0 1px 0 rgba(255, 228, 190, 0.32),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 8px 18px -6px rgba(0, 0, 0, 0.75);
+  /* パネルの面：左上の照り返し＋上から下へ暗くなる */
+  --sheen:
+    radial-gradient(140% 70% at 16% 0%, rgba(255, 214, 160, 0.13), transparent 55%),
+    linear-gradient(180deg, rgba(255, 170, 80, 0.08), rgba(255, 120, 20, 0.02) 45%, rgba(0, 0, 0, 0.32));
+  /* ボタンの面：ふくらんだ形（上半分が明るく、下へ行くほど濃い） */
+  --button-sheen:
+    linear-gradient(180deg, rgba(255, 214, 160, 0.3), rgba(255, 150, 50, 0.12) 48%, rgba(255, 110, 10, 0.06) 52%, rgba(90, 30, 0, 0.3));
+}
+
+/* 四角い枠のパネル（VOICE / NOTIFICATIONS / ACTIVITY など） */
+.hbox,
+.camview,
+.app:not([data-view="home"]) :is(.panel, .settings__section, .doc-card, .msg__panel).hud {
+  background-image: var(--sheen);
+}
+
+.hpop {
+  background-image: var(--sheen);
+  box-shadow: inset 0 1px 0 rgba(255, 228, 190, 0.28), 0 14px 32px -8px rgba(0, 0, 0, 0.85);
+}
+
+/* 上のタブ・CURRENT MODE：押せそうな、ふくらんだボタンに */
+.htab,
+.hmode__value {
+  background-image: var(--button-sheen);
+}
+
+.htab:hover,
+.htab[data-open] {
+  background-image: linear-gradient(180deg, rgba(255, 226, 180, 0.5), rgba(255, 160, 60, 0.3) 48%, rgba(255, 120, 20, 0.22) 52%, rgba(120, 40, 0, 0.35));
+}
+
+.htab:active {
+  /* 押したときは光が内側に沈む */
+  box-shadow: 0 0 8px rgba(255, 110, 10, 0.4), inset 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+/* 自分の発言の吹き出し */
+.app:not([data-view="home"]) .msg--user .msg__bubble.hud {
+  background-image: var(--button-sheen);
+}
+
+/* 左の短いバー：ガラス管の中で光っているように（上半分に照り、下に影） */
+.hbar {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), rgba(255, 120, 20, 0.06));
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 200, 140, 0.08);
+}
+
+.hbar em {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 240, 0.55), rgba(255, 255, 255, 0.08) 45%, rgba(0, 0, 0, 0) 55%, rgba(90, 25, 0, 0.35)),
+    linear-gradient(90deg, #ff5a00, #ffa53a 70%, #ffd28a);
+}
+
+/* コアの周りの三角：左上から光が当たった面と影の面 */
+.rx__tri {
+  fill: url(#rx-tri-grad);
+}
+
+/* 太い輪：管のような光り方（中ほどが明るく、縁が暗い）。働いている間はもっと明るい管に */
+.rx__ring {
+  stroke: url(#rx-ring-grad);
+}
+
+.reactor:not([data-phase="idle"]) .rx__ring,
+.reactor[data-speaking] .rx__ring {
+  stroke: url(#rx-ring-hot);
+}
+
+/* 細い同心円：左上から光が当たったように */
+.rx__thin {
+  stroke: url(#rx-light);
+  stroke-opacity: 0.55;
+}
+
+.rx__thin--hi {
+  stroke-opacity: 1;
+}

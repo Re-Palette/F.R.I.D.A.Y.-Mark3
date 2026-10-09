@@ -75,6 +75,33 @@ export const Reactor = memo(function Reactor({
     >
       {/* 静止：十字の細線・左右へ伸びる線・細い同心円・三角マーカー */}
       <svg className="reactor__layer" viewBox="0 0 600 600" aria-hidden="true">
+        {/* 立体感のためのグラデーション（光は左上から） */}
+        <defs>
+          {/* 太い輪：管のように、中ほどが光って内側・外側の縁が暗い（中心からの距離だけで決まるので、回っても光の位置が崩れない） */}
+          <radialGradient id="rx-ring-grad" gradientUnits="userSpaceOnUse" cx={C} cy={C} r="226">
+            <stop offset="0.966" stopColor="#b84800" />
+            <stop offset="0.979" stopColor="#ffd08a" />
+            <stop offset="0.986" stopColor="#ff9a2e" />
+            <stop offset="1" stopColor="#c85400" />
+          </radialGradient>
+          <radialGradient id="rx-ring-hot" gradientUnits="userSpaceOnUse" cx={C} cy={C} r="226">
+            <stop offset="0.966" stopColor="#d86400" />
+            <stop offset="0.979" stopColor="#fff0cc" />
+            <stop offset="0.986" stopColor="#ffb558" />
+            <stop offset="1" stopColor="#e06a00" />
+          </radialGradient>
+          {/* 細い同心円：左上が明るく、右下へ行くほど暗い */}
+          <linearGradient id="rx-light" gradientUnits="userSpaceOnUse" x1="90" y1="90" x2="510" y2="510">
+            <stop offset="0" stopColor="#ffd9a6" stopOpacity="0.95" />
+            <stop offset="0.5" stopColor="#ff9a3a" stopOpacity="0.5" />
+            <stop offset="1" stopColor="#ff7a10" stopOpacity="0.14" />
+          </linearGradient>
+          <linearGradient id="rx-tri-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#ffe0a8" />
+            <stop offset="0.55" stopColor="#ff9a2e" />
+            <stop offset="1" stopColor="#c45000" />
+          </linearGradient>
+        </defs>
         <path className="rx__hair" d="M300 70V530M70 300H530" />
         <path className="rx__link" d="M8 300H-190M592 300H790" />
         <circle cx={C} cy={C} r="236" className="rx__thin" />
