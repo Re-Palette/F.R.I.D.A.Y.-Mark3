@@ -112,6 +112,8 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
     let w = 0;
     let h = 0;
     let lite = false;
+    /** 1 回描くのに時間がかかる端末では、コマ数ではなく解像度を下げる（動きのなめらかさは落とさない） */
+    let lowRes = false;
     // 毎回作ると重い「にじむ光・同心円・細かい粒」と「太陽」は、大きさが変わったときだけ別の canvas に描いておく
     const back = document.createElement("canvas");
     const sun = document.createElement("canvas");
@@ -150,7 +152,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       g.fillRect(0, 0, sr * 2, sr * 2);
     };
     const fit = () => {
-      const dpr = lite ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
+      const dpr = lite || lowRes ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
       w = canvas.clientWidth;
       h = canvas.clientHeight;
       canvas.width = Math.max(1, Math.round(w * dpr));
@@ -309,10 +311,10 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       ctx.globalAlpha = 1;
     };
 
-    // なめらかに見えるよう、描くのが速い端末では毎フレーム（60fps）描く。1 回描くのに時間がかかる端末は 30fps に。
-    // さらに、画面の更新（requestAnimationFrame）の間隔を 3 秒ごとに測り、
-    //   - 平均 22ms を超えたら（45fps 未満＝画面全体がカクついている）、コアは 30fps にして画面のほかの動きに余裕を回す
-    //   - 2 回続けて平均 45ms を超えたら（20fps 未満）、この端末には重いと判断して軽い描き方にする
+    // なめらかに見えるよう、いつも毎フレーム（画面の更新ごと）描く。コマを飛ばすと動きがカクつくので、重いときは先に解像度を下げる。
+    //   - 1 回描くのに 8ms を超えるようなら、解像度を下げる（コマ数はそのまま）
+    //   - 画面の更新（requestAnimationFrame）の間隔を 3 秒ごとに測り、平均 22ms を超えたら（45fps 未満）画面の飾りの動きを止めて余裕を回す
+    //   - 2 回続けて平均 45ms を超えたら（20fps 未満）、この端末には重いと判断して軽い描き方（30fps）にする
     let gap = 0;
     let drawAvg = 0;
     let prev = 0;
@@ -320,7 +322,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
     let frames = 0;
     let windowStart = 0;
     let strikes = 0;
-    /** 画面全体が重いので、コアを 30fps に抑えている */
+    /** 画面全体が重いと分かって、飾りの動きを止めてもらった */
     let eased = false;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
@@ -339,25 +341,29 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
           strikes = avg > 45 ? strikes + 1 : 0;
           if (avg > 22 && !eased) {
             eased = true;
-            slowRef.current?.(); // 画面の飾りの動きも止めて、全体をなめらかに
+            slowRef.current?.(); // 画面の飾りの動きを止めて、全体をなめらかに
           }
           sum = frames = 0;
           windowStart = now;
           if (strikes >= 2) {
             lite = true;
-            gap = 66;
+            gap = 32;
             fit();
             slowRef.current?.();
           }
         }
       }
-      // ローカル AI（PC の CPU）が答えを作っている間は、コアの描き直しを 1 秒 10 回に減らして CPU を空ける
-      if (now - last < (document.body.dataset.localBusy !== undefined ? 100 : gap)) return;
+      // ローカル AI（PC の CPU）が答えを作っている間は、1 秒 30 回に抑えて CPU を空ける（それ以上減らすとカクついて見える）
+      // 画面の更新の間隔（約 16.7ms）より少し短く比べて、更新 1 回分の誤差でコマを飛ばさないようにする
+      const wait = document.body.dataset.localBusy !== undefined ? 32 : gap;
+      if (wait && now - last < wait - 4) return;
       const t0 = performance.now();
       draw(now);
-      // 1 回描くのにかかった時間（なめらかにならす）。6ms を超えるようなら 30fps に落とす
       drawAvg = drawAvg * 0.95 + (performance.now() - t0) * 0.05;
-      if (!lite) gap = eased || drawAvg > 6 ? 32 : drawAvg < 4 ? 0 : gap;
+      if (!lowRes && !lite && drawAvg > 8) {
+        lowRes = true;
+        fit();
+      }
     };
     if (still) {
       draw(performance.now());
