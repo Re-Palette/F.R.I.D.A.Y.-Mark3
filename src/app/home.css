@@ -2921,11 +2921,11 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
 }
 
 .rx__spin--dash {
-  animation: spin 90s linear infinite reverse;
+  animation: spin 36s linear infinite reverse;
 }
 
 .rx__spin--ring {
-  animation: spin 120s linear infinite;
+  animation: spin 48s linear infinite;
 }
 
 .reactor:not([data-phase="idle"]) .rx__spin--ring {
@@ -3099,8 +3099,8 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   }
 }
 
-/* 描画が追いつかない端末（コアが自動で判断）：大きな輪の回転と飾りの動きを止める */
-.home[data-lite] .rx__spin,
+/* 描画が追いつかない端末（コアが自動で判断）：飾りの動きを止める。
+   大きな輪の回転は、描いた絵を GPU で回すだけで軽いので、いつも回し続ける */
 .home[data-lite] .hvoice__flow--b,
 .home[data-lite] .hactivity__live i,
 .home[data-lite] .hmode__value i {
@@ -3116,11 +3116,7 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   animation-play-state: paused;
 }
 
-/* 待機中は外側の大きな輪を止める（リファレンスどおり静か・軽い）。動いているのは中心のコアだけ。
-   聞く・考える・検索・返事のあいだだけ輪が回り、「いま働いている」ことが分かる */
-.reactor[data-mode="idle"] .rx__spin {
-  animation-play-state: paused;
-}
+/* 周りの輪は待機中もいつもゆっくり回る。聞く・考える・検索・返事のあいだは速く回り、「いま働いている」ことが分かる */
 
 /* ==========================================================================
    HOME 以外の画面（CHAT / PROJECTS / MEMORY / TASKS / CALENDAR / FILES / SETTINGS）も
@@ -4071,7 +4067,6 @@ body[data-local-busy] .bg__data {
 body[data-local-busy] .radar__spinner,
 body[data-local-busy] .radar__blip,
 body[data-local-busy] .hvoice__flow,
-body[data-local-busy] .rx__spin,
 body[data-local-busy] .hactivity__live i,
 body[data-local-busy] .hmode__value i {
   animation-play-state: paused;
