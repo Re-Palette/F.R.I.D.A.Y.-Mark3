@@ -147,6 +147,11 @@ export interface KarenHudProps {
   active: boolean;
   messages: UiMessage[];
   voiceState: VoiceState;
+  /** 声の聞き取りの途中経過（聞こえた言葉・「登録した声ではない」など） */
+  voiceInterim?: string;
+  /** 声の聞き取りのエラー（マイクの許可・サービスに届かないなど） */
+  voiceError?: string | null;
+  onDismissVoiceError?: () => void;
   /** K.A.R.E.N. への指示（声・文字と同じ入り口） */
   onCommand: (text: string) => void;
   /** マイク（いま聞く） */
@@ -157,7 +162,7 @@ export interface KarenHudProps {
   io: KarenIo;
 }
 
-export const KarenHud = memo(function KarenHud({ active, messages, voiceState, onCommand, onMic, onBack, io }: KarenHudProps) {
+export const KarenHud = memo(function KarenHud({ active, messages, voiceState, voiceInterim, voiceError, onDismissVoiceError, onCommand, onMic, onBack, io }: KarenHudProps) {
   const st = useKarenState();
   const scene = useScene();
   const projects = useProjects();
@@ -502,7 +507,18 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, o
 
         {/* 認識した指示・案内・K.A.R.E.N. の返事 */}
         <div className="kline" aria-live="polite">
-          {st.notice ? (
+          {voiceError ? (
+            <span data-tone="error" className="kline__voice-error">
+              {voiceError}
+              {onDismissVoiceError && (
+                <button type="button" onClick={onDismissVoiceError}>
+                  閉じる
+                </button>
+              )}
+            </span>
+          ) : voiceInterim && voiceInterim !== "…" ? (
+            <span data-tone={voiceInterim.startsWith("登録した声") ? "warn" : "info"}>{voiceInterim.replace(/^聞こえた：/, "聞こえた：")}</span>
+          ) : st.notice ? (
             <span data-tone={st.notice.tone}>{st.notice.text}</span>
           ) : st.heard && (st.phase === "UNDERSTANDING" || st.phase === "LISTENING" || st.phase === "TRANSITIONING") ? (
             <span>「{st.heard}」</span>
@@ -588,7 +604,8 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, o
         <button type="button" className="kcmd__mic" data-voice={voiceState} aria-pressed={voiceState !== "off"} title="声で指示する" onClick={onMic}>
           {Icon.mic}
         </button>
-        <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder="K.A.R.E.N.に指示を入力してください…" aria-label="K.A.R.E.N. への指示" />
+        <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder={voiceState === "listening" ? "どうぞ、話してください…（聞いています）" : "K.A.R.E.N.に指示を入力してください…"}
+          data-listening={voiceState === "listening" || undefined} aria-label="K.A.R.E.N. への指示" />
         <button type="submit" className="kcmd__send" title="送信" disabled={!text.trim()}>
           {Icon.send}
         </button>

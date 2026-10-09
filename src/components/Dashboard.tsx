@@ -652,6 +652,9 @@ export function Dashboard() {
           active
           messages={chat.messages}
           voiceState={voice.state}
+          voiceInterim={voice.interim}
+          voiceError={voice.error}
+          onDismissVoiceError={voice.dismissError}
           onCommand={(t) => void send(t)}
           // マイクはいつも「いま聞く」（押して音声がオフになってしまわないように）。読み上げ中なら止めて聞く
           onMic={() => voice.talkNow()}
@@ -876,7 +879,7 @@ export function Dashboard() {
           onStop={stopAll}
           voiceState={voice.state}
           // 聞き取った言葉（字幕）は出さず、「聞いています」「登録した声ではない」などの短い案内だけ出す
-          voiceInterim={/^(聞いています|登録した声)/.test(voice.interim) ? voice.interim : ""}
+          voiceInterim={/^(聞いています|登録した声|聞き取りが止まって)/.test(voice.interim) ? voice.interim : ""}
           onVoiceToggle={voice.toggle}
           screenOn={screen.on}
           onScreenToggle={toggleScreen}

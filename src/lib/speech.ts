@@ -246,7 +246,8 @@ let onDeviceReady = (() => {
  */
 export function shouldRecognizeLocally(): boolean {
   if (!onDeviceReady) return false;
-  return (typeof navigator !== "undefined" && !navigator.onLine) || offlineVoice;
+  // インターネットにつながっている間は、いつものネットの聞き取りを使う（Gemini が使えないだけのときも、聞き取りはネットで動く）
+  return typeof navigator !== "undefined" && !navigator.onLine;
 }
 
 /** 前に SETTINGS で確かめた結果（まだなら null） */

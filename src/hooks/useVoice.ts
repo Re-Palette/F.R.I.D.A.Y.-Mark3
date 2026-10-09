@@ -33,7 +33,7 @@ import {
 import { withReadings } from "@/lib/reading";
 import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
-import { trackSpeech } from "@/lib/voice-level";
+import { trackSpeech, voiceLevel } from "@/lib/voice-level";
 
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
@@ -154,6 +154,8 @@ export function useVoice({
   const runningRef = useRef(false);
   /** 停止を要求して終了通知（onend）待ちの間は true。この間に再開すると状態が食い違うので待つ */
   const abortingRef = useRef(false);
+  /** 聞き取りの結果が最後に届いた時刻（止まっていないかの見張り用） */
+  const lastResultAt = useRef(0);
   const followTimer = useRef(0);
   /** 確定前の聞き取り途中テキスト（確定の合図が来ないブラウザでは、区切りでこれを使う） */
   const pendingRef = useRef("");
@@ -426,6 +428,7 @@ export function useVoice({
     };
 
     rec.onresult = (e) => {
+      lastResultAt.current = Date.now();
       let finalText = "";
       let interimText = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -954,6 +957,42 @@ export function useVoice({
     sp.armedAt = 0;
     afterSpeech();
   }, [afterSpeech]);
+
+  /**
+   * 聞き取りの見張り。Chrome の音声認識は、マイクの音は届いているのに結果を返さなくなることがある。
+   * マイクに声が入っている（音量が上がっている）のに、しばらく結果が 1 つも届かなければ、聞き取りをやり直す。
+   */
+  useEffect(() => {
+    let loud = 0;
+    let lastRestart = 0;
+    const t = window.setInterval(() => {
+      const s = stateRef.current;
+      if ((s !== "listening" && s !== "standby") || !runningRef.current || !voiceLevel.live || voiceLevel.talking) {
+        loud = 0;
+        return;
+      }
+      loud = voiceLevel.value > 0.35 ? loud + 1 : Math.max(0, loud - 0.5);
+      const now = Date.now();
+      // 声らしい音が合わせて 3 秒以上あったのに、8 秒間 結果が無い
+      if (loud >= 6 && now - lastResultAt.current > 8000 && now - lastRestart > 15000) {
+        lastRestart = now;
+        loud = 0;
+        lastResultAt.current = now;
+        setInterim("聞き取りが止まっていたので、やり直しました。もう一度話してください。");
+        window.setTimeout(() => setInterim((v) => (v.startsWith("聞き取りが止まって") ? "" : v)), 4000);
+        const rec = recRef.current;
+        if (rec) {
+          abortingRef.current = true;
+          try {
+            rec.abort(); // 終わったら onend が自動でやり直す
+          } catch {
+            abortingRef.current = false;
+          }
+        }
+      }
+    }, 500);
+    return () => window.clearInterval(t);
+  }, []);
 
   // 前回 VOICE MODE をオンにしていたら再開する。
   // パソコン（呼びかけで起動する画面）は、開いた時点で聞き始める（裏で開いておいたタブでも「フライデー」と呼べるように）。

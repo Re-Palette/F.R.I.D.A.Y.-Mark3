@@ -992,6 +992,26 @@
   border: 1px solid rgba(255, 90, 120, 0.6);
 }
 
+.kline__listen {
+  color: var(--k-cyan);
+  border: 1px solid rgba(46, 200, 255, 0.45);
+}
+
+.kline .kline__voice-error {
+  pointer-events: auto;
+}
+
+.kline__voice-error button {
+  margin-left: 10px;
+  padding: 1px 8px;
+  border: 1px solid rgba(255, 140, 160, 0.6);
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .kline__reply {
   color: var(--k-dim);
 }
@@ -1314,6 +1334,10 @@
 
 .kcmd input::placeholder {
   color: rgba(150, 205, 255, 0.5);
+}
+
+.kcmd input[data-listening]::placeholder {
+  color: var(--k-cyan);
 }
 
 .kfoot {
