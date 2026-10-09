@@ -489,17 +489,15 @@ export function Dashboard() {
     liveContext,
     onLiveTool,
     onWoke: (why) => {
-      // 裏にいたのに前に出たときは、何で起動したかを知らせる（何もしていないのに開いたときに、原因が分かるように）
-      if (typeof document !== "undefined" && (document.hidden || !document.hasFocus())) {
+      // 声の呼びかけで裏から前に出たときだけ、何と聞こえたかを知らせる（呼んでいないのに起動したときに原因が分かるように）。
+      // 拍手 2 回は自分で起動したと分かるので、知らせない
+      if (why.kind === "voice" && typeof document !== "undefined" && (document.hidden || !document.hasFocus())) {
         setReminder({
           id: `woke-${Date.now()}`,
           at: Date.now(),
           label: "",
           title: "WAKE",
-          text:
-            why.kind === "clap"
-              ? "拍手 2 回を聞き取ったので起動しました。物音で間違って起動するときは、SETTINGS → VOICE で拍手での起動をオフにしてください。"
-              : `「${why.text.slice(0, 40)}」と聞こえたので起動しました。話しかけていないのに起動したときは、この画面を教えてください。`,
+          text: `「${why.text.slice(0, 40)}」と聞こえたので起動しました。話しかけていないのに起動したときは、この画面を教えてください。`,
         });
       }
       return bringToFront();
