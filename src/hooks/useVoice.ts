@@ -33,7 +33,7 @@ import {
 import { withReadings } from "@/lib/reading";
 import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
-import { trackSpeech, voiceLevel } from "@/lib/voice-level";
+import { disableRawClapMic, trackSpeech, voiceLevel } from "@/lib/voice-level";
 
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
@@ -147,6 +147,12 @@ export function useVoice({
   const netErrorAt = useRef(0);
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** 聞き取りの様子（結果が返らないときに、どこで止まっているかを画面に出す） */
+  const [diag, setDiag] = useState("");
+  /** 聞き取りを始めた時刻と、マイクの音を受け取り始めたか（onaudiostart） */
+  const recStartedAt = useRef(0);
+  const audioStarted = useRef(false);
+  const noAudioCount = useRef(0);
   const [supported, setSupported] = useState(true);
 
   const stateRef = useRef<VoiceState>("off");
@@ -257,6 +263,8 @@ export function useVoice({
     try {
       rec.start();
       runningRef.current = true;
+      recStartedAt.current = Date.now();
+      audioStarted.current = false;
     } catch {
       /* 既に開始済みなど */
     }
@@ -427,6 +435,12 @@ export function useVoice({
       }, waitMs);
     };
 
+    // マイクの音を受け取り始めた（Chrome の音声認識が出す合図。来なければマイクを使えていない）
+    (rec as unknown as { onaudiostart: (() => void) | null }).onaudiostart = () => {
+      audioStarted.current = true;
+      noAudioCount.current = 0;
+      setDiag((d) => (d.startsWith("聞き取り") ? "" : d));
+    };
     rec.onresult = (e) => {
       lastResultAt.current = Date.now();
       let finalText = "";
@@ -971,15 +985,43 @@ export function useVoice({
         loud = 0;
         return;
       }
-      loud = voiceLevel.value > 0.35 ? loud + 1 : Math.max(0, loud - 0.5);
       const now = Date.now();
-      // 声らしい音が合わせて 3 秒以上あったのに、8 秒間 結果が無い
-      if (loud >= 6 && now - lastResultAt.current > 8000 && now - lastRestart > 15000) {
+      // 聞き取りを始めて 4 秒たっても、マイクの音を受け取った合図が来ない（ほかの機能とマイクを取り合っている）
+      // Chrome / Edge の音声認識は必ずこの合図を出すので、そこでだけ見張る（ほかのブラウザで聞き取りをやり直し続けないように）
+      const chromium = /Chrome\/|Edg\//.test(navigator.userAgent);
+      const real = chromium && !(recRef.current instanceof RecordedRecognition);
+      if (real && !audioStarted.current && recStartedAt.current && now - recStartedAt.current > 4000 && now - lastRestart > 8000) {
+        lastRestart = now;
+        noAudioCount.current++;
+        // 拍手用に開いているもう 1 本のマイクが邪魔をしている可能性があるので、閉じてからやり直す
+        const closed = disableRawClapMic();
+        setDiag(
+          noAudioCount.current >= 2
+            ? "聞き取りがマイクの音を受け取れていません。ほかのアプリ・タブがマイクを使っていないか確かめ、画面を再読み込みしてください。"
+            : `聞き取りがマイクの音を受け取れていないので、やり直しています${closed ? "（拍手用のマイクを閉じました）" : ""}…`,
+        );
+        const rec = recRef.current;
+        if (rec) {
+          abortingRef.current = true;
+          try {
+            rec.abort();
+          } catch {
+            abortingRef.current = false;
+          }
+        }
+        return;
+      }
+      loud = voiceLevel.value > 0.2 ? loud + 1 : Math.max(0, loud - 0.5);
+      // 声らしい音が合わせて 3 秒以上あったのに、8 秒間 結果が無い（聞き取りを始めてからの 8 秒も数える）
+      const quietSince = Math.max(lastResultAt.current, recStartedAt.current);
+      if (loud >= 6 && now - quietSince > 8000 && now - lastRestart > 15000) {
         lastRestart = now;
         loud = 0;
         lastResultAt.current = now;
-        setInterim("聞き取りが止まっていたので、やり直しました。もう一度話してください。");
-        window.setTimeout(() => setInterim((v) => (v.startsWith("聞き取りが止まって") ? "" : v)), 4000);
+        // 拍手用に開いているもう 1 本のマイクが邪魔をしている可能性があるので、閉じてからやり直す
+        const closed = disableRawClapMic();
+        setDiag(`声は届いていますが、聞き取りの結果が返ってこないので、やり直しました${closed ? "（拍手用のマイクを閉じました）" : ""}。もう一度話してください。`);
+        window.setTimeout(() => setDiag((v) => (v.startsWith("声は届いて") ? "" : v)), 6000);
         const rec = recRef.current;
         if (rec) {
           abortingRef.current = true;
@@ -1058,6 +1100,7 @@ export function useVoice({
     state,
     wanted,
     interim,
+    diag,
     error,
     supported,
     toggle,

@@ -4165,3 +4165,28 @@ body[data-local-busy] .hmode__value i {
 .rx__thin--hi {
   stroke-opacity: 1;
 }
+
+
+/* 文字起こし（聞こえた言葉・聞き取りの様子）。入力欄のすぐ上に 1〜2 行 */
+.vcap {
+  align-self: center;
+  max-width: min(92%, 820px);
+  margin: 0 auto 6px;
+  padding: 4px 14px;
+  border: 1px solid var(--amber-line);
+  border-radius: 4px;
+  background: rgba(10, 6, 3, 0.82);
+  color: var(--warm);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.vcap[data-diag] {
+  border-color: rgba(255, 140, 140, 0.6);
+  color: #ffd2c4;
+}

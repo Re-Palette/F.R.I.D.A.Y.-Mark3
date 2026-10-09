@@ -190,8 +190,37 @@ let rawStream: MediaStream | null = null;
 let rawSource: MediaStreamAudioSourceNode | null = null;
 let rawOpening: Promise<void> | null = null;
 
+/** 加工しないマイクを使うか（声の聞き取りとぶつかると分かったら、この端末では使わない） */
+const RAW_KEY = "friday.clap.raw";
+function rawAllowed(): boolean {
+  try {
+    return localStorage.getItem(RAW_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * 拍手用の加工しないマイクを使うのをやめる（声の聞き取りがマイクの音を受け取れなくなったときの対策）。
+ * 拍手は、声のためのマイクで聞き続ける。やめたら true（もともと使っていなければ false）
+ */
+export function disableRawClapMic(): boolean {
+  const had = Boolean(rawSource || rawOpening) || rawAllowed();
+  try {
+    localStorage.setItem(RAW_KEY, "off");
+  } catch {
+    /* noop */
+  }
+  if (rawSource) {
+    detachClap();
+    closeRawMic();
+    attachClap();
+  }
+  return had;
+}
+
 function openRawMic() {
-  if (rawSource || rawOpening || !clapHandler || !stream || !ctx) return;
+  if (rawSource || rawOpening || !clapHandler || !stream || !ctx || !rawAllowed()) return;
   const deviceId = stream.getAudioTracks()[0]?.getSettings().deviceId;
   rawOpening = (async () => {
     try {

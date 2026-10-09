@@ -652,7 +652,7 @@ export function Dashboard() {
           active
           messages={chat.messages}
           voiceState={voice.state}
-          voiceInterim={voice.interim}
+          voiceInterim={voice.diag || voice.interim}
           voiceError={voice.error}
           onDismissVoiceError={voice.dismissError}
           onCommand={(t) => void send(t)}
@@ -868,6 +868,13 @@ export function Dashboard() {
               閉じる
             </button>
           </div>
+        )}
+
+        {/* 文字起こし：聞こえた言葉と、聞き取りの様子（結果が返らないときにどこで止まっているか） */}
+        {voice.state !== "off" && (voice.diag || (voice.interim && voice.interim !== "…")) && (
+          <p className="vcap" aria-live="polite" data-diag={voice.diag ? "" : undefined}>
+            {voice.diag || voice.interim}
+          </p>
         )}
 
         <Composer
