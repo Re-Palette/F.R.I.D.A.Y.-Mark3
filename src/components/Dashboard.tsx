@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { CALENDAR_CHANGED, STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
-import { useVoice } from "@/hooks/useVoice";
+import { useVoice, type LiveTurn } from "@/hooks/useVoice";
 import { useBargeIn } from "@/hooks/useBargeIn";
 import { useClapWake } from "@/hooks/useClapWake";
 import { withReadings } from "@/lib/reading";
@@ -41,7 +41,9 @@ import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 import { asksAboutScreen, captureScreen, getScreenState, toggleScreen, useScreenState } from "@/lib/screen";
 import { refreshCalendarCache } from "@/lib/calendar-cache";
 import { detectModeCommand, getAiMode, setAiMode, useAiMode } from "@/lib/ai-mode";
-import { autoSwitchToRecorded, useVoiceInput } from "@/lib/voice-input";
+import { autoSwitchToRecorded, useLiveVoice, useVoiceInput } from "@/lib/voice-input";
+import { calendarForChat } from "@/lib/calendar-cache";
+import { stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { dispatchKaren } from "@/lib/karen-state";
 import { KarenHud } from "./karen/KarenHud";
@@ -391,6 +393,30 @@ export function Dashboard() {
   }, [ownerOnly, phone]);
   // 声の聞き取りの方式（Chrome の音声認識／録音してサーバーで文字にする）
   const voiceInput = useVoiceInput();
+  // リアルタイム音声会話（声のまま直接やりとりして、すぐ返事をする）。パソコンの F.R.I.D.A.Y. で、オンラインのとき
+  const liveSetting = useLiveVoice();
+  const { upsertLive } = chat;
+  const onLiveTurn = useCallback(
+    (turn: LiveTurn) => {
+      upsertLive(turn);
+      // 「カレン、起動」などの切り替えは、これまでどおり画面で処理する
+      if (turn.role === "user" && turn.done && detectModeCommand(stripWake(turn.text))) {
+        voiceRef.current?.endLive();
+        send(turn.text, { voice: true });
+      }
+    },
+    [upsertLive, send],
+  );
+  const liveContext = useCallback(
+    () => ({
+      recent: chat.messages
+        .filter((m) => (m.status === "done" || m.status === "stopped") && m.content.trim())
+        .slice(-8)
+        .map((m) => ({ role: m.role, content: m.content })),
+      calendar: calendarForChat(),
+    }),
+    [chat.messages],
+  );
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
@@ -415,6 +441,9 @@ export function Dashboard() {
       });
     },
     verifyVoice: ownerOnly ? verifyVoice : undefined,
+    live: liveSetting && !phone && !offlineAi && aiMode === "friday",
+    onLiveTurn,
+    liveContext,
     onWoke: () => bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;

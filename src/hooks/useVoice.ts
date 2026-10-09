@@ -33,6 +33,8 @@ import {
 import { withReadings } from "@/lib/reading";
 import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
+import { detectModeCommand } from "@/lib/ai-mode";
+import { LiveSession, type LiveStartOptions } from "@/lib/live-voice";
 import { trackSpeech, voiceLevel } from "@/lib/voice-level";
 
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
@@ -85,6 +87,18 @@ const ECHO_THRESHOLD_SPEAKING = 0.3;
 /** 読み終えてしばらく後は、ほぼ同じ文章のときだけ自分の声とみなす（ユーザーの返事を消さないため） */
 const ECHO_THRESHOLD_LATE = 0.75;
 /** 自分の声でも必ず割り込みとして扱う言葉 */
+/** リアルタイム会話につながらなかったら、これだけの間はこれまでの方式で答える */
+const LIVE_RETRY_MS = 60_000;
+
+export interface LiveTurn {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  done: boolean;
+  /** 割り込まれて途中で止まった返事 */
+  stopped?: boolean;
+}
+
 const STOP_WORDS = /ストップ|止めて|とめて|待って|まって|フライデー|ふらいでー|friday/i;
 
 export function useVoice({
@@ -99,6 +113,9 @@ export function useVoice({
   onWoke,
   verifyVoice,
   onStall,
+  live = false,
+  onLiveTurn,
+  liveContext,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -127,6 +144,15 @@ export function useVoice({
    * 呼び出し側は、録音してサーバーで文字にする方式に切り替えられる
    */
   onStall?: () => void;
+  /**
+   * リアルタイム音声会話（Gemini Live）を使う。呼びかけ・マイクボタンのあとは声のまま直接やりとりし、すぐ返事をする。
+   * つながらないときは、これまでの方式（文字にする → 返答 → 読み上げ）で答える。
+   */
+  live?: boolean;
+  /** リアルタイム会話の発言・返事（画面の会話ログに出す。同じ id は書き換え） */
+  onLiveTurn?: (turn: LiveTurn) => void;
+  /** リアルタイム会話を始めるときに渡す材料（直近の会話・予定の控え） */
+  liveContext?: () => Omit<LiveStartOptions, "firstText">;
 }) {
   const wakeWordOn = useRef(wakeWord);
   /** 開いた時点で自分から聞き始めたところ（ブラウザに止められたら、黙って最初の操作を待つ） */
@@ -179,6 +205,18 @@ export function useVoice({
   onAudioRef.current = onAudio;
   const onWokeRef = useRef(onWoke);
   onWokeRef.current = onWoke;
+  const liveOn = useRef(live);
+  liveOn.current = live;
+  const onLiveTurnRef = useRef(onLiveTurn);
+  onLiveTurnRef.current = onLiveTurn;
+  const liveContextRef = useRef(liveContext);
+  liveContextRef.current = liveContext;
+  /** いまのリアルタイム会話（無ければ null）。この間はこれまでの聞き取りを止める */
+  const liveRef = useRef<LiveSession | null>(null);
+  /** リアルタイム会話につながらなかった時刻（しばらくはこれまでの方式で答える） */
+  const liveFailedAt = useRef(0);
+  /** リアルタイム会話を始める（始めたら true。使えなければ false で、呼び出し側はこれまでの方式で続ける） */
+  const startLiveRef = useRef<(firstText?: string) => boolean>(() => false);
   const onStallRef = useRef(onStall);
   onStallRef.current = onStall;
   const onBargeInRef = useRef(onBargeIn);
@@ -263,7 +301,8 @@ export function useVoice({
   const startRec = useCallback(() => {
     const rec = recRef.current;
     // 停止処理の途中なら、終了通知（onend）のあとで自動的に再開される
-    if (!rec || runningRef.current || abortingRef.current) return;
+    // リアルタイム会話の間は、そちらがマイクの声を聞く
+    if (!rec || runningRef.current || abortingRef.current || liveRef.current) return;
     // ネットが切れているときは、対応している Chrome なら PC の中だけで聞き取る（日本語の音声データが入っている場合）
     if ("processLocally" in rec) (rec as { processLocally?: boolean }).processLocally = shouldRecognizeLocally();
     try {
@@ -417,6 +456,8 @@ export function useVoice({
     const woken = (command: string) => {
         onWokeRef.current?.();
         if (command.length >= 2) {
+          // 呼びかけと一緒に話した用件は、リアルタイム会話の最初の一言として渡す
+          if (startLiveRef.current(command)) return;
           set("listening"); // 呼びかけに続けて話した内容。続きがあるかもしれないので少し待つ
           keepListening();
           // 録音の聞き取りは 1 発言をまとめて文字にしてくるので、待たずにすぐ送る
@@ -870,8 +911,77 @@ export function useVoice({
   acknowledgeRef.current = () => {
     cancelSpeech();
     chime("wake");
+    if (startLiveRef.current()) return;
     listenFor(FOLLOW_UP_MS);
   };
+
+  startLiveRef.current = (firstText?: string) => {
+    if (!liveOn.current || liveRef.current) return false;
+    if (Date.now() - liveFailedAt.current < LIVE_RETRY_MS || (typeof navigator !== "undefined" && !navigator.onLine) || typeof WebSocket === "undefined") return false;
+    // 「カレン、起動」などの切り替えの言葉は、これまでどおり画面で見分ける
+    if (firstText && detectModeCommand(firstText)) return false;
+    clearTimeout(followTimer.current);
+    stopRec();
+    cancelSpeech();
+    setDiag("");
+    setInterim(firstText ?? "つないでいます…");
+    set(firstText ? "thinking" : "listening");
+    let userId = "";
+    let modelId = "";
+    const session = new LiveSession({
+      onStatus: (st) => {
+        if (liveRef.current !== session) return;
+        if (st === "speaking") set("speaking");
+        else if (st === "listening") {
+          set("listening");
+          setInterim((t) => (t === "つないでいます…" ? "どうぞ" : t));
+        }
+      },
+      onUserText: (text, done) => {
+        if (liveRef.current !== session) return;
+        userId ||= `live-u-${Date.now()}`;
+        setInterim(text);
+        onLiveTurnRef.current?.({ id: userId, role: "user", text, done });
+        if (done) userId = "";
+      },
+      onModelText: (text, done, stopped) => {
+        if (liveRef.current !== session) return;
+        modelId ||= `live-a-${Date.now()}`;
+        onLiveTurnRef.current?.({ id: modelId, role: "assistant", text, done, stopped });
+        if (done) {
+          modelId = "";
+          setInterim("");
+        }
+      },
+      onEnd: (reason) => {
+        if (liveRef.current !== session) return;
+        liveRef.current = null;
+        if (reason === "error") liveFailedAt.current = Date.now();
+        setInterim("");
+        if (stateRef.current !== "off") toStandby();
+      },
+    });
+    liveRef.current = session;
+    session.start({ ...(liveContextRef.current?.() ?? {}), firstText }).catch(() => {
+      if (liveRef.current !== session) return;
+      liveRef.current = null;
+      liveFailedAt.current = Date.now();
+      setDiag("リアルタイム会話につながらないので、これまでの方式で答えます。");
+      window.setTimeout(() => setDiag((v) => (v.startsWith("リアルタイム会話") ? "" : v)), 6000);
+      if (stateRef.current === "off") return;
+      if (firstText) {
+        speech.current.armedAt = Date.now();
+        set("thinking");
+        onCommandRef.current(firstText);
+      } else listenFor(FOLLOW_UP_MS);
+    });
+    return true;
+  };
+
+  /** リアルタイム会話を閉じる（呼びかけを待つ状態に戻る） */
+  const endLive = useCallback(() => {
+    liveRef.current?.stop("closed");
+  }, []);
 
   /* ---------- 操作 ---------- */
 
@@ -893,6 +1003,9 @@ export function useVoice({
 
   const disable = useCallback(() => {
     clearTimeout(followTimer.current);
+    const session = liveRef.current;
+    liveRef.current = null;
+    session?.stop("closed");
     cancelSpeech();
     set("off");
     stopRec();
@@ -915,8 +1028,10 @@ export function useVoice({
     }
     setError(null);
     unlockAudio();
+    if (liveRef.current) return; // リアルタイム会話の最中はそのまま話せる
     cancelSpeech();
     chime("wake");
+    if (startLiveRef.current()) return;
     listenFor(FOLLOW_UP_MS);
   }, [cancelSpeech, listenFor]);
 
@@ -952,6 +1067,9 @@ export function useVoice({
     setError(null);
     unlockAudio();
     if (stateRef.current === "off") enable();
+    const session = liveRef.current;
+    liveRef.current = null;
+    session?.stop("closed");
     cancelSpeech();
     chime("boot");
     const sp = speech.current;
@@ -1099,6 +1217,9 @@ export function useVoice({
       clearTimeout(restartTimer.current);
       clearTimeout(speech.current.guard);
       clearTimeout(rejectTimer.current);
+      const session = liveRef.current;
+      liveRef.current = null;
+      session?.stop("closed");
     },
     [],
   );
@@ -1126,6 +1247,7 @@ export function useVoice({
     cancelSpeech,
     replyFinished,
     noteSpoken,
+    endLive,
     dismissError: () => setError(null),
   };
 }

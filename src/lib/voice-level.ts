@@ -49,6 +49,8 @@ const routed = new WeakSet<HTMLMediaElement>();
 /** いま鳴っている読み上げ（音声モード以外のお知らせも含む） */
 let speechCount = 0;
 let speechEl: HTMLMediaElement | null = null;
+/** リアルタイム会話の声（Web Audio で鳴らしている間 true） */
+let speechNodeOn = false;
 
 /* ---------- 声の中身（大きさだけでなく、高さ・抑揚・音節の立ち上がり）。音そのものは保存も送信もしない ---------- */
 let freq = new Uint8Array(256);
@@ -278,6 +280,39 @@ export function trackSpeech(el: HTMLMediaElement | null): () => void {
   };
 }
 
+/**
+ * リアルタイム会話の声（Web Audio の音）でコアを動かす。node の音を測るだけ（スピーカーへは呼び出し側がつなぐ）。
+ * 鳴らし終えたら返り値を呼ぶ。
+ */
+export function trackSpeechNode(node: AudioNode): () => void {
+  speechCount++;
+  ensureLoop();
+  try {
+    if (!speechAnalyser || speechAnalyser.context !== node.context) {
+      speechAnalyser = node.context.createAnalyser();
+      speechAnalyser.fftSize = 512;
+      speechAnalyser.maxDecibels = -15;
+      speechBuf = new Float32Array(speechAnalyser.fftSize);
+    }
+    node.connect(speechAnalyser);
+    speechNodeOn = true;
+  } catch {
+    /* 測れなければ話し声らしい揺れで代わりにする */
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    speechCount = Math.max(0, speechCount - 1);
+    speechNodeOn = false;
+    try {
+      if (speechAnalyser) node.disconnect(speechAnalyser);
+    } catch {
+      /* noop */
+    }
+  };
+}
+
 function loop(now: number) {
   // マイクも読み上げも使っていなくて、揺れが収まったら止める（軽くするため）
   if (!wanted && !speechCount && !voiceLevel.speaking && voiceLevel.value < 0.005) {
@@ -303,7 +338,7 @@ function loop(now: number) {
     target = Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-8) + 55) / 40));
     if (target > 0.08) shape = shapeOf(analyser);
   }
-  if (speechCount > 0 && speechEl && speechAnalyser && !speechEl.paused && !document.hidden) {
+  if (speechCount > 0 && ((speechEl && !speechEl.paused) || speechNodeOn) && speechAnalyser && !document.hidden) {
     // 読み上げの実際の声の大きさ
     speechAnalyser.getFloatTimeDomainData(speechBuf);
     let sum = 0;

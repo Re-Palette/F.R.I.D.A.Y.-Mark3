@@ -72,3 +72,39 @@ export function useVoiceInput(): { mode: VoiceInputMode; autoRecorded: boolean; 
   );
   return { ...s, recorded: usesRecorded(s) };
 }
+
+/* ---------- リアルタイム音声会話（Gemini Live）を使うか（この端末だけの設定。はじめはオン） ---------- */
+const LIVE_KEY = "friday.voice.live.v1";
+const liveListeners = new Set<() => void>();
+let liveCache: boolean | null = null;
+
+function readLive(): boolean {
+  if (liveCache !== null) return liveCache;
+  try {
+    liveCache = localStorage.getItem(LIVE_KEY) !== "off";
+  } catch {
+    liveCache = true;
+  }
+  return liveCache;
+}
+
+export function setLiveVoice(on: boolean): void {
+  liveCache = on;
+  try {
+    localStorage.setItem(LIVE_KEY, on ? "on" : "off");
+  } catch {
+    /* noop */
+  }
+  liveListeners.forEach((l) => l());
+}
+
+export function useLiveVoice(): boolean {
+  return useSyncExternalStore(
+    (fn) => {
+      liveListeners.add(fn);
+      return () => liveListeners.delete(fn);
+    },
+    readLive,
+    () => true,
+  );
+}

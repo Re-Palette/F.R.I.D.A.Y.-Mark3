@@ -17,7 +17,7 @@ import { DEFAULT_PREFS as DEFAULT_LOCAL_PREFS, describeLocalAiError, diagnoseLoc
 import { installOnDeviceSpeech, lastOnDeviceStatus, onDeviceSpeechStatus, type OnDeviceSpeech } from "@/lib/speech";
 import { recordVoice } from "@/lib/voice-record";
 import { cosine, embedVoice, loadVoiceprintModel, normalize, saveVoiceprint, STRICTNESS, type Strictness, type Voiceprint } from "@/lib/voiceprint";
-import { setVoiceInputMode, useVoiceInput, type VoiceInputMode } from "@/lib/voice-input";
+import { setLiveVoice, setVoiceInputMode, useLiveVoice, useVoiceInput, type VoiceInputMode } from "@/lib/voice-input";
 import { HudFrame } from "./HudFrame";
 import { Icon } from "./icons";
 
@@ -1077,6 +1077,7 @@ export const SettingsView = memo(function SettingsView({
 /** 声の聞き取りの方式（Chrome の音声認識／録音してサーバーで文字にする） */
 function VoiceInputControls({ onMessage }: { onMessage: (text: string) => void }) {
   const input = useVoiceInput();
+  const live = useLiveVoice();
   return (
     <>
       <span className="settings__label">声の聞き取り方式 — この端末だけの設定</span>
@@ -1102,6 +1103,27 @@ function VoiceInputControls({ onMessage }: { onMessage: (text: string) => void }
         {input.recorded ? "いまは「録音して文字にする」方式で聞いています。" : "いまは Chrome の聞き取りで聞いています。"}
         マイクの音量は動くのに声に反応しないときは「録音して文字にする」を選んでください（Chrome の聞き取りは Windows の「既定の録音デバイス」を使うため、
         Chrome で選んだマイクと違うと声が届きません）。録音方式は、話した 1 発言ごとの音声を文字にするためだけにサーバーへ送ります（保存はしません）。
+      </p>
+      <span className="settings__label">リアルタイム会話（高速） — この端末だけの設定</span>
+      <Choice
+        value={live ? "on" : "off"}
+        options={[
+          { value: "on", label: "オン" },
+          { value: "off", label: "オフ" },
+        ]}
+        onChange={(v) => {
+          setLiveVoice(v === "on");
+          onMessage(
+            v === "on"
+              ? "リアルタイム会話をオンにしました。「フライデー」と呼ぶかマイクのボタンを押すと、声のまま直接やりとりして、すぐ返事をします。"
+              : "リアルタイム会話をオフにしました（文字にしてから答え、ElevenLabs の声で読み上げます）。",
+          );
+        }}
+      />
+      <p className="settings__note">
+        オンのとき、「フライデー」と呼んだあとの会話は Gemini のリアルタイム音声でやりとりします（返事が約 1 秒と速くなります。声は Gemini の声になります）。
+        話しかけないまま 20 秒たつと会話を閉じ、また呼びかけを待ちます。予定・天気・ToDo は会話の始めに渡すので答えられますが、メールの下書き・予定の追加などの操作は入力欄で頼んでください。
+        声は Google と直接やりとりし、保存はしません。つながらないときは、これまでの方式で答えます。
       </p>
     </>
   );

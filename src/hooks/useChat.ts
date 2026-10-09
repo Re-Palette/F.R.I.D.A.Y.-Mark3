@@ -793,5 +793,23 @@ export function useChat() {
     sync.markCleared();
   }, [sync, update]);
 
-  return { messages, phase, stage, lastRun, lastErrorCode, send, retry, stop, clear };
+  /** リアルタイム音声会話の発言・返事を会話ログに足す（同じ id は書き換え）。読み上げはしない（声はもう流れている） */
+  const upsertLive = useCallback(
+    (turn: { id: string; role: "user" | "assistant"; text: string; done: boolean; stopped?: boolean }) =>
+      update((prev) => {
+        const i = prev.findIndex((m) => m.id === turn.id);
+        const msg: UiMessage = {
+          id: turn.id,
+          role: turn.role,
+          content: turn.text,
+          createdAt: i >= 0 ? prev[i].createdAt : Date.now(),
+          status: !turn.done ? "streaming" : turn.stopped ? "stopped" : "done",
+          ...(turn.role === "assistant" ? { meta: { model: "LIVE" } } : {}),
+        };
+        return i >= 0 ? prev.map((m, j) => (j === i ? msg : m)) : [...prev, msg];
+      }),
+    [update],
+  );
+
+  return { messages, phase, stage, lastRun, lastErrorCode, send, retry, stop, clear, upsertLive };
 }

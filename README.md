@@ -25,6 +25,8 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `GEMINI_API_KEY` | ✅ | — | Gemini API キー。サーバー側でのみ使用し、ブラウザには渡しません |
 | `GEMINI_MODEL` | | `gemini-flash-latest` | 会話モデル。常に最新 Flash を指すエイリアスが既定。固定したい場合は `gemini-3.8-flash` などを指定 |
 | `GEMINI_THINKING_LEVEL` | | `low` | `low` / `medium` / `high` / `off`。体感速度優先で `low`。モデルが非対応なら自動で外して再試行 |
+| `GEMINI_LIVE_MODEL` | | （自動） | リアルタイム音声会話のモデル。未設定なら Google のモデル一覧から Live 用（native audio / live）の最新を自動で選ぶ |
+| `GEMINI_LIVE_VOICE` | | （モデルの既定） | リアルタイム音声会話の声（例: `Kore`）。未設定ならモデルの既定の声 |
 | `GEMINI_TEMPERATURE` | | `0.8` | |
 | `GEMINI_MAX_OUTPUT_TOKENS` | | `2048` | |
 | `CHAT_CONTEXT_MAX_MESSAGES` | | `24` | Gemini に渡す直近の会話の最大件数 |
