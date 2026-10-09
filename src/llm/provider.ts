@@ -11,7 +11,7 @@
  * Tool（予定・ToDo・記憶・文書など）は、返答の中の隠しタグを Core が読み取って実行するので、どのモデルでも同じ。
  */
 
-export type AIProviderId = "gemini" | "lmstudio";
+export type AIProviderId = "gemini" | "lmstudio" | "ollama";
 
 export interface AIMessage {
   role: "user" | "assistant";

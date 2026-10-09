@@ -20,8 +20,9 @@ import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
 import { useSessionSync } from "./useSessionSync";
-import { currentRoute, markGeminiFailed, probeRoute } from "@/lib/ai-router";
-import { runLocalConversation } from "@/lib/offline-core";
+import { currentRoute, localReadyForQuickChat, markGeminiFailed, markLocalFailed, probeRoute } from "@/lib/ai-router";
+import { runLocalConversation, runQuickChat } from "@/lib/offline-core";
+import { isQuickChat } from "@/lib/quick-chat";
 import { shouldFallback } from "@/llm/provider";
 
 export interface UiError {
@@ -539,7 +540,37 @@ export function useChat() {
           if (!settled) fail({ code: "LOCAL_AI_UNAVAILABLE", message: "ローカル AI の応答が途中で切れました。もう一度試してください。", retryable: true });
         };
 
-        if (!switchToLocal) {
+        // 短い日常会話（あいさつ・お礼・相づちなど）は、オンライン中でもローカル AI（Ollama など）で答える。
+        // ローカル AI にツールの権限は無い。失敗したら、まだ何も表示していないときだけ Gemini で答え直す（同じ発言を二重に送らない）
+        const latestMsg = apiHistory[apiHistory.length - 1];
+        const prevAssistant = [...apiHistory.slice(0, -1)].reverse().find((m) => m.role === "assistant")?.content;
+        if (
+          !switchToLocal &&
+          currentRoute().route === "online" &&
+          localReadyForQuickChat() &&
+          isQuickChat({ text: latestMsg?.content ?? "", previousAssistant: prevAssistant, hasAttachment: Boolean(latestMsg?.image || latestMsg?.files?.length || latestMsg?.audio) })
+        ) {
+          let failure: Extract<StreamEvent, { type: "error" }> | null = null;
+          for await (const event of runQuickChat(apiHistory, { voice: Boolean(opts.voice), signal: controller.signal })) {
+            if (event.type === "error") {
+              failure = event;
+              break;
+            }
+            handle(event);
+          }
+          if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
+          if (failure) {
+            markLocalFailed(failure.code === "QUICK_NO_MODEL" ? "no-model" : failure.code === "QUICK_TIMEOUT" ? "timeout" : failure.code === "QUICK_UNAVAILABLE" ? "unavailable" : "error");
+            // 途中まで表示していたら答え直さない（同じ返事が二つにならないように）。そこまでを残してエラーを出す
+            if (received.trim()) fail({ code: failure.code, message: failure.message, retryable: true });
+            else {
+              model = undefined;
+              setPhase("waiting");
+            }
+          }
+        }
+
+        if (!switchToLocal && !settled) {
           let res: Response | null = null;
           try {
             res = await fetch("/api/chat", {

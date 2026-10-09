@@ -6,6 +6,9 @@
  * LM Studio を外部に公開する設定（ネットワークに公開）は不要で、使わない。
  */
 import type { AIChunk, AIProvider, AIRequest } from "./provider";
+import { isLoopbackUrl, ThinkFilter } from "./local-util";
+
+export { isLoopbackUrl, ThinkFilter };
 
 export const DEFAULT_LM_STUDIO_URL = "http://localhost:1234/v1";
 
@@ -15,17 +18,6 @@ export interface LMStudioConfig {
   model: string;
   /** 答える前に「考える」か（既定は考えない。PC のモデルは考えると何分もかかることがあるため） */
   thinking?: boolean;
-}
-
-/** この PC の中を指す URL か（外部の URL は使わない） */
-export function isLoopbackUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-    return u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]" || u.hostname === "::1";
-  } catch {
-    return false;
-  }
 }
 
 /** 設定の URL を整える（外部の URL・壊れた URL なら既定の localhost に戻す） */
@@ -71,48 +63,6 @@ export async function pickLMStudioModel(baseUrl: string, signal?: AbortSignal): 
   }
   const size = (id: string) => Number(/(\d+(?:\.\d+)?)\s*b\b/i.exec(id)?.[1] ?? 999);
   return [...models].sort((a, b) => size(a) - size(b))[0] ?? "";
-}
-
-/** 考えている途中の文（<think>…</think>）を取り除く。塊の途中でタグが切れても扱える */
-export class ThinkFilter {
-  private inThink = false;
-  private pending = "";
-  push(text: string): string {
-    let s = this.pending + text;
-    this.pending = "";
-    let out = "";
-    while (s) {
-      if (this.inThink) {
-        const end = s.indexOf("</think>");
-        if (end < 0) {
-          this.pending = s.slice(-7); // 閉じタグの書きかけを残す
-          return out;
-        }
-        s = s.slice(end + 8);
-        this.inThink = false;
-        continue;
-      }
-      const start = s.indexOf("<think>");
-      if (start < 0) {
-        // 開きタグの書きかけかもしれない末尾は保留
-        const lt = s.lastIndexOf("<");
-        if (lt >= 0 && "<think>".startsWith(s.slice(lt))) {
-          out += s.slice(0, lt);
-          this.pending = s.slice(lt);
-        } else out += s;
-        return out;
-      }
-      out += s.slice(0, start);
-      s = s.slice(start + 7);
-      this.inThink = true;
-    }
-    return out;
-  }
-  flush(): string {
-    const rest = this.inThink ? "" : this.pending;
-    this.pending = "";
-    return rest;
-  }
 }
 
 export class LMStudioError extends Error {

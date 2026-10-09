@@ -27,6 +27,8 @@ interface Turn {
   user: string;
   assistant: string;
   voice: boolean;
+  /** quick = オンライン中に短い会話をローカル AI で答えた分（会話ログに残すだけ） */
+  kind: "offline" | "quick";
   captures: Record<Tag, string[]>;
   attrs: Partial<Record<Tag, Record<string, string>[]>>;
 }
@@ -51,7 +53,10 @@ function toTurn(raw: unknown): Turn | null {
       );
     }
   }
-  return { id, at: Number(r.at) || Date.now(), user: str(r.user, 16000), assistant: str(r.assistant, 16000), voice: r.voice === true, captures, attrs };
+  const kind = r.kind === "quick" ? "quick" : "offline";
+  // 短い会話の分は会話ログだけ。ツール（記憶・ToDo・予定・文書）は受け取らない（ローカル AI にツールの権限は無い）
+  if (kind === "quick") for (const tag of TAGS) captures[tag] = [];
+  return { id, at: Number(r.at) || Date.now(), user: str(r.user, 16000), assistant: str(r.assistant, 16000), voice: r.voice === true, kind, captures, attrs: kind === "quick" ? {} : attrs };
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -75,7 +80,7 @@ export async function POST(req: Request): Promise<Response> {
     try {
       const facts = t.captures.memory.map(toFact).filter(Boolean);
       const when = new Intl.DateTimeFormat("ja-JP", { timeZone: getTimezone(), month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(t.at);
-      await memory.save?.({ user: `${t.user}（オフライン中 ${when}・LOCAL AI）`, assistant: t.assistant, memories: facts, voice: t.voice });
+      await memory.save?.({ user: `${t.user}（${t.kind === "quick" ? "ローカル AI" : `オフライン中 ${when}・LOCAL AI`}）`, assistant: t.assistant, memories: facts, voice: t.voice });
       for await (const { note } of runBrainActions(t.captures as Record<BrainTag, string[]>, true)) if (note) notes.push(note);
       for await (const { note } of runCalendarActions(t.captures as Record<CalendarTag, string[]>, calendar)) if (note) notes.push(note);
       const docs = [
