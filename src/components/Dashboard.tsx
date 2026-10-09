@@ -43,7 +43,7 @@ import { refreshCalendarCache } from "@/lib/calendar-cache";
 import { detectModeCommand, getAiMode, setAiMode, useAiMode } from "@/lib/ai-mode";
 import { autoSwitchToRecorded, useLiveVoice, useVoiceInput } from "@/lib/voice-input";
 import { calendarForChat } from "@/lib/calendar-cache";
-import { stripWake } from "@/lib/speech";
+import { aiCall, stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { busy as karenBusy, dispatchKaren, getKarenState, subscribeKaren } from "@/lib/karen-state";
 import { getScene } from "@/lib/karen-scene";
@@ -270,27 +270,23 @@ export function Dashboard() {
         settle();
         return true;
       }
-      if (cmd === "to-edith" && mode !== "edith") {
-        setAiMode("edith");
-        karenIo.speak?.("グローバルインテリジェンスモードを起動します。");
-        settle();
-        return true;
-      }
-      if (cmd === "to-friday" && mode === "edith") {
-        setAiMode("friday");
-        karenIo.speak?.("通常モードに戻ります。");
-        settle();
-        return true;
-      }
-      if (cmd === "to-karen" && mode !== "karen") {
-        setAiMode("karen");
-        // 名前（カレン・フライデー）は言わない：直後にその名前で呼ぶと、自分の声の聞き返しと間違えて無視してしまうため
-        karenIo.speak?.("クリエイティブモードを起動します。");
-        settle();
-        return true;
-      }
-      if (cmd === "to-friday" && mode === "karen") {
-        if (requestExit(karenIo)) karenIo.speak?.("通常モードに戻ります。");
+      // 切り替える先：切り替えの言葉（「カレンを開いて」など）か、ほかの AI の名前で呼んだとき（「フライデー」「イーディス、〜」）
+      const call = cmd ? null : aiCall(text);
+      const target = cmd === "to-edith" ? "edith" : cmd === "to-karen" ? "karen" : cmd === "to-friday" ? "friday" : (call?.mode ?? null);
+      if (target && target !== mode) {
+        // 制作中の K.A.R.E.N. から出るときは、続けるか止めるかを確かめる
+        const switched = mode === "karen" && target === "friday" ? requestExit(karenIo) : (setAiMode(target), true);
+        // 名前のあとに用件があれば、切り替えた先の AI がそのまま答える（「フライデー、今日の天気は」）
+        const rest = call?.rest ?? "";
+        if (switched && rest.replace(/[、。,.!！?？\s]/g, "").length >= 2) {
+          window.setTimeout(() => sendRef.current(rest, opts), 0);
+          return true;
+        }
+        if (switched) {
+          karenIo.speak?.(
+            target === "edith" ? "グローバルインテリジェンスモードを起動します。" : target === "karen" ? "クリエイティブモードを起動します。" : "通常モードに戻ります。",
+          );
+        }
         settle();
         return true;
       }
@@ -310,6 +306,8 @@ export function Dashboard() {
     },
     [sendToAi, karenIo],
   );
+  const sendRef = useRef(send);
+  sendRef.current = send;
 
   // 画面のどこにファイルをドロップしても添付する
   const [dropping, setDropping] = useState(false);
@@ -422,7 +420,8 @@ export function Dashboard() {
     (turn: LiveTurn) => {
       upsertLive(turn);
       // 「カレン、起動」などの切り替えは、これまでどおり画面で処理する
-      if (turn.role === "user" && turn.done && detectModeCommand(stripWake(turn.text))) {
+      // ほかの AI の名前で呼んだときも、そのモードへ切り替える（「フライデー」「カレン、〜」）
+      if (turn.role === "user" && turn.done && (detectModeCommand(stripWake(turn.text)) || aiCall(turn.text))) {
         voiceRef.current?.endLive();
         send(turn.text, { voice: true });
       }

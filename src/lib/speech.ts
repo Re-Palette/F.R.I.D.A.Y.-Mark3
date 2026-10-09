@@ -4,7 +4,7 @@
  *  - 読み上げ: speechSynthesis
  */
 
-import { detectModeCommand, EDITH_NAME_SRC, getAiMode, GLOBAL_PROTOCOL_RE } from "./ai-mode";
+import { detectModeCommand, EDITH_NAME_SRC, getAiMode, GLOBAL_PROTOCOL_RE, type AiMode } from "./ai-mode";
 
 /* ---------- 音声認識 ---------- */
 
@@ -73,8 +73,8 @@ const EDITH_WAKE_RE = new RegExp(
 
 /**
  * 呼びかけを見分ける。いまのモードの AI の名前で呼んだときだけ起きて、名前を取り除いた用件を返す。
- * ほかの AI の名前では起きない。ただし「カレンを開いて」「イーディスを開いて」「フライデーに戻して」のような
- * 切り替えの指示だけは、名前ごと渡して受け付ける（モードを変えるため）。
+ * ほかの AI の名前で呼んだら、そのモードに切り替えるために名前ごと渡す（答えるのはいまの AI ではなく、切り替えた先の AI）。
+ * 名前が文の途中にあるだけでは起きない（発言の頭で呼んだときだけ）。
  */
 export function splitWake(text: string): { woke: boolean; command: string } {
   const mode = getAiMode();
@@ -83,9 +83,26 @@ export function splitWake(text: string): { woke: boolean; command: string } {
   if (m) return { woke: true, command: text.slice(m[0].length).trim() };
   // 合言葉「グローバルプロトコル起動」は、名前を言わなくても受け付ける
   if (GLOBAL_PROTOCOL_RE.test(text)) return { woke: true, command: text.trim() };
-  const other = [WAKE_RE, KAREN_WAKE_RE, EDITH_WAKE_RE].some((re) => re !== own && re.test(text));
-  if (other && detectModeCommand(text)) return { woke: true, command: text.trim() };
+  if (aiCall(text) || detectModeCommand(text)) return { woke: true, command: text.trim() };
   return { woke: false, command: "" };
+}
+
+/**
+ * 発言の頭で、いまとは別の AI の名前を呼んだか（「フライデー」「カレン、球体を作って」「イーディス、ニュースは」）。
+ * 呼んでいれば、切り替える先のモードと、名前のあとの用件を返す。
+ */
+export function aiCall(text: string): { mode: AiMode; rest: string } | null {
+  const mode = getAiMode();
+  for (const [m, re] of [
+    ["friday", WAKE_RE],
+    ["karen", KAREN_WAKE_RE],
+    ["edith", EDITH_WAKE_RE],
+  ] as const) {
+    if (m === mode) continue;
+    const hit = re.exec(text);
+    if (hit) return { mode: m, rest: text.slice(hit[0].length).trim() };
+  }
+  return null;
 }
 
 /** 発言の先頭に付いた呼びかけを取り除く（「フライデー、今日の予定は？」→「今日の予定は？」） */

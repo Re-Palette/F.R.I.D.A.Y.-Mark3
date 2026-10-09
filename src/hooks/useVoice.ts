@@ -21,6 +21,7 @@ import {
   normalizeForEcho,
   getRecognitionCtor,
   pickJapaneseVoice,
+  aiCall,
   splitWake,
   stripWake,
   takeSentences,
@@ -946,7 +947,7 @@ export function useVoice({
     if (!liveOn.current || liveRef.current) return false;
     if (Date.now() - liveFailedAt.current < LIVE_RETRY_MS || (typeof navigator !== "undefined" && !navigator.onLine) || typeof WebSocket === "undefined") return false;
     // 「カレン、起動」などの切り替えの言葉は、これまでどおり画面で見分ける
-    if (firstText && detectModeCommand(firstText)) return false;
+    if (firstText && (detectModeCommand(firstText) || aiCall(firstText))) return false;
     clearTimeout(followTimer.current);
     stopRec();
     cancelSpeech();

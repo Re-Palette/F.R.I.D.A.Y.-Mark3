@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const { detectModeCommand, setAiMode } = await import("../src/lib/ai-mode");
-const { splitWake, stripWake } = await import("../src/lib/speech");
+const { splitWake, stripWake, aiCall } = await import("../src/lib/speech");
 const { parseNewsLines, sourcesForLine } = await import("../src/integrations/edith-news");
 const { findPlaces } = await import("../src/lib/edith-geo");
 const { trendCounts } = await import("../src/lib/edith-data");
@@ -38,7 +38,7 @@ describe("E.D.I.T.H. の呼びかけ", () => {
     assert.deepEqual(splitWake("イーディス、AIの動向を調べて"), { woke: true, command: "AIの動向を調べて" });
     assert.deepEqual(splitWake("エディス、翻訳して"), { woke: true, command: "翻訳して" });
     assert.equal(stripWake("イーディス、天気は"), "天気は");
-    assert.equal(splitWake("フライデー").woke, false);
+    assert.deepEqual(aiCall("フライデー"), { mode: "friday", rest: "" }, "「フライデー」は F.R.I.D.A.Y. への切り替え");
     assert.equal(splitWake("フライデーに戻して").woke, true);
     assert.equal(splitWake("今日はイーディスの話をした").woke, false, "文の途中では起きない");
     setAiMode("friday");
@@ -187,12 +187,27 @@ describe("モードごとに、そのモードの名前でだけ反応する・�
     ["karen", "カレン、球体を作って", ["フライデー", "フライデー、天気は", "イーディス", "イーディス、ニュースは"]],
     ["edith", "イーディス、ニュースは", ["フライデー", "フライデー、天気は", "カレン", "カレン、球体を作って"]],
   ] as const) {
-    it(`${mode} の間：自分の名前で起き、ほかの名前だけ・ほかの名前への用件では起きない`, () => {
+    it(`${mode} の間：自分の名前で起き、ほかの名前で呼ぶとその AI へ切り替える（いまの AI は答えない）`, () => {
       setAiMode(mode);
       assert.equal(splitWake(own).woke, true, own);
-      for (const t of others) assert.equal(splitWake(t).woke, false, t);
+      assert.equal(aiCall(own), null, "自分の名前は切り替えではない");
+      for (const t of others) {
+        const r = splitWake(t);
+        assert.equal(r.woke, true, t);
+        assert.equal(r.command, t, "名前ごと渡す（切り替えのため）");
+        assert.notEqual(aiCall(t)?.mode, mode, t);
+        assert.ok(aiCall(t), t);
+      }
       setAiMode("friday");
     });
+  }
+  it("名前が文の途中にあるだけでは切り替えない", () => {
+    setAiMode("karen");
+    assert.equal(aiCall("今日はフライデーの話をした"), null);
+    assert.equal(splitWake("今日はフライデーの話をした").woke, false);
+    setAiMode("friday");
+  });
+  {
   }
   for (const [mode, text, to] of [
     ["friday", "カレンを開いて", "to-karen"],

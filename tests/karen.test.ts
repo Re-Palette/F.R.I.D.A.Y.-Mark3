@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 const { detectModeCommand, setAiMode } = await import("../src/lib/ai-mode");
-const { splitWake } = await import("../src/lib/speech");
+const { splitWake, aiCall } = await import("../src/lib/speech");
 const { parseKarenCommand, startsCreation } = await import("../src/lib/karen-intent");
 const { reduce, INITIAL, busy } = await import("../src/lib/karen-state");
 
@@ -214,11 +214,11 @@ describe("拍手 2 回で起動したときの一言", async () => {
   });
 });
 
-describe("K.A.R.E.N. の間は「フライデー」では起きない", () => {
-  it("「フライデー」「フライデー、今日の天気は」では起きない。「フライデーに戻して」だけは戻る指示として受け付ける", () => {
+describe("K.A.R.E.N. の間に「フライデー」と呼ぶと F.R.I.D.A.Y. に切り替える", () => {
+  it("「フライデー」「フライデー、今日の天気は」は切り替えの呼びかけ（答えるのは F.R.I.D.A.Y.）。「フライデーに戻して」も戻る", () => {
     setAiMode("karen");
-    assert.equal(splitWake("フライデー").woke, false);
-    assert.equal(splitWake("フライデー、今日の天気は").woke, false);
+    assert.deepEqual(splitWake("フライデー"), { woke: true, command: "フライデー" });
+    assert.deepEqual(aiCall("フライデー、今日の天気は"), { mode: "friday", rest: "今日の天気は" });
     assert.deepEqual(splitWake("フライデーに戻して"), { woke: true, command: "フライデーに戻して" });
     assert.equal(detectModeCommand(splitWake("フライデーに戻して").command), "to-friday");
     assert.equal(detectModeCommand(splitWake("フライデー、通常モードに戻って").command), "to-friday");
