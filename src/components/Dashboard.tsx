@@ -47,9 +47,10 @@ import { stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { busy as karenBusy, dispatchKaren, getKarenState, subscribeKaren } from "@/lib/karen-state";
 import { getScene } from "@/lib/karen-scene";
-import { FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-voice";
+import { EDITH_TOOL, FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-voice";
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
+import { EdithHud } from "./edith/EdithHud";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -263,7 +264,19 @@ export function Dashboard() {
       const settle = () => {
         if (opts.voice) window.setTimeout(() => voiceRef.current?.replyFinished(), 0);
       };
-      if (cmd === "to-karen" && mode === "friday") {
+      if (cmd === "to-edith" && mode !== "edith") {
+        setAiMode("edith");
+        karenIo.speak?.("グローバルインテリジェンスモードを起動します。");
+        settle();
+        return true;
+      }
+      if (cmd === "to-friday" && mode === "edith") {
+        setAiMode("friday");
+        karenIo.speak?.("通常モードに戻ります。");
+        settle();
+        return true;
+      }
+      if (cmd === "to-karen" && mode !== "karen") {
         setAiMode("karen");
         // 名前（カレン・フライデー）は言わない：直後にその名前で呼ぶと、自分の声の聞き返しと間違えて無視してしまうため
         karenIo.speak?.("クリエイティブモードを起動します。");
@@ -417,7 +430,7 @@ export function Dashboard() {
         .slice(-8)
         .map((m) => ({ role: m.role, content: m.content })),
       calendar: calendarForChat(),
-      persona: getAiMode() === "karen" ? ("karen" as const) : undefined,
+      persona: getAiMode() === "friday" ? undefined : getAiMode() === "karen" ? ("karen" as const) : ("edith" as const),
     }),
     [chat.messages],
   );
@@ -448,9 +461,11 @@ export function Dashboard() {
     [chatSendRaw],
   );
   const onLiveTool = useCallback(async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    const request = typeof args.request === "string" ? args.request.trim() : "";
+    const raw = typeof args.request === "string" ? args.request : typeof args.query === "string" ? args.query : "";
+    const request = raw.trim();
     if (!request) return { ok: false, error: "頼みの内容が空です。" };
-    if (name === FRIDAY_TOOL) return runFridayAction(request);
+    // E.D.I.T.H. の調べもの：これまでの会話の仕組み（E.D.I.T.H. の人格・Google 検索）で調べる。返答は画面の情報ウィンドウに出る
+    if (name === FRIDAY_TOOL || name === EDITH_TOOL) return runFridayAction(request);
     if (name !== KAREN_TOOL || getAiMode() !== "karen") return { ok: false, error: "いまは K.A.R.E.N. のモードではありません。" };
     const notices: string[] = [];
     let chatOnly = false;
@@ -749,7 +764,8 @@ export function Dashboard() {
   const inChat = view === "chat";
 
   return (
-    <div className="app" data-view={view} data-ai={aiMode}>
+    // E.D.I.T.H. の間に設定などを開いたら、その画面を見せる（ホームに戻ると E.D.I.T.H. に戻る）
+    <div className="app" data-view={view} data-ai={aiMode === "edith" && view !== "home" ? "friday" : aiMode}>
       {dropping && (
         <div className="drop-overlay" aria-hidden="true">
           <span>ここにドロップして添付（写真・PDF・Word / Excel / PowerPoint・テキスト）</span>
@@ -791,6 +807,20 @@ export function Dashboard() {
 
       <Header />
       {/* K.A.R.E.N.（クリエイティブ AI）の画面。F.R.I.D.A.Y. の画面は裏でそのまま（戻ったら続きから） */}
+      {aiMode === "edith" && view === "home" && (
+        <EdithHud
+          messages={chat.messages}
+          voiceState={voice.state}
+          voiceInterim={voice.diag || voice.interim}
+          voiceError={voice.error}
+          onDismissVoiceError={voice.dismissError}
+          onCommand={(t) => void send(t)}
+          onMic={() => voice.talkNow()}
+          onBack={() => void send("FRIDAYに戻して")}
+          onOpenSettings={() => setView("settings")}
+          onOpenUrl={(url) => openTabNow(url)}
+        />
+      )}
       {aiMode === "karen" && (
         <KarenHud
           active

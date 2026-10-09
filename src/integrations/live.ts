@@ -8,6 +8,7 @@
 import { getGeminiConfig } from "@/lib/config";
 import { buildCompactInstruction } from "@/agents/chat/persona";
 import { KAREN_SECTION } from "@/agents/chat/karen-persona";
+import { EDITH_SECTION } from "@/agents/chat/edith-persona";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { TasksOverview } from "@/integrations/tasks";
 import type { Reminder } from "@/integrations/reminders";
@@ -91,8 +92,21 @@ export interface LiveContext {
   /** 直近の会話（古い順。続きとして話せるように） */
   recent: { role: "user" | "assistant"; content: string }[];
   /** K.A.R.E.N.（クリエイティブ AI）として話す */
-  persona?: "karen";
+  persona?: "karen" | "edith";
 }
+
+/** E.D.I.T.H. のリアルタイム会話の声（GEMINI_LIVE_VOICE_EDITH で変えられる） */
+const EDITH_VOICE = "Kore";
+/** E.D.I.T.H. の調べものを画面に頼む道具の名前（画面の live-voice.ts と同じ） */
+export const EDITH_TOOL = "edith_research";
+
+const EDITH_LIVE = `
+
+# E.D.I.T.H. のリアルタイム音声会話
+- 世界の情報を調べる・まとめる・比較する・分析するよう頼まれたら、「調べます」と一言だけ言ってから ${EDITH_TOOL} を呼ぶ（query には調べる内容を日本語の 1 文で入れる）。
+  画面に情報ウィンドウ（要約・重要なポイント・実際の出典）が開き、結果（summary・points・sources）が返る。
+- 結果を声で 2〜3 文に要約して伝え、「詳しくは画面のウィンドウに出しました」と添える。結果に無いことを付け足さない。ok が false なら、調べられなかったことを正直に伝える。
+- 簡単な質問（今の時刻・一言で答えられること）は、${EDITH_TOOL} を呼ばずに答えてよい。`;
 
 /** K.A.R.E.N. のリアルタイム会話の声（Gemini の声の名前。GEMINI_LIVE_VOICE_KAREN で変えられる） */
 const KAREN_VOICE = "Aoede";
@@ -150,7 +164,7 @@ export function buildLiveInstruction(ctx: LiveContext): string {
 - 日本語の自然な話し言葉で、落ち着いた秘書の声で話す。
 - 予定・天気・ToDo は上の情報から答える。上に無い最新情報は、Google 検索が使えるときは調べて答え、使えなければ「分からない」と正直に言う。
 `;
-  out += ctx.persona === "karen" ? KAREN_SECTION + KAREN_LIVE : FRIDAY_LIVE;
+  out += ctx.persona === "karen" ? KAREN_SECTION + KAREN_LIVE : ctx.persona === "edith" ? EDITH_SECTION + EDITH_LIVE + FRIDAY_LIVE : FRIDAY_LIVE;
   return out;
 }
 
@@ -171,6 +185,10 @@ export async function prepareLive(ctx: LiveContext, signal?: AbortSignal): Promi
     systemInstruction: buildLiveInstruction(ctx),
     // K.A.R.E.N. は F.R.I.D.A.Y. と違う声で話す（誰が話しているか分かるように）
     voiceName:
-      ctx.persona === "karen" ? process.env.GEMINI_LIVE_VOICE_KAREN?.trim() || KAREN_VOICE : process.env.GEMINI_LIVE_VOICE?.trim() || null,
+      ctx.persona === "karen"
+        ? process.env.GEMINI_LIVE_VOICE_KAREN?.trim() || KAREN_VOICE
+        : ctx.persona === "edith"
+          ? process.env.GEMINI_LIVE_VOICE_EDITH?.trim() || EDITH_VOICE
+          : process.env.GEMINI_LIVE_VOICE?.trim() || null,
   };
 }

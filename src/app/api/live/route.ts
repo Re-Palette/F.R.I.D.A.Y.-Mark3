@@ -63,7 +63,7 @@ export async function POST(req: Request): Promise<Response> {
       within(brain ? listReminders() : undefined, CONTEXT_MS, null),
     ]);
     const events = live ?? (snap ? snapshotEvents(snap, now, timezone) : null);
-    const setup = await prepareLive({ now, timezone, events, tasks, reminders, weather, recent: toRecent(body?.recent), persona: body?.persona === "karen" ? "karen" : undefined }, req.signal);
+    const setup = await prepareLive({ now, timezone, events, tasks, reminders, weather, recent: toRecent(body?.recent), persona: body?.persona === "karen" || body?.persona === "edith" ? body.persona : undefined }, req.signal);
     return Response.json({ ok: true, ...setup }, { headers });
   } catch (err) {
     return Response.json({ ok: false, error: toFridayError(err).message }, { status: 502, headers });

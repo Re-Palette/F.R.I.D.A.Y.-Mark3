@@ -36,6 +36,22 @@ export interface LiveHandlers {
 
 /** K.A.R.E.N. の制作・編集を画面に頼む道具（サーバーの integrations/live.ts と同じ名前） */
 export const KAREN_TOOL = "karen_operate";
+/** E.D.I.T.H. の調べもの（検索して要約し、画面に情報ウィンドウを開く） */
+export const EDITH_TOOL = "edith_research";
+const EDITH_TOOL_DECL = {
+  functionDeclarations: [
+    {
+      name: EDITH_TOOL,
+      description: "世界の情報を Google 検索で調べて要約・分析し、画面に情報ウィンドウ（要約・重要なポイント・出典）を開く。ニュース・研究・経済・技術・比較・動向の分析に使う。",
+      parameters: {
+        type: "OBJECT",
+        properties: { query: { type: "STRING", description: "調べる内容（日本語の 1 文。例：世界の再生可能エネルギーの最新動向を分析して）" } },
+        required: ["query"],
+      },
+    },
+  ],
+};
+
 /** F.R.I.D.A.Y. の操作を、これまでの会話の仕組み（予定・メールなどの操作ができる）に頼む道具 */
 export const FRIDAY_TOOL = "friday_action";
 const FRIDAY_TOOL_DECL = {
@@ -72,7 +88,7 @@ export interface LiveStartOptions {
   firstText?: string;
   recent?: { role: "user" | "assistant"; content: string }[];
   /** K.A.R.E.N.（クリエイティブ AI）として話す（制作・編集の道具も渡す） */
-  persona?: "karen";
+  persona?: "karen" | "edith";
   calendar?: unknown;
 }
 
@@ -110,10 +126,10 @@ export interface LiveServerMessage {
 export function buildSetup(
   prep: Required<Pick<LivePrep, "model" | "systemInstruction">> & { voiceName?: string | null },
   full: boolean,
-  persona?: "karen",
+  persona?: "karen" | "edith",
 ) {
   // 操作の道具は、細かい設定を受け付けないモデル向けの最小の設定にも入れる（無いと操作ができない）
-  const own = [persona === "karen" ? KAREN_TOOL_DECL : FRIDAY_TOOL_DECL];
+  const own = persona === "karen" ? [KAREN_TOOL_DECL] : persona === "edith" ? [{ functionDeclarations: [...FRIDAY_TOOL_DECL.functionDeclarations, ...EDITH_TOOL_DECL.functionDeclarations] }] : [FRIDAY_TOOL_DECL];
   const tools = full ? [{ googleSearch: {} }, ...own] : own;
   return {
     setup: {
@@ -196,7 +212,7 @@ export class LiveSession {
   }
 
   /** 前もってつないだときの K.A.R.E.N. かどうか・つないだ時刻（古ければつなぎ直す） */
-  persona: "karen" | undefined;
+  persona: "karen" | "edith" | undefined;
   preparedAt = 0;
 
   /** 前もってつないで、すぐ話せる状態か */

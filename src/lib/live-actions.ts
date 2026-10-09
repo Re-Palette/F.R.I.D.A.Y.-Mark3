@@ -27,5 +27,6 @@ export function summarizeAction(m: UiMessage): Record<string, unknown> {
     result: m.content.replace(/\s+/g, " ").trim().slice(0, 400),
     ...(done.length ? { done } : {}),
     ...(m.error ? { error: m.error.message } : {}),
+    ...(m.sources?.length ? { sources: m.sources.slice(0, 5).map((s) => s.title) } : {}),
   };
 }

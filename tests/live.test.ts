@@ -205,3 +205,15 @@ describe("古い版の画面と、断った返事", () => {
     delete process.env.GEMINI_API_KEY;
   });
 });
+
+describe("E.D.I.T.H. のリアルタイム会話", () => {
+  it("調べものの道具と操作の道具を渡し、F.R.I.D.A.Y. ・ K.A.R.E.N. とは違う声・指示", async () => {
+    const tools = JSON.stringify(buildSetup({ model: "m", systemInstruction: "i" }, true, "edith").setup.tools);
+    assert.match(tools, /edith_research/);
+    assert.match(tools, /friday_action/);
+    assert.doesNotMatch(tools, /karen_operate/);
+    const text = buildLiveInstruction({ now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [], persona: "edith" });
+    assert.match(text, /E\.D\.I\.T\.H\./);
+    assert.match(text, /edith_research/);
+  });
+});

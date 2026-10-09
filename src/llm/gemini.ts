@@ -34,6 +34,8 @@ export interface GeminiChunk {
   model?: string;
   /** Google 検索で参照したページ */
   sources?: GeminiSource[];
+  /** どの文がどのページに基づくか（groundingSupports。chunks は groundingChunks の並びのまま。無いものは null） */
+  grounding?: { chunks: (GeminiSource | null)[]; supports: { text: string; chunks: number[] }[] };
 }
 
 interface GeminiResponsePart {
@@ -45,7 +47,10 @@ interface GeminiStreamResponse {
   candidates?: {
     content?: { parts?: GeminiResponsePart[] };
     finishReason?: string;
-    groundingMetadata?: { groundingChunks?: { web?: { uri?: string; title?: string } }[] };
+    groundingMetadata?: {
+      groundingChunks?: { web?: { uri?: string; title?: string } }[];
+      groundingSupports?: { segment?: { text?: string }; groundingChunkIndices?: number[] }[];
+    };
   }[];
   promptFeedback?: { blockReason?: string };
   error?: { code?: number; message?: string; status?: string };
@@ -425,8 +430,19 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
       .map((c) => c.web)
       .filter((w): w is { uri: string; title?: string } => Boolean(w?.uri))
       .map((w) => ({ uri: w.uri, title: w.title || new URL(w.uri).hostname }));
+    const supports = (candidate?.groundingMetadata?.groundingSupports ?? [])
+      .filter((s) => s.segment?.text && s.groundingChunkIndices?.length)
+      .map((s) => ({ text: s.segment!.text!, chunks: s.groundingChunkIndices! }));
+    const grounding = supports.length
+      ? {
+          chunks: (candidate?.groundingMetadata?.groundingChunks ?? []).map((c) =>
+            c.web?.uri ? { uri: c.web.uri, title: c.web.title || new URL(c.web.uri).hostname } : null,
+          ),
+          supports,
+        }
+      : undefined;
     if (!text && !finishReason && !sources.length) return null;
-    return { text, finishReason, ...(sources.length ? { sources } : {}) };
+    return { text, finishReason, ...(sources.length ? { sources } : {}), ...(grounding ? { grounding } : {}) };
   };
 
   try {

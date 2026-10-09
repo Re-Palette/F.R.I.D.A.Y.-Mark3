@@ -28,6 +28,7 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `GEMINI_LIVE_MODEL` | | （自動） | リアルタイム音声会話のモデル。未設定なら Google のモデル一覧から Live 用（native audio / live）の最新を自動で選ぶ |
 | `GEMINI_LIVE_VOICE` | | （モデルの既定） | リアルタイム音声会話の声（例: `Kore`）。未設定ならモデルの既定の声 |
 | `GEMINI_LIVE_VOICE_KAREN` | | `Aoede` | K.A.R.E.N. のリアルタイム音声会話の声（F.R.I.D.A.Y. と違う声にする） |
+| `GEMINI_LIVE_VOICE_EDITH` | | `Kore` | E.D.I.T.H. のリアルタイム音声会話の声 |
 | `GEMINI_TEMPERATURE` | | `0.8` | |
 | `GEMINI_MAX_OUTPUT_TOKENS` | | `2048` | |
 | `CHAT_CONTEXT_MAX_MESSAGES` | | `24` | Gemini に渡す直近の会話の最大件数 |

@@ -12,6 +12,7 @@ import "@fontsource/rajdhani/latin-700.css";
 import "./globals.css";
 import "./home.css";
 import "./karen.css";
+import "./edith.css";
 
 export const metadata: Metadata = {
   title: "F.R.I.D.A.Y. Mark3",

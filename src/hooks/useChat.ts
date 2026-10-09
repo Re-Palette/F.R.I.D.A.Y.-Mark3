@@ -614,7 +614,7 @@ export function useChat() {
                 // 予定の控え（サーバーが Google から間に合わなかったときの予備）
                 ...(calendar ? { calendar } : {}),
                 // K.A.R.E.N. のモードなら、クリエイティブ担当として答えてもらう
-                ...(getAiMode() === "karen" ? { persona: "karen" } : {}),
+                ...(getAiMode() !== "friday" ? { persona: getAiMode() } : {}),
               }),
               signal: controller.signal,
             });

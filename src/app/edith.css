@@ -1,0 +1,1116 @@
+/*
+ * E.D.I.T.H.（Enhanced Data Integration & Tactical Horizon）の画面。
+ * F.R.I.D.A.Y. の HUD（角を切ったパネル・細い罫線・微細な方眼）を、暗いネイビーとネオンパープルで組み直す。
+ * 紫はベタ塗りせず、細い線・光る輪郭・控えめな光だけに使う。
+ */
+.edith {
+  --e-bg: #05040d;
+  --e-bg2: #090719;
+  --e-panel: rgba(15, 10, 34, 0.88);
+  --e-purple: #8b35ff;
+  --e-glow: #b56cff;
+  --e-accent: #d7b4ff;
+  --e-sub: #6230c9;
+  --e-text: #f2e9ff;
+  --e-dim: #a99ac8;
+  --e-line: rgba(151, 76, 255, 0.65);
+  --e-line-dim: rgba(151, 76, 255, 0.28);
+  --e-grid: rgba(139, 53, 255, 0.08);
+  --e-online: #43ffb0;
+  --e-shadow: 0 0 12px rgba(139, 53, 255, 0.35), inset 0 0 18px rgba(139, 53, 255, 0.1), inset 0 1px 0 rgba(215, 180, 255, 0.18);
+  --e-cut: 14px;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: minmax(250px, 340px) minmax(0, 1fr) minmax(280px, 360px);
+  grid-template-rows: 58px auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head head head"
+    "tabs center right"
+    "left center right"
+    "mark cmd right";
+  gap: 12px 22px;
+  padding: 14px 24px 14px;
+  overflow: hidden;
+  color: var(--e-text);
+  font-family: var(--font-mono);
+  background:
+    radial-gradient(ellipse 60% 55% at 50% 48%, rgba(98, 48, 201, 0.22), transparent 70%),
+    linear-gradient(180deg, var(--e-bg2), var(--e-bg) 65%);
+}
+
+/* F.R.I.D.A.Y. の画面は裏でそのまま（見えない・触れない） */
+.app[data-ai="edith"] > :not(.edith) {
+  visibility: hidden;
+}
+
+.edith__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(var(--e-grid) 1px, transparent 1px), linear-gradient(90deg, var(--e-grid) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(ellipse 80% 75% at 50% 50%, #000 40%, transparent 100%);
+}
+
+.edith button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.edith :focus-visible {
+  outline: 2px solid var(--e-accent);
+  outline-offset: 2px;
+}
+
+/* 角を切った枠（左上と右下） */
+.epanel,
+.ewin,
+.ecmd__bar,
+.etabs button,
+.equick__card {
+  clip-path: polygon(var(--e-cut) 0, 100% 0, 100% calc(100% - var(--e-cut)), calc(100% - var(--e-cut)) 100%, 0 100%, 0 var(--e-cut));
+}
+
+/* ---------- ヘッダー ---------- */
+.ehead {
+  grid-area: head;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  padding: 0 18px;
+  border: 1px solid var(--e-line);
+  box-shadow: var(--e-shadow);
+  background: linear-gradient(180deg, rgba(40, 18, 90, 0.35), rgba(9, 7, 25, 0.75));
+  clip-path: polygon(16px 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 16px 100%, 0 50%);
+}
+.ehead__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ehead__logo {
+  color: var(--e-glow);
+  filter: drop-shadow(0 0 6px var(--e-purple));
+  display: grid;
+}
+.ehead__name {
+  font-family: var(--font-display, var(--font-mono));
+  font-size: 22px;
+  letter-spacing: 0.5em;
+  color: var(--e-text);
+  text-shadow: 0 0 10px rgba(181, 108, 255, 0.7);
+}
+.ehead__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ehead__nav button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--e-dim);
+  border-radius: 4px;
+  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.ehead__nav button:hover {
+  color: var(--e-accent);
+  border-color: var(--e-line-dim);
+  box-shadow: 0 0 10px rgba(139, 53, 255, 0.4);
+}
+.ehead__nav .ehead__back {
+  width: auto;
+  display: flex;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  border-color: var(--e-line-dim);
+}
+.ehead__status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 13px;
+  color: var(--e-text);
+  white-space: nowrap;
+}
+.ehead__clock {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+.ehead__online {
+  font-size: 11px;
+  color: var(--e-dim);
+}
+.ehead__online::before {
+  content: "●";
+  margin-right: 6px;
+  color: #ff6b8b;
+}
+.ehead__online[data-on]::before {
+  color: var(--e-online);
+  text-shadow: 0 0 6px var(--e-online);
+}
+.ehead__net,
+.ehead__bat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.ehead__batbar {
+  width: 30px;
+  height: 12px;
+  border: 1px solid var(--e-accent);
+  padding: 1px;
+  display: block;
+}
+.ehead__batbar i {
+  display: block;
+  height: 100%;
+  background: var(--e-accent);
+}
+.ehead__toggles {
+  display: none;
+  gap: 6px;
+}
+.ehead__toggles button {
+  border: 1px solid var(--e-line);
+  background: rgba(139, 53, 255, 0.12);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* ---------- タブ ---------- */
+.etabs {
+  grid-area: tabs;
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.etabs button {
+  flex: none;
+}
+.edith .etabs button {
+  --e-cut: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  border: 1px solid var(--e-line);
+  background: linear-gradient(180deg, rgba(139, 53, 255, 0.18), rgba(15, 10, 34, 0.7));
+  box-shadow: var(--e-shadow);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.etabs button:hover {
+  background: linear-gradient(180deg, rgba(139, 53, 255, 0.35), rgba(15, 10, 34, 0.7));
+  box-shadow: 0 0 16px rgba(139, 53, 255, 0.55);
+}
+
+/* ---------- パネル ---------- */
+.epanel {
+  position: relative;
+  border: 1px solid var(--e-line);
+  background: var(--e-panel);
+  box-shadow: var(--e-shadow);
+  padding: 14px 14px 12px;
+  animation: edith-in 0.6s ease-out both;
+}
+.epanel__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--e-text);
+  text-shadow: 0 0 8px rgba(181, 108, 255, 0.55);
+}
+.epanel__title svg {
+  color: var(--e-glow);
+}
+.epanel__title small {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--e-dim);
+  letter-spacing: 0.1em;
+}
+
+.eleft {
+  grid-area: left;
+  overflow: auto;
+  min-height: 0;
+}
+.ecats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.ecat {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 44px 1fr 18px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 6px;
+  border: none;
+  border-bottom: 1px solid var(--e-line-dim);
+  background: none;
+  text-align: left;
+  transition: background 0.2s;
+}
+.ecat:hover,
+.ecat[data-on] {
+  background: linear-gradient(90deg, rgba(139, 53, 255, 0.22), transparent);
+}
+.ecat__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--e-line);
+  border-radius: 6px;
+  color: var(--e-accent);
+  box-shadow: inset 0 0 10px rgba(139, 53, 255, 0.25);
+}
+.ecat[data-on] .ecat__icon {
+  box-shadow: 0 0 12px rgba(181, 108, 255, 0.7), inset 0 0 12px rgba(139, 53, 255, 0.4);
+}
+.ecat__text {
+  display: grid;
+  gap: 3px;
+}
+.ecat__text b {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--e-accent);
+}
+.ecat__text small {
+  font-size: 11px;
+  color: var(--e-dim);
+}
+.ecat__arrow {
+  color: var(--e-dim);
+}
+
+/* ---------- 中央：地図 ---------- */
+.ecenter {
+  grid-area: center;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+.emap {
+  position: absolute;
+  inset: 0 0 6px;
+}
+.eglobe {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+.eglobe__canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+.eglobe__canvas:active {
+  cursor: grabbing;
+}
+.eglobe--flat {
+  width: 100%;
+  height: 100%;
+}
+.emap__dir {
+  position: absolute;
+  font-size: 15px;
+  color: var(--e-text);
+  text-shadow: 0 0 8px var(--e-purple);
+  pointer-events: none;
+}
+.emap__dir--n {
+  top: 2%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.emap__dir--s {
+  bottom: 4%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.emap__dir--w {
+  left: 2%;
+  top: 50%;
+}
+.emap__dir--e {
+  right: 2%;
+  top: 50%;
+}
+.emap__tag,
+.emap__coord,
+.emap__legend {
+  position: absolute;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(9, 7, 25, 0.7);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--e-dim);
+  pointer-events: none;
+}
+.emap__tag {
+  top: 7%;
+  left: 3%;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  color: var(--e-accent);
+}
+.emap__coord {
+  top: 6%;
+  right: 4%;
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: var(--e-text);
+  min-width: 130px;
+}
+.emap__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 22px;
+  margin-top: 4px;
+  justify-self: end;
+}
+.emap__bars b {
+  width: 4px;
+  background: var(--e-glow);
+  animation: edith-bar 1.6s ease-in-out infinite;
+}
+.emap__bars b:nth-child(1) { height: 30%; animation-delay: 0s; }
+.emap__bars b:nth-child(2) { height: 45%; animation-delay: 0.15s; }
+.emap__bars b:nth-child(3) { height: 60%; animation-delay: 0.3s; }
+.emap__bars b:nth-child(4) { height: 75%; animation-delay: 0.45s; }
+.emap__bars b:nth-child(5) { height: 90%; animation-delay: 0.6s; }
+.emap__bars b:nth-child(6) { height: 100%; animation-delay: 0.75s; }
+.emap__legend {
+  right: 4%;
+  bottom: 10%;
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+  color: var(--e-accent);
+}
+.emap__legend-ai {
+  color: #fff;
+}
+.emap__legend-home {
+  color: var(--e-online);
+}
+.emap__ctrl {
+  position: absolute;
+  left: 3%;
+  bottom: 10%;
+  display: flex;
+  gap: 8px;
+}
+.emap__ctrl button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--e-line);
+  background: rgba(15, 10, 34, 0.8);
+  color: var(--e-accent);
+  transition: box-shadow 0.2s;
+}
+.emap__ctrl button:hover,
+.emap__ctrl button[aria-pressed="true"] {
+  box-shadow: 0 0 12px rgba(181, 108, 255, 0.7);
+}
+
+/* 地点の詳細 */
+.epoint {
+  position: absolute;
+  top: 20%;
+  left: 4%;
+  width: min(330px, 70%);
+  padding: 14px 16px;
+  border: 1px solid var(--e-line);
+  background: rgba(9, 7, 25, 0.94);
+  box-shadow: var(--e-shadow);
+  font-size: 12px;
+  line-height: 1.6;
+  animation: edith-in 0.35s ease-out both;
+  z-index: 12;
+}
+.epoint h3 {
+  margin: 4px 0 6px;
+  font-size: 14px;
+  color: var(--e-text);
+}
+.epoint p {
+  margin: 0 0 6px;
+  color: var(--e-dim);
+}
+.epoint__meta {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--e-accent) !important;
+}
+.epoint__time {
+  font-size: 10px;
+}
+.epoint__close,
+.ewin__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--e-line-dim);
+  background: none;
+  color: var(--e-dim);
+}
+
+/* 情報ウィンドウ（重ねても操作できるよう、少しずつずらす） */
+.ewins {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ewin {
+  position: absolute;
+  right: calc(2% + var(--i) * 26px);
+  top: calc(6% + var(--i) * 30px);
+  width: min(460px, 78%);
+  max-height: calc(86% - var(--i) * 30px);
+  overflow: auto;
+  padding: 16px 18px 14px;
+  border: 1px solid var(--e-line);
+  background: rgba(9, 7, 25, 0.95);
+  box-shadow: var(--e-shadow), 0 18px 40px -10px rgba(0, 0, 0, 0.8);
+  pointer-events: auto;
+  font-size: 13px;
+  line-height: 1.7;
+  animation: edith-win 0.35s ease-out both;
+  z-index: calc(4 + var(--i));
+}
+.ewin__kicker {
+  margin: 0 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--e-glow);
+}
+.ewin__title {
+  margin: 0 30px 10px 0;
+  font-size: 15px;
+  color: var(--e-text);
+}
+.ewin__body {
+  color: var(--e-text);
+}
+.ewin__table {
+  overflow-x: auto;
+  margin: 6px 0 10px;
+}
+.ewin__body th {
+  color: var(--e-accent);
+  background: rgba(139, 53, 255, 0.12);
+  text-align: left;
+}
+.ewin__body table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.ewin__body th,
+.ewin__body td {
+  border: 1px solid var(--e-line-dim);
+  padding: 4px 6px;
+}
+.ewin h4 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--e-accent);
+}
+.ewin ul {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.ewin__note {
+  font-size: 11px;
+  color: var(--e-dim);
+}
+.esrc {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0 !important;
+  display: grid;
+  gap: 4px;
+}
+.esrc a,
+.esrc span {
+  display: block;
+  padding: 4px 8px;
+  border-left: 2px solid var(--e-purple);
+  background: rgba(139, 53, 255, 0.08);
+  color: var(--e-accent);
+  font-size: 12px;
+  text-decoration: none;
+  word-break: break-all;
+}
+.esrc a:hover {
+  background: rgba(139, 53, 255, 0.2);
+}
+.ectx {
+  list-style: none;
+  padding: 0 !important;
+  display: grid;
+  gap: 8px;
+}
+.ectx li {
+  display: grid;
+  gap: 2px;
+}
+.ectx b {
+  font-size: 10px;
+  color: var(--e-glow);
+}
+
+/* ---------- 右：情報パネル ---------- */
+.eright {
+  grid-area: right;
+  display: grid;
+  grid-template-rows: minmax(0, 1.5fr) auto auto;
+  gap: 12px;
+  min-height: 0;
+}
+.enews {
+  overflow: auto;
+  min-height: 0;
+}
+.enews__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.enews__item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 12px;
+  padding: 8px 4px;
+  border: none;
+  border-bottom: 1px solid var(--e-line-dim);
+  background: none;
+  text-align: left;
+  transition: background 0.2s;
+}
+.enews__item:hover,
+.enews__item[data-on] {
+  background: linear-gradient(90deg, rgba(139, 53, 255, 0.2), transparent);
+}
+.enews__thumb {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  height: 52px;
+  border: 1px solid var(--e-line-dim);
+  background: radial-gradient(circle at 50% 40%, rgba(139, 53, 255, 0.35), rgba(9, 7, 25, 0.9));
+  color: var(--e-accent);
+}
+.enews__thumb small {
+  font-size: 9px;
+  color: var(--e-dim);
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.enews__text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.enews__text b {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--e-text);
+}
+.enews__text small {
+  font-size: 11px;
+  color: var(--e-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.enews__text em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--e-glow);
+}
+.estate {
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--e-dim);
+  line-height: 1.6;
+}
+.estate--err {
+  color: #ffb3c6;
+}
+.estate--scan {
+  position: relative;
+  padding-left: 18px;
+}
+.estate--scan::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--e-glow);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: edith-spin 0.9s linear infinite;
+}
+.edith .ebtn {
+  margin: 6px 6px 0 0;
+  padding: 5px 12px;
+  border: 1px solid var(--e-line);
+  background: rgba(139, 53, 255, 0.15);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  transition: box-shadow 0.2s;
+}
+.ebtn:hover {
+  box-shadow: 0 0 12px rgba(181, 108, 255, 0.6);
+}
+
+.etrend__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.etrend__list li {
+  display: grid;
+  grid-template-columns: 18px 76px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.etrend__rank {
+  color: var(--e-glow);
+}
+.etrend__bar {
+  height: 6px;
+  background: rgba(139, 53, 255, 0.12);
+}
+.etrend__bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--e-sub), var(--e-glow));
+  box-shadow: 0 0 8px rgba(181, 108, 255, 0.6);
+  transition: width 0.6s ease;
+}
+.etrend__num {
+  text-align: right;
+  color: var(--e-accent);
+}
+.etrend__note {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--e-dim);
+}
+
+.equick__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 0 10px;
+  border: 1px solid var(--e-line);
+  background: rgba(9, 7, 25, 0.8);
+  color: var(--e-dim);
+}
+.equick__search input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 0;
+  border: none;
+  background: none;
+  color: var(--e-text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.equick__search button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 36px;
+  border: none;
+  background: var(--e-purple);
+  color: #fff;
+}
+.equick__cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.edith .equick__card {
+  --e-cut: 8px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  border: 1px solid var(--e-line);
+  background: rgba(15, 10, 34, 0.85);
+  font-size: 11px;
+  color: var(--e-accent);
+  transition: box-shadow 0.2s, background 0.2s;
+}
+.equick__card:hover,
+.equick__card[data-on] {
+  background: rgba(139, 53, 255, 0.2);
+  box-shadow: 0 0 14px rgba(181, 108, 255, 0.55);
+}
+
+/* ---------- 下：コマンドバー ---------- */
+.ecmd {
+  grid-area: cmd;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+.ecmd__caption {
+  margin: 0;
+  max-width: 100%;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--e-accent);
+  background: rgba(9, 7, 25, 0.8);
+  border: 1px solid var(--e-line-dim);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ecmd__caption button {
+  border: none;
+  background: none;
+}
+.ecmd__bar {
+  --e-cut: 18px;
+  width: min(720px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--e-line);
+  background: linear-gradient(180deg, rgba(40, 18, 90, 0.45), rgba(9, 7, 25, 0.9));
+  box-shadow: var(--e-shadow), 0 0 30px rgba(139, 53, 255, 0.25);
+}
+.ecmd__orb {
+  position: relative;
+  flex: none;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid var(--e-glow);
+  background: radial-gradient(circle, #fff 0%, #d7b4ff 18%, #8b35ff 45%, #1a0b3d 75%);
+  box-shadow: 0 0 22px rgba(139, 53, 255, 0.8);
+  animation: edith-breathe 3.2s ease-in-out infinite;
+}
+.ecmd__orb[data-state="listening"] {
+  animation-duration: 1.1s;
+  box-shadow: 0 0 34px rgba(215, 180, 255, 0.95);
+}
+.ecmd__orb[data-state="speaking"] span,
+.ecmd__orb[data-state="thinking"] span {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px dashed var(--e-glow);
+  animation: edith-spin 3s linear infinite;
+}
+.ecmd__form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(5, 4, 13, 0.7);
+  padding-left: 16px;
+}
+.ecmd__form input {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 0;
+  border: none;
+  background: none;
+  color: var(--e-text);
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+}
+.edith .ecmd__form input:focus-visible,
+.edith .equick__search input:focus-visible {
+  outline: none;
+}
+.ecmd__form:focus-within,
+.equick__search:focus-within {
+  border-color: var(--e-glow);
+  box-shadow: 0 0 14px rgba(181, 108, 255, 0.45);
+}
+.ecmd__form input::placeholder {
+  color: var(--e-dim);
+}
+.ecmd__send {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 46px;
+  border: none;
+  background: none;
+  color: var(--e-accent);
+  transition: color 0.2s, filter 0.2s;
+}
+.ecmd__send:hover {
+  color: #fff;
+  filter: drop-shadow(0 0 8px var(--e-glow));
+}
+
+.edith__mark {
+  grid-area: mark;
+  align-self: end;
+  display: grid;
+  grid-template-columns: 56px auto;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  align-items: center;
+  color: var(--e-dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.edith__markring {
+  grid-row: span 2;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--e-line-dim);
+  box-shadow: inset 0 0 0 8px rgba(139, 53, 255, 0.08), 0 0 12px rgba(139, 53, 255, 0.3);
+}
+.edith__mark b {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--e-text);
+  letter-spacing: 0.3em;
+}
+.edith__more {
+  position: absolute;
+  right: 28px;
+  bottom: 10px;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-align: right;
+  color: var(--e-dim);
+  pointer-events: none;
+}
+
+@keyframes edith-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes edith-win {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+@keyframes edith-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes edith-breathe {
+  50% {
+    box-shadow: 0 0 34px rgba(181, 108, 255, 0.95);
+    filter: brightness(1.15);
+  }
+}
+@keyframes edith-bar {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------- 小さめのノート PC ---------- */
+@media (max-width: 1360px) {
+  .edith {
+    grid-template-columns: minmax(230px, 280px) minmax(0, 1fr) minmax(260px, 310px);
+    gap: 10px 14px;
+    padding: 10px 14px;
+  }
+  .ehead__status {
+    gap: 12px;
+  }
+  .ehead__name {
+    letter-spacing: 0.3em;
+  }
+  .ecat {
+    padding: 7px 4px;
+  }
+  .ecat__icon {
+    width: 38px;
+    height: 38px;
+  }
+  .edith__more {
+    display: none;
+  }
+  .edith .etabs button {
+    padding: 7px 7px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+}
+
+/* ---------- タブレット：左右のパネルは開閉式 ---------- */
+@media (max-width: 1080px) {
+  .edith {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 58px auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head"
+      "tabs"
+      "center"
+      "cmd";
+  }
+  .ehead {
+    gap: 12px;
+  }
+  .ehead__nav button:not(.ehead__back) {
+    display: none;
+  }
+  .ehead__net,
+  .ehead__online {
+    display: none;
+  }
+  .ehead__toggles {
+    display: flex;
+  }
+  .eleft,
+  .eright {
+    position: absolute;
+    top: 80px;
+    bottom: 110px;
+    width: min(360px, 88vw);
+    z-index: 20;
+    transition: transform 0.3s ease;
+  }
+  .eleft {
+    left: 10px;
+    transform: translateX(-110%);
+  }
+  .eright {
+    right: 10px;
+    transform: translateX(110%);
+    overflow: auto;
+    grid-template-rows: auto auto auto;
+  }
+  .edith[data-panel="left"] .eleft,
+  .edith[data-panel="right"] .eright {
+    transform: none;
+  }
+  .edith__mark {
+    display: none;
+  }
+}
+
+/* ---------- スマホ：地図が中心、パネルは切り替え ---------- */
+@media (max-width: 640px) {
+  .edith {
+    padding: 8px;
+    gap: 8px;
+  }
+  .ehead__clock {
+    font-size: 11px;
+  }
+  .ehead__name {
+    font-size: 16px;
+    letter-spacing: 0.15em;
+  }
+  .ehead {
+    gap: 8px;
+    padding: 0 12px;
+  }
+  .ehead__bat,
+  .ehead__date,
+  .ehead__back span,
+  .emap__coord,
+  .ehead__logo {
+    display: none;
+  }
+  .ehead__status {
+    gap: 6px;
+  }
+  .ehead__toggles button {
+    padding: 5px 7px;
+    font-size: 11px;
+  }
+  .etabs button {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+  .emap__tag,
+  .emap__legend {
+    display: none;
+  }
+  .ewin {
+    width: 94%;
+    right: 3%;
+  }
+  .ecmd__orb {
+    width: 44px;
+    height: 44px;
+  }
+  .ecmd__form input {
+    font-size: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edith *,
+  .edith *::before,
+  .edith *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

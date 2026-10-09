@@ -65,25 +65,38 @@ const KAREN_WAKE_RE = new RegExp(
   "i",
 );
 
+/** E.D.I.T.H. の呼び方（イーディス / エディス / E.D.I.T.H.）。これも発言の頭で呼んだときだけ */
+const EDITH_WAKE_RE = new RegExp(
+  `^[\\s、。「]*${WAKE_LEAD}(?:[イい][\\s・]*[ーぃィ]?[\\s・]*(?:ディ|でぃ|デ|で)[\\s・]*[スす]|エディス|えでぃす|e\\.?\\s*d\\.?\\s*i\\.?\\s*t\\.?\\s*h\\.?(?![a-z]))${WAKE_TAIL}`,
+  "i",
+);
+
+/**
+ * 呼びかけを見分ける。いまの AI の名前で呼んだら、名前を取り除いた用件を返す。
+ * ほかの AI の名前で呼んだときは、切り替えの指示として名前ごと渡す（「カレン、起動」「イーディス、起動」）。
+ * F.R.I.D.A.Y. 以外の AI の間は「フライデー」では起きない（「フライデーに戻して」のような戻る指示だけ受け付ける）。
+ */
 export function splitWake(text: string): { woke: boolean; command: string } {
-  const m = WAKE_RE.exec(text);
-  if (m) {
-    const command = text.slice(m[0].length).trim();
-    // K.A.R.E.N. の間は「フライデー」では起きない。「フライデーに戻して」のような戻る指示だけ受け付ける
-    if (getAiMode() === "karen") return detectModeCommand(command) === "to-friday" ? { woke: true, command } : { woke: false, command: "" };
-    return { woke: true, command };
+  const mode = getAiMode();
+  const f = WAKE_RE.exec(text);
+  if (f) {
+    const command = text.slice(f[0].length).trim();
+    if (mode === "friday") return { woke: true, command };
+    return detectModeCommand(command) === "to-friday" ? { woke: true, command } : { woke: false, command: "" };
   }
-  // 「カレン、起動」でも呼べる。K.A.R.E.N. の間は名前を取り除き、F.R.I.D.A.Y. の間は名前ごと渡す（切り替えの言葉として見分けるため）
   const k = KAREN_WAKE_RE.exec(text);
-  if (!k) return { woke: false, command: "" };
-  return { woke: true, command: getAiMode() === "karen" ? text.slice(k[0].length).trim() : text.trim() };
+  if (k) return { woke: true, command: mode === "karen" ? text.slice(k[0].length).trim() : text.trim() };
+  const e = EDITH_WAKE_RE.exec(text);
+  if (e) return { woke: true, command: mode === "edith" ? text.slice(e[0].length).trim() : text.trim() };
+  return { woke: false, command: "" };
 }
 
 /** 発言の先頭に付いた呼びかけを取り除く（「フライデー、今日の予定は？」→「今日の予定は？」） */
 export function stripWake(text: string): string {
   const m = WAKE_RE.exec(text);
   if (m) return text.slice(m[0].length).trim();
-  const k = getAiMode() === "karen" ? KAREN_WAKE_RE.exec(text) : null;
+  const mode = getAiMode();
+  const k = mode === "karen" ? KAREN_WAKE_RE.exec(text) : mode === "edith" ? EDITH_WAKE_RE.exec(text) : null;
   return k ? text.slice(k[0].length).trim() : text.trim();
 }
 

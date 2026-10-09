@@ -38,7 +38,7 @@ export interface AgentContext {
   now: Date;
   timezone: string;
   /** 答える AI（K.A.R.E.N. のときはクリエイティブ担当として答える。無ければ F.R.I.D.A.Y.） */
-  persona?: "karen";
+  persona?: "karen" | "edith";
   /** 音声会話モード（返答は読み上げられる） */
   voice: boolean;
   signal?: AbortSignal;
