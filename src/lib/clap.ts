@@ -3,10 +3,10 @@
  *
  * 拍手らしい音 = 次のすべてを満たす短い音
  *   - 周りの音（ノイズの底）より十分大きく、一瞬で立ち上がる（直前の 3 区切りの 4 倍以上）
- *   - 高い音まで含むザラッとした音（ゼロ交差率が高い。声の母音やノックのような低い音は低い）
- *   - すぐ消える（大きさが山の 1/4 まで落ちるのが 120ms 以内。話し声は音節が長く続く）
+ *   - 高い音まで含むザラッとした音（音全体で見たゼロ交差の速さがおよそ 900Hz 以上。声の母音やノックのような低い音は遅い）
+ *   - すぐ消える（大きさが山の 1/4 まで落ちるのが 150ms 以内。部屋の響きは少し残る。話し声は音節が長く続く）
  *   - 消えたあと静かなまま（「パ」のような破裂音は、すぐ後に母音が続くので除く）
- * 拍手らしい音が 0.12〜0.8 秒の間隔で 2 回続き、そのあと 0.3 秒何も鳴らなければ「2 回の拍手」。
+ * 拍手らしい音が 0.12〜1 秒の間隔で 2 回続き、そのあと 0.3 秒何も鳴らなければ「2 回の拍手」。
  * 3 回以上続いたとき（拍手喝采・ノックの連打など）は反応しない。
  *
  * 音は録音も送信もしない。大きさとゼロ交差率だけを見る。
@@ -15,8 +15,8 @@
 const WINDOW_S = 0.005;
 /** ノイズの底より何倍大きければ拍手の候補にするか */
 const FLOOR_RATIO = 8;
-/** これより小さい音は無視（遠くの物音） */
-const MIN_RMS = 0.03;
+/** これより小さい音は無視（遠くの物音）。マイクの音を加工しない（自動で音量を上げない）ので小さめに */
+const MIN_RMS = 0.015;
 /** 直前の区切りより何倍の速さで立ち上がれば「一瞬で立ち上がった」とみなすか */
 const ATTACK_RATIO = 4;
 /** 山の大きさの何割まで落ちたら音が終わったとみなすか */
@@ -25,13 +25,18 @@ const DECAY_RATIO = 0.25;
 const TAIL_S = 0.08;
 /** 確かめている間に、山の何割まで戻ったら拍手ではないとみなすか */
 const TAIL_RATIO = 0.4;
-/** 拍手の音の長さの上限 */
-const MAX_CLAP_S = 0.12;
-/** 拍手とみなすゼロ交差率（1 サンプルあたり）の下限 */
-const MIN_ZCR = 0.1;
+/** 拍手の音の長さの上限（響く部屋では少し長く残る） */
+const MAX_CLAP_S = 0.15;
+/**
+ * 拍手とみなすザラつき（ゼロ交差の速さ。1 秒あたりの交差の半分＝おおよその主な音の高さ Hz）の下限。
+ * 拍手の音は 1〜3kHz あたりが強い（手を丸めて打つと 1kHz 前後まで下がる）。声の母音・ノック・机を叩く音はもっと低い。
+ * 音の始まりだけでなく音全体で（大きいところほど重く）測るので、「パ」の破裂のあとに母音が続く声は低くなる。
+ * サンプリングの速さ（48kHz / 44.1kHz / 16kHz）が違っても同じ基準になるよう Hz で決める
+ */
+const MIN_ZC_HZ = 900;
 /** 2 回の拍手の間隔 */
 const MIN_GAP_S = 0.12;
-const MAX_GAP_S = 0.8;
+const MAX_GAP_S = 1.0;
 /** 2 回目のあと、3 回目が来ないことを確かめる時間 */
 const QUIET_AFTER_S = 0.3;
 /** 一度反応したら、しばらく反応しない */
@@ -111,15 +116,13 @@ export class DoubleClapDetector {
     if (this.event) {
       const e = this.event;
       if (rms > e.peak) e.peak = rms;
-      // 立ち上がりの直後の数区切りでザラつきを測る
-      if (this.t - e.start < 4) {
-        e.zc += zc;
-        e.n += w.length;
-      }
+      // 音全体のザラつきを、大きいところほど重く測る
+      e.zc += zc * sum;
+      e.n += w.length * sum;
       if (rms < e.peak * DECAY_RATIO) {
         this.event = null;
         const length = this.secs(this.t - e.start);
-        if (length <= MAX_CLAP_S && e.zc / e.n >= MIN_ZCR) {
+        if (length <= MAX_CLAP_S && ((e.zc / e.n) * this.sampleRate) / 2 >= MIN_ZC_HZ) {
           this.tail = { start: e.start, peak: e.peak, until: this.t + Math.max(1, Math.round(TAIL_S / this.secs(1))) };
         } else this.claps = []; // 拍手ではない音が割り込んだら数え直す
       } else if (this.secs(this.t - e.start) > MAX_CLAP_S * 2) {
@@ -136,7 +139,7 @@ export class DoubleClapDetector {
         this.clap(start);
       }
     } else if (rms > MIN_RMS && rms > this.floor * FLOOR_RATIO && rms > before * ATTACK_RATIO) {
-      this.event = { start: this.t, peak: rms, zc, n: w.length };
+      this.event = { start: this.t, peak: rms, zc: zc * sum, n: w.length * sum };
     } else {
       // 静かなときだけノイズの底を更新する（下がるのは速く、上がるのはゆっくり）
       const k = rms < this.floor ? 0.05 : 0.005;
@@ -157,8 +160,8 @@ export class DoubleClapDetector {
         this.onDoubleClap();
       }
     }
-    // 1 回だけで間が空いたら忘れる
-    if (this.claps.length === 1 && this.secs(this.t - this.claps[0]) > MAX_GAP_S) this.claps = [];
+    // 1 回だけで間が空いたら忘れる（2 回目らしい音を確かめている最中は待つ）
+    if (this.claps.length === 1 && !this.event && !this.tail && this.secs(this.t - this.claps[0]) > MAX_GAP_S) this.claps = [];
   }
 
   private clap(start: number): void {

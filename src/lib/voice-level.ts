@@ -178,10 +178,52 @@ export function recentAudio(ms: number): Float32Array | null {
 let clapHandler: (() => void) | null = null;
 /** 1 回目の拍手で呼ぶ（起動の準備を先に始める） */
 let clapPrime: (() => void) | null = null;
-let clap: { proc: ScriptProcessorNode; mute: GainNode } | null = null;
+let clap: { proc: ScriptProcessorNode; mute: GainNode; from: MediaStreamAudioSourceNode } | null = null;
+/**
+ * 拍手を聞くための、加工しないマイクの音。
+ * 声のためのマイク（雑音を消す・音量を自動で整える）は、拍手のような一瞬の大きな音を「雑音」として小さくしてしまうので、
+ * 拍手だけは同じマイクを加工なしでもう 1 本開いて聞く。開けなければ、声のためのマイクで聞く。
+ */
+let rawStream: MediaStream | null = null;
+let rawSource: MediaStreamAudioSourceNode | null = null;
+let rawOpening: Promise<void> | null = null;
+
+function openRawMic() {
+  if (rawSource || rawOpening || !clapHandler || !stream || !ctx) return;
+  const deviceId = stream.getAudioTracks()[0]?.getSettings().deviceId;
+  rawOpening = (async () => {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
+      });
+      if (!clapHandler || !ctx || !stream) {
+        s.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      rawStream = s;
+      rawSource = ctx.createMediaStreamSource(s);
+      // 声のためのマイクで聞き始めていたら、加工しない方に付け替える
+      detachClap();
+      attachClap();
+    } catch {
+      /* 開けなければ、声のためのマイクで聞く */
+    } finally {
+      rawOpening = null;
+    }
+  })();
+}
+
+function closeRawMic() {
+  rawSource?.disconnect();
+  rawSource = null;
+  rawStream?.getTracks().forEach((t) => t.stop());
+  rawStream = null;
+}
 
 function attachClap() {
-  if (clap || !clapHandler || !source || !ctx) return;
+  const from = rawSource ?? source;
+  if (clap || !clapHandler || !from || !ctx) return;
   try {
     const c = ctx;
     const detector = new DoubleClapDetector(
@@ -201,20 +243,21 @@ function attachClap() {
       }
       detector.push(e.inputBuffer.getChannelData(0));
     };
-    source.connect(proc);
+    from.connect(proc);
     proc.connect(mute);
     mute.connect(c.destination); // つながっていないと動かないブラウザがあるため（音は出さない）
-    clap = { proc, mute };
+    clap = { proc, mute, from };
   } catch {
     clap = null;
   }
+  openRawMic();
 }
 
 function detachClap() {
   if (!clap) return;
   clap.proc.onaudioprocess = null;
   try {
-    source?.disconnect(clap.proc);
+    clap.from.disconnect(clap.proc);
   } catch {
     /* noop */
   }
@@ -228,7 +271,10 @@ export function setClapHandler(handler: (() => void) | null, prime: (() => void)
   clapHandler = handler;
   clapPrime = prime;
   if (handler) attachClap();
-  else detachClap();
+  else {
+    detachClap();
+    closeRawMic();
+  }
 }
 
 /** iPhone・iPad（読み上げの音を Web Audio に通すと鳴らなくなることがあるので、測らない） */
@@ -398,6 +444,7 @@ export function stopVoiceLevel(): void {
   wanted = false;
   detachCapture();
   detachClap();
+  closeRawMic();
   source?.disconnect();
   source = null;
   analyser = null;
