@@ -120,8 +120,8 @@ export async function checkLocalAi(signal?: AbortSignal): Promise<{ ok: boolean;
  * ローカル AI（Ollama）で返事を作る。numPredict は返事の長さの上限（省略時は設定の短い会話の長さ）。
  * maxTokens は共通の形（AIRequest）の項目で、Ollama では numPredict を使う。
  */
-export function streamLocal(req: AIRequest & { numPredict?: number }, cfg: LocalAiConfig = localAiConfig()): AsyncGenerator<AIChunk> {
-  return streamOllama({ baseUrl: cfg.baseUrl, model: cfg.model, numPredict: req.numPredict ?? cfg.replyLength, thinking: cfg.thinking }, req);
+export function streamLocal(req: AIRequest & { numPredict?: number; firstTokenMs?: number }, cfg: LocalAiConfig = localAiConfig()): AsyncGenerator<AIChunk> {
+  return streamOllama({ baseUrl: cfg.baseUrl, model: cfg.model, numPredict: req.numPredict ?? cfg.replyLength, thinking: cfg.thinking, firstTokenMs: req.firstTokenMs }, req);
 }
 
 /** 失敗がローカル AI 側のもの（届かない・モデル未導入・時間切れなど）か */

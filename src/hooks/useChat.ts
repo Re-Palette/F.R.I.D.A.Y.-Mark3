@@ -22,6 +22,7 @@ import { REMINDERS_CHANGED } from "./useReminders";
 import { useSessionSync } from "./useSessionSync";
 import { currentRoute, localReadyForQuickChat, markGeminiFailed, markLocalFailed, probeRoute } from "@/lib/ai-router";
 import { runLocalConversation, runQuickChat } from "@/lib/offline-core";
+import { localAiPrefs } from "@/lib/local-ai";
 import { isQuickChat } from "@/lib/quick-chat";
 import { shouldFallback } from "@/llm/provider";
 
@@ -544,14 +545,16 @@ export function useChat() {
         // ローカル AI にツールの権限は無い。失敗したら、まだ何も表示していないときだけ Gemini で答え直す（同じ発言を二重に送らない）
         const latestMsg = apiHistory[apiHistory.length - 1];
         const prevAssistant = [...apiHistory.slice(0, -1)].reverse().find((m) => m.role === "assistant")?.content;
+        // オフライン中も、短い日常会話は短い指示で答える（長い指示を読ませないので、軽い PC でも速い）
+        const offlineNow = switchToLocal;
         if (
-          !switchToLocal &&
-          currentRoute().route === "online" &&
-          localReadyForQuickChat() &&
+          (currentRoute().route === "online" || offlineNow) &&
+          (offlineNow ? localAiPrefs().quickLocal : localReadyForQuickChat()) &&
           isQuickChat({ text: latestMsg?.content ?? "", previousAssistant: prevAssistant, hasAttachment: Boolean(latestMsg?.image || latestMsg?.files?.length || latestMsg?.audio) })
         ) {
           let failure: Extract<StreamEvent, { type: "error" }> | null = null;
-          for await (const event of runQuickChat(apiHistory, { voice: Boolean(opts.voice), signal: controller.signal })) {
+          // オフライン中は答え直す先（Gemini）が無いので、最初の文字まで長めに待つ
+          for await (const event of runQuickChat(apiHistory, { voice: Boolean(opts.voice), signal: controller.signal, firstTokenMs: offlineNow ? 60_000 : undefined })) {
             if (event.type === "error") {
               failure = event;
               break;
@@ -561,8 +564,9 @@ export function useChat() {
           if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
           if (failure) {
             markLocalFailed(failure.code === "QUICK_NO_MODEL" ? "no-model" : failure.code === "QUICK_TIMEOUT" ? "timeout" : failure.code === "QUICK_UNAVAILABLE" ? "unavailable" : "error");
-            // 途中まで表示していたら答え直さない（同じ返事が二つにならないように）。そこまでを残してエラーを出す
-            if (received.trim()) fail({ code: failure.code, message: failure.message, retryable: true });
+            // 途中まで表示していたら答え直さない（同じ返事が二つにならないように）。そこまでを残してエラーを出す。
+            // オフライン中も答え直さない（同じローカル AI にもう一度長い指示を読ませると、さらに待たせるため）
+            if (received.trim() || offlineNow) fail({ code: failure.code, message: failure.message, retryable: true });
             else {
               model = undefined;
               setPhase("waiting");

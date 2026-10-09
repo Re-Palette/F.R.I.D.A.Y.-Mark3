@@ -172,6 +172,11 @@ const ONLINE_ONLY: Partial<Record<(typeof CORE_TAGS)[number], string>> = {
 /** オンラインに戻ったら脳・カレンダーに反映する Tool */
 const SYNC_LATER = ["memory", "document", "slides", "todo-add", "todo-done", "project-progress", "reminder", "calendar", "calendar-update", "calendar-delete"] as const;
 
+/** オフライン時の返事の長さ（num_predict）。ToDo・記憶の隠しタグが書ける程度 */
+const OFFLINE_NUM_PREDICT = { text: 256, voice: 120 };
+/** オフライン時に最初の文字まで待てる時間（CPU だけの PC は指示を読むのに時間がかかる） */
+const OFFLINE_FIRST_TOKEN_MS = 120_000;
+
 export async function* runLocalConversation(history: ChatMessage[], opts: { voice: boolean; signal?: AbortSignal }): AsyncGenerator<StreamEvent> {
   const cfg = localAiConfig();
   // Ollama は読める長さ（num_ctx 2048）が短いので、直近の会話と記憶を少なめに渡す
@@ -195,7 +200,9 @@ export async function* runLocalConversation(history: ChatMessage[], opts: { voic
       content: `${m.content}${m.image ? "\n（カメラの映像はオフラインでは見られません）" : ""}${m.files?.length ? "\n（添付ファイルはオフラインでは読めません）" : ""}`,
     }));
     // オフライン中はこの会話が ToDo・記憶などの保留（隠しタグ）も書くので、短い会話（60/120）より長めに書ける上限にする
-    for await (const chunk of streamLocal({ system, messages, signal: opts.signal, numPredict: opts.voice ? 200 : 512 }, cfg)) {
+    // 軽い PC（CPU だけ）でも待ちすぎないよう、返事の長さは ToDo などの保留（隠しタグ）が書ける程度に抑え、
+    // 指示を読む時間がかかっても途中で諦めないよう、最初の文字まで長めに待つ
+    for await (const chunk of streamLocal({ system, messages, signal: opts.signal, numPredict: opts.voice ? OFFLINE_NUM_PREDICT.voice : OFFLINE_NUM_PREDICT.text, firstTokenMs: OFFLINE_FIRST_TOKEN_MS }, cfg)) {
       if (chunk.model) {
         model = chunk.model;
         yield { type: "meta", agent: "chat", model: `LOCAL AI (${model})`, contextMessages: window.messages.length };
@@ -331,7 +338,7 @@ export type QuickChatFailure = "unavailable" | "no-model" | "timeout" | "empty" 
  *   - 失敗は error イベントで返す（code: QUICK_<種類>）。画面は、まだ何も表示していなければ Gemini で答え直す
  *   - 最後まで答えられたときだけ、会話ログ（脳）に残すために控える（ツールの中身は含めない）
  */
-export async function* runQuickChat(history: ChatMessage[], opts: { voice: boolean; signal?: AbortSignal }): AsyncGenerator<StreamEvent> {
+export async function* runQuickChat(history: ChatMessage[], opts: { voice: boolean; signal?: AbortSignal; firstTokenMs?: number }): AsyncGenerator<StreamEvent> {
   const cfg = localAiConfig();
   const window = buildConversationWindow(history, { maxMessages: 4, maxChars: 600 });
   const tags = new TagFilter(CORE_TAGS, CORE_TAG_LIMITS);
@@ -341,14 +348,14 @@ export async function* runQuickChat(history: ChatMessage[], opts: { voice: boole
   const timer = setTimeout(() => {
     timedOut = true;
     ctrl.abort();
-  }, QUICK_FIRST_TOKEN_MS);
+  }, opts.firstTokenMs ?? QUICK_FIRST_TOKEN_MS);
   const onAbort = () => ctrl.abort();
   opts.signal?.addEventListener("abort", onAbort);
   let reply = "";
   try {
     yield { type: "stage", stage: "think" };
     const messages = window.messages.map((m) => ({ role: m.role, content: m.content }));
-    for await (const chunk of streamLocal({ system: quickSystem(opts.voice), messages, signal: ctrl.signal, numPredict: cfg.replyLength }, cfg)) {
+    for await (const chunk of streamLocal({ system: quickSystem(opts.voice), messages, signal: ctrl.signal, numPredict: cfg.replyLength, firstTokenMs: (opts.firstTokenMs ?? QUICK_FIRST_TOKEN_MS) + 5000 }, cfg)) {
       clearTimeout(timer);
       if (chunk.model) yield { type: "meta", agent: "chat", model: `LOCAL · ${chunk.model}`, contextMessages: window.messages.length };
       if (!chunk.text) continue;
