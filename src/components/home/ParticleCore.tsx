@@ -310,7 +310,8 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
           }
         }
       }
-      if (now - last < gap) return;
+      // ローカル AI（PC の CPU）が答えを作っている間は、コアの描き直しを 1 秒 10 回に減らして CPU を空ける
+      if (now - last < (document.body.dataset.localBusy !== undefined ? 100 : gap)) return;
       const t0 = performance.now();
       draw(now);
       // 1 回描くのにかかった時間（なめらかにならす）。6ms を超えるようなら 30fps に落とす

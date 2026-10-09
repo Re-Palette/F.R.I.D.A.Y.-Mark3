@@ -4062,3 +4062,17 @@ body[data-lite] .radar__spinner,
 body[data-lite] .hvoice__flow {
   animation-play-state: paused;
 }
+
+/* ローカル AI（PC の CPU）が答えを作っている間：画面の飾りの動きを止めて、返事と画面の操作に CPU を回す */
+body[data-local-busy] .bg__particles,
+body[data-local-busy] .bg__data {
+  display: none;
+}
+body[data-local-busy] .radar__spinner,
+body[data-local-busy] .radar__blip,
+body[data-local-busy] .hvoice__flow,
+body[data-local-busy] .rx__spin,
+body[data-local-busy] .hactivity__live i,
+body[data-local-busy] .hmode__value i {
+  animation-play-state: paused;
+}

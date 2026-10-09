@@ -36,7 +36,8 @@ function set(next: AiRouteState) {
 export const currentRoute = (): AiRouteState => state;
 
 const HEALTH_TIMEOUT_MS = 5000;
-const LOCAL_TIMEOUT_MS = 2500;
+/** ローカル AI に届くか確かめるときに待つ時間（軽い PC で答えを作っている最中は返事が遅れるので長め） */
+const LOCAL_TIMEOUT_MS = 8000;
 /** オフライン中に Gemini へ戻れるか確かめる間隔 */
 const RECHECK_OFFLINE_MS = 20_000;
 /** オンライン中にときどき確かめる間隔（サーバー側でキャッシュするので軽い） */
@@ -64,7 +65,28 @@ function setLocalStatus(next: LocalStatus) {
 export const currentLocalStatus = (): LocalStatus | null => localStatus;
 
 /** ローカル AI に届くか確かめ直す */
+/* ---------- ローカル AI が答えを作っている最中か（その間は確かめない・画面の飾りの動きを止めて CPU を空ける） ---------- */
+
+let localWork = 0;
+
+/** ローカル AI で答え始めるときに呼ぶ。終わったら返り値を呼ぶ */
+export function beginLocalWork(): () => void {
+  localWork++;
+  if (typeof document !== "undefined") document.body.dataset.localBusy = "";
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    localWork = Math.max(0, localWork - 1);
+    if (!localWork && typeof document !== "undefined") delete document.body.dataset.localBusy;
+  };
+}
+
+export const localBusy = (): boolean => localWork > 0;
+
 export async function checkLocalStatus(): Promise<LocalStatus> {
+  // 答えを作っている最中は、CPU が埋まっていて確かめる返事が遅れ、「つながらない」と誤って判断しやすい。いまの状態のまま扱う
+  if (localWork > 0 && localStatus) return localStatus;
   const r = await checkLocalAi(AbortSignal.timeout(LOCAL_TIMEOUT_MS)).catch(() => ({ ok: false, model: undefined, problem: "unavailable" as const }));
   const next = { ...r, at: Date.now() };
   setLocalStatus(next);

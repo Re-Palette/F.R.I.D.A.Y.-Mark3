@@ -20,7 +20,7 @@ import { clearHologram, requestHologram } from "@/lib/hologram-model";
 import { closeTabs, openTab, TAB_BLOCKED } from "@/lib/tabs";
 import { REMINDERS_CHANGED } from "./useReminders";
 import { useSessionSync } from "./useSessionSync";
-import { currentRoute, localReadyForQuickChat, markGeminiFailed, markLocalFailed, probeRoute } from "@/lib/ai-router";
+import { beginLocalWork, currentRoute, localReadyForQuickChat, markGeminiFailed, markLocalFailed, probeRoute } from "@/lib/ai-router";
 import { runLocalConversation, runQuickChat } from "@/lib/offline-core";
 import { localAiPrefs } from "@/lib/local-ai";
 import { isQuickChat } from "@/lib/quick-chat";
@@ -288,7 +288,8 @@ export function useChat() {
             const dt = Math.min(100, Math.max(8, lastTickAt ? now - lastTickAt : 16));
             lastTickAt = now;
             // 音声会話は読み上げを最優先: 表示の演出を省き、届いた分をすぐ出す（読み上げに即渡る）
-            const step = opts.voice
+            // ローカル AI（PC の CPU で答えている）のときも演出を省く（毎フレームの描き直しで CPU を取り合わないように）
+            const step = opts.voice || instantReveal
               ? received.length - shown
               : revealStep(received.length - shown, dt, avgGap, now - lastDeltaAt, streamDone);
             shown = Math.min(received.length, shown + step);
@@ -334,6 +335,8 @@ export function useChat() {
 
       let ttftMs: number | undefined;
       let model: string | undefined;
+      /** 表示の演出（1 文字ずつ流す）を省くか */
+      let instantReveal = false;
 
       const fail = (error: UiError) =>
         finishNow(() => {
@@ -524,6 +527,15 @@ export function useChat() {
         /** ローカル AI（Offline Core）で答える。イベントの形はサーバーと同じなので、表示はそのまま */
         const runLocal = async () => {
           local = true;
+          instantReveal = true;
+          const endWork = beginLocalWork();
+          try {
+            await runLocalInner();
+          } finally {
+            endWork();
+          }
+        };
+        const runLocalInner = async () => {
           const last = apiHistory[apiHistory.length - 1];
           if (last?.audio && !last.content.trim()) {
             fail({ code: "LOCAL_AI_UNAVAILABLE", message: "オフラインのため、録った声を文字にできません。文字で入力するか、オンラインに戻ってから話しかけてください。", retryable: true });
@@ -553,13 +565,20 @@ export function useChat() {
           isQuickChat({ text: latestMsg?.content ?? "", previousAssistant: prevAssistant, hasAttachment: Boolean(latestMsg?.image || latestMsg?.files?.length || latestMsg?.audio) })
         ) {
           let failure: Extract<StreamEvent, { type: "error" }> | null = null;
-          // オフライン中は答え直す先（Gemini）が無いので、最初の文字まで長めに待つ
-          for await (const event of runQuickChat(apiHistory, { voice: Boolean(opts.voice), signal: controller.signal, firstTokenMs: offlineNow ? 60_000 : undefined })) {
-            if (event.type === "error") {
-              failure = event;
-              break;
+          instantReveal = true;
+          const endWork = beginLocalWork();
+          try {
+            // オフライン中は答え直す先（Gemini）が無いので、最初の文字まで長めに待つ
+            for await (const event of runQuickChat(apiHistory, { voice: Boolean(opts.voice), signal: controller.signal, firstTokenMs: offlineNow ? 60_000 : undefined })) {
+              if (event.type === "error") {
+                failure = event;
+                break;
+              }
+              handle(event);
             }
-            handle(event);
+          } finally {
+            endWork();
+            if (failure && !received.trim()) instantReveal = false;
           }
           if (controller.signal.aborted) throw new DOMException("aborted", "AbortError");
           if (failure) {
