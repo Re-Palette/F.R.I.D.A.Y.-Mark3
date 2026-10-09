@@ -20,6 +20,12 @@ const INNER = 70; // 内側の点
 const N = SHELL + INNER;
 const DUST = 220; // 細かい光の粒
 const TILT = 0.38;
+/** 球の大きさ（canvas の短い辺に対する半径の割合）。周りの太い輪（半径の約 1.38 倍）との間に、動くための余白を取る */
+const RADIUS = 0.4;
+/** 声に合わせて広がっても、ここまで（RADIUS × CAP ≒ canvas の端・太い輪の内側）に収める */
+const CAP = 1.22;
+/** 1 を超えた分をなめらかに頭打ちにする（小さな動きはそのまま、大きな動きほど抑える） */
+const soft = (k: number) => (k <= 1 ? k : 1 + (CAP - 1) * Math.tanh((k - 1) / (CAP - 1)));
 
 /** 状態ごとの回る速さ（rad/s）・明るさ */
 const TUNE: Record<CoreMode, { spin: number; glow: number }> = {
@@ -150,7 +156,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      prerender(Math.max(1, Math.min(w, h) * 0.44));
+      prerender(Math.max(1, Math.min(w, h) * RADIUS));
     };
     fit();
     // 返事の欄が伸びていく間などは作り直さず、大きさが落ち着いてから 1 回だけ描き直しの準備をする
@@ -200,7 +206,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       const stretchX = 1 - inflection * 0.04 * g;
       const cx = w / 2;
       const cy = h / 2;
-      const R = Math.min(w, h) * 0.44;
+      const R = Math.min(w, h) * RADIUS;
       const breath = 1 + Math.sin(t * 1.1) * 0.02 + lv * (m === "speaking" ? 0.1 : 0.07);
       const scan = Math.sin(t * 1.6); // 検索中の光の帯の高さ
       const wave = (t * 0.9) % 1; // 返事中の光の波
@@ -257,8 +263,9 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
         const rz = x * sinA + z * cosA;
         const ry = y0 * cosT - rz * sinT;
         const pz = y0 * sinT + rz * cosT;
-        sx[i] = cx + rx * R * s * stretchX;
-        sy[i] = cy + ry * R * s * stretchY;
+        // どれだけ動いても、周りの輪から飛び出さないように頭打ちにする
+        sx[i] = cx + rx * R * soft(s * stretchX);
+        sy[i] = cy + ry * R * soft(s * stretchY);
         let n = (pz + 1) / 2 + ring * 0.7; // 0 奥 … 1 手前（音節の光の波の上は明るく）
         if (m === "search") n += Math.max(0, 1 - Math.abs(ry * s - scan) * 5) * 0.9;
         else if (m === "create" || m === "speaking") n += Math.max(0, 1 - Math.abs(Math.hypot(rx, ry) * s - wave * 1.1) * 7) * 0.8;
