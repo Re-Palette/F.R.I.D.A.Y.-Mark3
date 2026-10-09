@@ -215,5 +215,7 @@ describe("E.D.I.T.H. のリアルタイム会話", () => {
     const text = buildLiveInstruction({ now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [], persona: "edith" });
     assert.match(text, /E\.D\.I\.T\.H\./);
     assert.match(text, /edith_research/);
+    assert.match(text, /声では使わない/, "声では見出し・表を使わない");
+    assert.match(text, /その場で Google 検索/, "ふつうの質問はその場で答える（いつも調査の道具を使わない）");
   });
 });

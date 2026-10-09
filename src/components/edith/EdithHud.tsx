@@ -161,6 +161,11 @@ export const EdithHud = memo(function EdithHud(props: Props) {
     });
   }, [messages]);
 
+  // リアルタイム会話のやりとり（声で話した内容と E.D.I.T.H. の返事）。最後の 1 往復を、コマンドバーの上に出す
+  const liveLines = useMemo(() => messages.filter((m) => m.id.startsWith("live-") && m.createdAt >= openedAt.current - 500 && m.content.trim()).slice(-2), [messages]);
+  const lastLiveAt = liveLines.length ? Math.max(...liveLines.map((m) => m.createdAt)) : 0;
+  const showLive = liveLines.length > 0 && voiceState !== "off" && (voiceState !== "standby" || (now ? now.getTime() - lastLiveAt < 25_000 : true));
+
   const items: EdithNewsItem[] = news.status === "ready" ? news.items : [];
   // AI の答え（開いている情報ウィンドウ）に出てきた国・都市
   const answerPlaces = useMemo(() => {
@@ -437,7 +442,17 @@ export const EdithHud = memo(function EdithHud(props: Props) {
 
       {/* ---------- 下：GLOBAL COMMAND BAR ---------- */}
       <footer className="ecmd">
-        {(voiceInterim || voiceError) && (
+        {showLive && (
+          <div className="elive" aria-live="polite" aria-label="リアルタイム会話">
+            {liveLines.map((m) => (
+              <p key={m.id} data-role={m.role} data-streaming={m.status === "streaming" || undefined}>
+                <b>{m.role === "user" ? "YOU" : "E.D.I.T.H."}</b>
+                <span>{m.content}</span>
+              </p>
+            ))}
+          </div>
+        )}
+        {(voiceInterim || voiceError) && !(showLive && !voiceError && voiceState !== "listening") && (
           <p className="ecmd__caption" role="status">
             {voiceError ?? voiceInterim}
             {voiceError && <button type="button" onClick={onDismissVoiceError} aria-label="閉じる"><I n="close" s={12} /></button>}

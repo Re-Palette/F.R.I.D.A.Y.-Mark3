@@ -808,6 +808,47 @@
   gap: 6px;
   justify-items: center;
 }
+.elive {
+  width: min(720px, 100%);
+  display: grid;
+  gap: 4px;
+  padding: 8px 14px;
+  border: 1px solid var(--e-line-dim);
+  border-left: 2px solid var(--e-glow);
+  background: rgba(9, 7, 25, 0.88);
+  box-shadow: 0 0 14px rgba(139, 53, 255, 0.25);
+  animation: edith-in 0.3s ease-out both;
+}
+.elive p {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.elive b {
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--e-dim);
+  padding-top: 2px;
+}
+.elive p[data-role="assistant"] b {
+  color: var(--e-glow);
+}
+.elive span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--e-text);
+}
+.elive p[data-streaming] span::after {
+  content: "▍";
+  color: var(--e-glow);
+  animation: edith-bar 1s steps(1) infinite;
+}
 .ecmd__caption {
   margin: 0;
   max-width: 100%;
