@@ -237,19 +237,30 @@
   white-space: nowrap;
 }
 
+/*
+ * ナビは画面のちょうど真ん中、枠の上辺がへこんだ部分（枠の 1600×900 の図で y=40）の真下に置く。
+ * 枠は画面の大きさに合わせて伸び縮みするので、へこみの高さ（画面の高さの 40/900）に合わせて位置を決め、線に重ならないようにする。
+ * ヘッダーの外（.karen の直下）に置き、画面に対して位置を決める（ヘッダーの位置は画面の大きさで変わるため）。
+ */
 .khead__nav {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  /* 画面全体が縮小されているとき（--ui-zoom）も、縮小後の高さで計算する */
+  top: calc((100vh / var(--ui-zoom, 1) - 8px) * 40 / 900 + 4px + 6px);
+  transform: translateX(-50%);
   display: flex;
-  gap: 6px;
-  margin: 0 auto;
-  padding: 6px 18px;
+  gap: 4px;
+  margin: 0;
+  padding: 0 14px;
   border-bottom: 1px solid var(--k-line-dim);
 }
 
 .khead__nav button {
   display: grid;
   place-items: center;
-  width: 56px;
-  height: 40px;
+  width: 48px;
+  height: 34px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
@@ -257,8 +268,8 @@
 }
 
 .khead__nav button svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: #7fcfff;
   stroke-width: 1.6;
@@ -282,6 +293,7 @@
   display: flex;
   align-items: center;
   gap: 22px;
+  margin-left: auto;
   white-space: nowrap;
 }
 
@@ -1391,6 +1403,29 @@
   }
 }
 
+/* 右上（戻る・日時・接続・電池）を、枠の右側の高い部分に収める（斜めの線にかからないように） */
+@media (max-width: 1799px) {
+  .khead__right {
+    gap: 12px;
+  }
+  .khead__link {
+    padding-left: 12px;
+  }
+  .khead__time {
+    letter-spacing: 0.04em;
+  }
+  .khead__time em {
+    margin: 0 5px;
+  }
+}
+
+/* 小さめの画面：枠のへこみの幅に収まるよう、ナビのボタンを詰める */
+@media (min-width: 1000px) and (max-width: 1279px) {
+  .khead__nav button {
+    width: 40px;
+  }
+}
+
 @media (max-width: 999px) {
   .karen {
     grid-template-columns: minmax(0, 1fr);
@@ -1432,10 +1467,11 @@
   }
 
   .khead__nav {
-    flex: 1;
-    justify-content: flex-end;
+    left: auto;
+    right: 130px;
+    top: 23px;
+    transform: none;
     gap: 0;
-    min-width: 0;
     margin: 0;
     padding: 0;
     border: 0;

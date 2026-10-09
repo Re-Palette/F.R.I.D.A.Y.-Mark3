@@ -290,7 +290,6 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
       <div className="karen__grid" aria-hidden="true" />
       <svg className="karen__frame" viewBox="0 0 1600 900" preserveAspectRatio="none" aria-hidden="true">
         <path d="M14 40 L40 14 H560 L590 40 H1010 L1040 14 H1560 L1586 40 V860 L1560 886 H1040 L1010 860 H590 L560 886 H40 L14 860 Z" />
-        <path className="karen__frame-in" d="M600 70 H1000" />
       </svg>
       {entering && <div className="karen__scan" aria-hidden="true" />}
 
@@ -301,23 +300,6 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
           <b>K.A.R.E.N.</b>
           <i>3D HOLOGRAM CREATOR / AI ASSISTANT</i>
         </div>
-        <nav className="khead__nav" aria-label="K.A.R.E.N.">
-          <button type="button" title="待機（中央の球）に戻る" aria-current={!st.workspace} onClick={() => runKarenOp({ kind: "idle" }, io)}>
-            {Icon.home}
-          </button>
-          <button type="button" title="保存したプロジェクト" aria-pressed={panel === "projects"} onClick={() => setPanel((p) => (p === "projects" ? null : "projects"))}>
-            {Icon.folder}
-          </button>
-          <button type="button" title="形を足す（球体・立方体など）" aria-pressed={panel === "add"} onClick={() => setPanel((p) => (p === "add" ? null : "add"))}>
-            {Icon.cube}
-          </button>
-          <button type="button" title="F.R.I.D.A.Y. に戻る" onClick={onBack}>
-            {Icon.spark}
-          </button>
-          <button type="button" title="シーン設定" aria-pressed={panel === "scene"} onClick={() => setPanel((p) => (p === "scene" ? null : "scene"))}>
-            {Icon.gear}
-          </button>
-        </nav>
         <div className="khead__right">
           {/* タップで F.R.I.D.A.Y. に戻る（声なら「FRIDAYに戻して」「カレン終了」） */}
           <button type="button" className="kback" onClick={onBack} title="F.R.I.D.A.Y. に戻る（声：「FRIDAYに戻して」）">
@@ -346,6 +328,24 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
           )}
         </div>
       </header>
+      {/* ナビは画面のちょうど真ん中、枠の上辺のへこみの真下（ヘッダーの外に置いて、画面に対して位置を決める） */}
+      <nav className="khead__nav" aria-label="K.A.R.E.N.">
+        <button type="button" title="待機（中央の球）に戻る" aria-current={!st.workspace} onClick={() => runKarenOp({ kind: "idle" }, io)}>
+          {Icon.home}
+        </button>
+        <button type="button" title="保存したプロジェクト" aria-pressed={panel === "projects"} onClick={() => setPanel((p) => (p === "projects" ? null : "projects"))}>
+          {Icon.folder}
+        </button>
+        <button type="button" title="形を足す（球体・立方体など）" aria-pressed={panel === "add"} onClick={() => setPanel((p) => (p === "add" ? null : "add"))}>
+          {Icon.cube}
+        </button>
+        <button type="button" title="F.R.I.D.A.Y. に戻る" onClick={onBack}>
+          {Icon.spark}
+        </button>
+        <button type="button" title="シーン設定" aria-pressed={panel === "scene"} onClick={() => setPanel((p) => (p === "scene" ? null : "scene"))}>
+          {Icon.gear}
+        </button>
+      </nav>
 
       {/* ---------- 左 ---------- */}
       <aside className="kleft">
