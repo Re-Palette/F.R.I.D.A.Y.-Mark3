@@ -192,3 +192,21 @@ describe("状態の移り方", () => {
     assert.equal(s.phase, "PREVIEW");
   });
 });
+
+describe("拍手 2 回で起動したときの一言", async () => {
+  const { bootLine } = await import("../src/lib/boot-line");
+  const at = (h: number, m = 0) => new Date(2026, 9, 9, h, m);
+  it("朝（4:00〜11:59）は Good morning", () => {
+    assert.equal(bootLine(at(4)), "All systems are online. Good morning, sir.");
+    assert.equal(bootLine(at(11, 59)), "All systems are online. Good morning, sir.");
+  });
+  it("昼（12:00〜17:59）は Good afternoon", () => {
+    assert.equal(bootLine(at(12)), "All systems are online. Good afternoon, sir.");
+    assert.equal(bootLine(at(17, 59)), "All systems are online. Good afternoon, sir.");
+  });
+  it("夜（18:00〜3:59）は Good evening", () => {
+    assert.equal(bootLine(at(18)), "All systems are online. Good evening, sir.");
+    assert.equal(bootLine(at(0)), "All systems are online. Good evening, sir.");
+    assert.equal(bootLine(at(3, 59)), "All systems are online. Good evening, sir.");
+  });
+});

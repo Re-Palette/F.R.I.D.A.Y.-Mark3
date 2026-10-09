@@ -33,6 +33,7 @@ import {
 import { withReadings } from "@/lib/reading";
 import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
+import { bootLine } from "@/lib/boot-line";
 import { detectModeCommand } from "@/lib/ai-mode";
 import { LiveSession, type LiveHandlers, type LiveStartOptions } from "@/lib/live-voice";
 import { trackSpeech, voiceLevel } from "@/lib/voice-level";
@@ -40,8 +41,6 @@ import { trackSpeech, voiceLevel } from "@/lib/voice-level";
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
 
 const FOLLOW_UP_MS = 8000;
-/** 拍手 2 回で起動したときの一言 */
-const BOOT_LINE = "全システム、起動しました。";
 /** 聞き取り途中の文字がこの時間変わらなければ「話し終わった」とみなす（ブラウザの確定待ちより速い） */
 const END_OF_SPEECH_MS = 800;
 /** ブラウザが 1 区切りを確定したあと、続きを話し始めるのを待つ時間（息継ぎで途中送信しないため） */
@@ -760,9 +759,16 @@ export function useVoice({
     const sp = speech.current;
     return new Promise<void>((resolve) => {
       const u = new SpeechSynthesisUtterance(withReadings(text));
-      u.lang = "ja-JP";
+      // 英語だけの文（起動のあいさつなど）は英語の声で読む
+      const english = !/[\u3040-\u30ff\u3400-\u9fff]/.test(text);
+      u.lang = english ? "en-GB" : "ja-JP";
       // オフラインに切り替わっていたら、PC の中の声を選び直す
-      const voice = sp.voice && (sp.voice.localService || navigator.onLine) ? sp.voice : pickJapaneseVoice(window.speechSynthesis.getVoices());
+      const voices = window.speechSynthesis.getVoices();
+      const voice = english
+        ? (voices.find((v) => /^en-GB/i.test(v.lang) && /male|daniel|george/i.test(v.name)) ?? voices.find((v) => /^en-(GB|US)/i.test(v.lang)) ?? null)
+        : sp.voice && (sp.voice.localService || navigator.onLine)
+          ? sp.voice
+          : pickJapaneseVoice(voices);
       if (voice) u.voice = voice;
       // ElevenLabs の 1.15 ≒ ブラウザの 1.25 として換算
       // 落ち着いた低めの声。文の雰囲気で、ほんの少しだけ変える（心配：ゆっくり・低め／前進：少し明るく）
@@ -1144,7 +1150,7 @@ export function useVoice({
 
   /**
    * 拍手 2 回：全システム起動。音声モードがオフならオンにし、読み上げ中なら止めて、
-   * 起動の音と「全システム、起動しました。」のあと、呼びかけなしで次の一言を聞く。
+   * 起動の音と「All systems are online. Good morning, sir.」（時間帯であいさつを変える）のあと、呼びかけなしで次の一言を聞く。
    */
   const boot = useCallback(() => {
     if (!recRef.current) return;
@@ -1165,7 +1171,7 @@ export function useVoice({
     sp.chunks = 1;
     sp.finished = true; // 読み終えたら afterSpeech が聞き取りに移る
     sp.armedAt = 0;
-    sp.queue = [{ text: BOOT_LINE }];
+    sp.queue = [{ text: bootLine() }];
     const gen = sp.gen;
     // 起動の音が鳴り終わり、タブが前に出てから話す（前に出すのが遅くても 1.2 秒で話し始める）
     const chimeDone = new Promise((r) => window.setTimeout(r, 450));
