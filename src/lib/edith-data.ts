@@ -1,6 +1,6 @@
 /**
  * E.D.I.T.H. の画面が使うデータ（画面側）。
- *   - 分野ごとの最新の話題（/api/edith/news）。取得中・取得済み・失敗・0 件を分けて扱い、10 分は覚えておく
+ *   - 分野ごとの最新の話題（/api/edith/news）。取得中・取得済み・失敗・0 件を分けて扱い、1 時間は覚えておく
  *   - GLOBAL TREND：取得した話題のうち、各分野（AI・Energy など）に関係する件数を数える（実際に取得した話題だけから。推移などの数字は作らない）
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
@@ -20,8 +20,31 @@ export type NewsState =
   | { status: "error"; error: string }
   | { status: "ready"; items: EdithNewsItem[]; fetchedAt: string; refs: { uri: string; title: string }[] };
 
-const CACHE_MS = 10 * 60_000;
+/** 1 時間は取り直さない（取得のたびに Google 検索を使うので、無料枠を減らさない）。読み込み直しても使えるよう端末にも残す */
+const CACHE_MS = 60 * 60_000;
+const SAVE_KEY = "friday.edith-news.v1";
 const store = new Map<EdithCategory, { at: number; state: NewsState }>();
+
+function restore(): void {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY) ?? "{}") as Record<string, { at: number; state: NewsState }>;
+    for (const [cat, v] of Object.entries(saved)) {
+      if (v?.state?.status === "ready" && Date.now() - v.at < CACHE_MS && !store.has(cat as EdithCategory)) store.set(cat as EdithCategory, v);
+    }
+  } catch {
+    /* 使えなければ覚えない */
+  }
+}
+
+function persist(): void {
+  try {
+    const out: Record<string, { at: number; state: NewsState }> = {};
+    for (const [cat, v] of store) if (v.state.status === "ready" && v.at) out[cat] = v;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(out));
+  } catch {
+    /* 使えなければ覚えない */
+  }
+}
 const listeners = new Set<() => void>();
 let version = 0;
 const notify = () => {
@@ -29,7 +52,14 @@ const notify = () => {
   listeners.forEach((l) => l());
 };
 
+let restored = false;
+
 async function load(cat: EdithCategory, force = false): Promise<void> {
+  if (!restored) {
+    restored = true;
+    restore();
+    notify();
+  }
   const hit = store.get(cat);
   if (!force && hit && (hit.state.status === "loading" || Date.now() - hit.at < CACHE_MS)) return;
   store.set(cat, { at: Date.now(), state: { status: "loading" } });
@@ -41,6 +71,7 @@ async function load(cat: EdithCategory, force = false): Promise<void> {
     const items = json.items ?? [];
     // 0 件は覚えない（次に開いたとき・再取得でやり直す）
     store.set(cat, { at: items.length ? Date.now() : 0, state: { status: "ready", items, refs: json.refs ?? [], fetchedAt: json.fetchedAt ?? new Date().toISOString() } });
+    persist();
   } catch (err) {
     store.set(cat, { at: 0, state: { status: "error", error: err instanceof Error ? err.message : "ニュースを取得できませんでした。" } });
   }

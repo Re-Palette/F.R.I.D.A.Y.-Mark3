@@ -6,6 +6,7 @@
 import { getGeminiConfig, getTimezone } from "@/lib/config";
 import { streamGemini, type GeminiChunk, type GeminiSource } from "@/llm/gemini";
 import { findPlaces, type Place } from "@/lib/edith-geo";
+import { FridayError } from "@/lib/errors";
 
 export const EDITH_CATEGORIES = ["news", "research", "market", "travel", "culture", "tech", "education", "more"] as const;
 export type EdithCategory = (typeof EDITH_CATEGORIES)[number];
@@ -95,16 +96,18 @@ export function sourcesForLine(line: string, grounding: GeminiChunk["grounding"]
   return out.slice(0, 3);
 }
 
-const CACHE_MS = 10 * 60_000;
+/** 1 回の取得で Google 検索を使うので、無料枠を減らさないよう 1 時間は覚えておく */
+const CACHE_MS = 60 * 60_000;
 const cache = new Map<EdithCategory, { at: number; value: Promise<EdithNews> }>();
 
 export function getEdithNews(category: EdithCategory, signal?: AbortSignal): Promise<EdithNews> {
   const hit = cache.get(category);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-  // 失敗・空の答えなら 1 回だけやり直す（Google 検索の一時的な失敗に備えて）
-  const value = fetchNews(category, signal)
-    .then((n) => (n.items.length ? n : fetchNews(category, signal)))
-    .catch(() => fetchNews(category, signal));
+  // 一時的な失敗なら 1 回だけやり直す（上限で断られたときはやり直さない：枠を無駄にしない）
+  const value = fetchNews(category, signal).catch((err: unknown) => {
+    if (err instanceof FridayError && err.code === "RATE_LIMITED") throw err;
+    return fetchNews(category, signal);
+  });
   cache.set(category, { at: Date.now(), value });
   value.then(
     (n) => {

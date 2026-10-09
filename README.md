@@ -23,7 +23,8 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | 変数 | 必須 | 既定値 | 説明 |
 | --- | --- | --- | --- |
 | `GEMINI_API_KEY` | ✅ | — | Gemini API キー。サーバー側でのみ使用し、ブラウザには渡しません |
-| `GEMINI_MODEL` | | `gemini-flash-latest` | 会話モデル。常に最新 Flash を指すエイリアスが既定。固定したい場合は `gemini-3.8-flash` などを指定 |
+| `GEMINI_MODEL` | | `gemini-3.5-flash-lite,gemini-3.1-flash-lite` | 会話モデル（カンマ区切りで複数）。無料枠の 1 日の回数が多い Flash-Lite を既定にしている。1 日の上限で断られたモデルは枠が戻る（西海岸の 0 時＝日本時間の 16〜17 時）まで使わず次のモデルへ |
+| `GEMINI_BACKUP_MODELS` | | `gemini-flash-lite-latest,gemini-2.5-flash-lite,gemini-flash-latest` | 予備のモデル（上のモデルが使えないとき）。`none` で無効 |
 | `GEMINI_THINKING_LEVEL` | | `low` | `low` / `medium` / `high` / `off`。体感速度優先で `low`。モデルが非対応なら自動で外して再試行 |
 | `GEMINI_LIVE_MODEL` | | （自動） | リアルタイム音声会話のモデル。未設定なら Google のモデル一覧から Live 用（native audio / live）の最新を自動で選ぶ |
 | `GEMINI_LIVE_VOICE` | | （モデルの既定） | リアルタイム音声会話の声（例: `Kore`）。未設定ならモデルの既定の声 |

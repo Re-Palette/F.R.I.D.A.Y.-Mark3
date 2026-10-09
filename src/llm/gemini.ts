@@ -78,8 +78,10 @@ function buildBody(opts: GeminiStreamOptions, level: ThinkingLevel | undefined, 
 async function mapHttpError(res: Response, model: string): Promise<FridayError> {
   let detail = "";
   let status = "";
+  let raw = "";
   try {
-    const json = (await res.json()) as GeminiStreamResponse | GeminiStreamResponse[];
+    raw = await res.text();
+    const json = JSON.parse(raw) as GeminiStreamResponse | GeminiStreamResponse[];
     const err = Array.isArray(json) ? json[0]?.error : json.error;
     detail = err?.message ?? "";
     status = err?.status ?? "";
@@ -88,12 +90,14 @@ async function mapHttpError(res: Response, model: string): Promise<FridayError> 
   }
 
   if (res.status === 429 || status === "RESOURCE_EXHAUSTED") {
-    return new FridayError(
+    const err = new FridayError(
       "RATE_LIMITED",
       "Gemini のレート制限に達しました。少し時間をおいてから話しかけてください。",
       429,
       true,
     );
+    if (isDailyQuota(raw)) dailyLimited.add(err);
+    return err;
   }
   if (
     res.status === 401 ||
@@ -219,6 +223,30 @@ export function limitedModels(): { model: string; until: number }[] {
   return [...unavailableUntil].filter(([, until]) => until > now && Number.isFinite(until)).map(([model, until]) => ({ model, until }));
 }
 const RATE_LIMIT_COOLDOWN = 10 * 60_000;
+
+/** 1 日の上限（RPD）で断られたエラー。そのモデルは無料枠が戻るまで（西海岸の 0 時）使わない（無駄に試して枠を減らさない） */
+const dailyLimited = new WeakSet<FridayError>();
+
+/** 429 の中身が「1 日の上限」か（1 分あたりの上限なら少し待てば戻る） */
+export function isDailyQuota(body: string): boolean {
+  return /PerDay|per[ _-]?day|daily/i.test(body);
+}
+
+/** 次の「アメリカ西海岸の 0 時」（Gemini の無料枠が戻る時刻） */
+export function nextPacificMidnight(now = Date.now()): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      .formatToParts(new Date(now))
+      .map((p) => [p.type, p.value]),
+  );
+  const sinceMidnight = (Number(parts.hour) * 3600 + Number(parts.minute) * 60 + Number(parts.second)) * 1000;
+  return now - sinceMidnight + 24 * 3600_000;
+}
+
+/** 上限で断られたモデルを休ませる期限 */
+function limitUntil(err: FridayError, now = Date.now()): number {
+  return dailyLimited.has(err) ? nextPacificMidnight(now) : now + RATE_LIMIT_COOLDOWN;
+}
 const CONGESTION_COOLDOWN = 2 * 60_000;
 
 function isAvailable(model: string): boolean {
@@ -271,7 +299,10 @@ async function connectModel(opts: GeminiStreamOptions, model: string): Promise<R
     const err = await mapHttpError(res, model);
     // 検索付きで断られたら、検索なしで答え直す（検索非対応 400 / 検索の無料枠切れ 429）
     if (search && (err.code === "RATE_LIMITED" || (err.code === "BAD_REQUEST" && /search|ground|tool/i.test(err.message)))) {
-      searchUnavailableUntil.set(model, err.code === "RATE_LIMITED" ? Date.now() + SEARCH_COOLDOWN : Number.POSITIVE_INFINITY);
+      searchUnavailableUntil.set(
+        model,
+        err.code === "RATE_LIMITED" ? (dailyLimited.has(err) ? nextPacificMidnight() : Date.now() + SEARCH_COOLDOWN) : Number.POSITIVE_INFINITY,
+      );
       search = false;
       continue;
     }
@@ -299,7 +330,7 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
     } catch (err) {
       if (!(err instanceof FridayError)) throw err;
       if (err.code === "RATE_LIMITED") {
-        unavailableUntil.set(model, Date.now() + RATE_LIMIT_COOLDOWN);
+        unavailableUntil.set(model, limitUntil(err));
       } else if (err.code === "UPSTREAM_ERROR" && err.retryable) {
         // 混雑（5xx）が続くモデルはしばらく避け、次の候補で答える
         unavailableUntil.set(model, Date.now() + CONGESTION_COOLDOWN);

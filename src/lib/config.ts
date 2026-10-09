@@ -33,7 +33,7 @@ export interface GeminiConfig {
 const BACKUP_MODELS =
   process.env.GEMINI_BACKUP_MODELS?.trim().toLowerCase() === "none"
     ? []
-    : (process.env.GEMINI_BACKUP_MODELS?.split(",").map((m) => m.trim()).filter(Boolean) ?? ["gemini-flash-lite-latest", "gemini-flash-latest"]);
+    : (process.env.GEMINI_BACKUP_MODELS?.split(",").map((m) => m.trim()).filter(Boolean) ?? ["gemini-flash-lite-latest", "gemini-2.5-flash-lite", "gemini-flash-latest"]);
 
 function parseModels(value: string | undefined): { model: string; models: string[] } {
   const list = (value ?? "")
@@ -41,7 +41,8 @@ function parseModels(value: string | undefined): { model: string; models: string
     .map((m) => m.trim())
     .filter(Boolean);
   const chosen = list.length ? list : DEFAULT_MODELS;
-  // 指定したモデルが混雑・使い切りのときの予備（常に最新の Flash-Lite / Flash を指す別名）。無いモデルは自動で飛ばす
+  // 指定したモデルが混雑・使い切りのときの予備。無料枠の多い Flash-Lite を先に、1 日の回数が少ない Flash は最後に。
+  // 無いモデルは自動で飛ばす
   const models = [...chosen, ...BACKUP_MODELS.filter((m) => !chosen.includes(m))];
   return { model: chosen[0], models };
 }

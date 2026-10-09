@@ -1024,6 +1024,13 @@ export function useVoice({
     clearTimeout(warmTimer.current);
     if (!liveOn.current || liveRef.current || stateRef.current === "off") return;
     if (Date.now() - liveFailedAt.current < LIVE_RETRY_MS || !navigator.onLine || typeof WebSocket === "undefined") return;
+    // 画面が裏にある間はつないでおかない（つなぎ直しを繰り返して無料枠を減らさない。表に戻ったらつなぐ）
+    if (document.visibilityState === "hidden") {
+      const w = warmRef.current;
+      warmRef.current = null;
+      w?.stop("closed");
+      return;
+    }
     const persona = liveContextRef.current?.().persona;
     const current = warmRef.current;
     if (current && current.persona === persona && (current.isReady ? Date.now() - current.preparedAt < WARM_REFRESH_MS : true)) return;
@@ -1066,6 +1073,14 @@ export function useVoice({
     if (state !== "off" && live) warmUpRef.current();
     else dropWarm();
   }, [state, live, dropWarm]);
+
+  // 画面が裏に回ったら閉じ、表に戻ったらつなぎ直す
+  useEffect(() => {
+    if (state === "off" || !live) return;
+    const onVisible = () => warmUpRef.current();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [state, live]);
 
   /** リアルタイム会話の AI に、画面で起きたことを伝えて声で知らせてもらう（会話中でなければ false） */
   const liveNotify = useCallback((text: string): boolean => {
