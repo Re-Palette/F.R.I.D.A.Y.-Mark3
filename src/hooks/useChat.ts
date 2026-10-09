@@ -25,6 +25,8 @@ import { runLocalConversation, runQuickChat } from "@/lib/offline-core";
 import { localAiPrefs } from "@/lib/local-ai";
 import { isQuickChat } from "@/lib/quick-chat";
 import { calendarForChat } from "@/lib/calendar-cache";
+import { getAiMode } from "@/lib/ai-mode";
+import { requestCreation } from "@/lib/karen-controller";
 import { shouldFallback } from "@/llm/provider";
 
 export interface UiError {
@@ -462,7 +464,9 @@ export function useChat() {
               break;
             case "hologram":
               // 返答の文は、ホログラムの拡大表示に説明の字幕として出す
-              if (event.subject) void requestHologram(event.subject, { explainFor: assistantId });
+              // K.A.R.E.N. のモードでは、制作ワークスペースで作る（F.R.I.D.A.Y. のホログラムは使わない）
+              if (event.subject && getAiMode() === "karen") requestCreation(event.subject);
+              else if (event.subject) void requestHologram(event.subject, { explainFor: assistantId });
               else clearHologram();
               break;
             case "sources": {
@@ -607,6 +611,8 @@ export function useChat() {
                 ...(music ? { music } : {}),
                 // 予定の控え（サーバーが Google から間に合わなかったときの予備）
                 ...(calendar ? { calendar } : {}),
+                // K.A.R.E.N. のモードなら、クリエイティブ担当として答えてもらう
+                ...(getAiMode() === "karen" ? { persona: "karen" } : {}),
               }),
               signal: controller.signal,
             });

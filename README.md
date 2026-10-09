@@ -552,6 +552,24 @@ FRIDAY ── AI Router ─┬─ ONLINE  → Gemini（Vercel のサーバーの
 
 ---
 
+## K.A.R.E.N.（クリエイティブ AI モード）
+
+F.R.I.D.A.Y. と同じシステムの、3D 制作担当の AI。「K.A.R.E.N.を呼び出して」「カレン、起動」「クリエイティブモードに切り替えて」「3D制作を始めたい」で切り替わり、「FRIDAYに戻して」「通常モードに戻って」「カレン終了」で戻る（声・文字どちらでも。切り替えの言葉は AI に送らずこの端末で見分ける）。会話の履歴・設定は共有し、K.A.R.E.N. の間の質問は K.A.R.E.N. の人格で答える（`persona: "karen"`）。
+
+| 部分 | ファイル |
+| --- | --- |
+| いまの AI（共有の状態）・切り替えの言葉 | `src/lib/ai-mode.ts` |
+| 指示の読み取り（作る・編集・未実装・聞き返し・会話） | `src/lib/karen-intent.ts` |
+| 状態（IDLE / LISTENING / UNDERSTANDING / TRANSITIONING / CREATING / PREVIEW / EDITING / COMPLETED / ERROR / CANCELLED） | `src/lib/karen-state.ts` |
+| 実行（制作エンジンへの受け渡し・保存・書き出し・戻るときの確認） | `src/lib/karen-controller.ts` |
+| シーンの中身・プロジェクトの保存（この端末の IndexedDB） | `src/lib/karen-scene.ts`・`src/lib/karen-projects.ts` |
+| 画面・中央の球・3D ワークスペース | `src/components/karen/`・`src/app/karen.css` |
+
+- 制作エンジン：3D ホログラム（3D モデル）は既存の `/api/hologram`（Poly Pizza で既存モデルを探す → 無ければ見た目を調べて Gemini が部品で組み立てる）。基本の形・色・大きさ・向き・位置・削除・回転アニメーションは three.js のシーンでその場で行う。書き出しは GLB（three.js の GLTFExporter）と PNG。
+- 進み具合は実際に進んでいる段階だけを出す（割合は取れないので、処理中の帯で示す）。
+- まだ無い制作（Web サイトのデザイン、2D の画像・ロゴ、アニメーション・動画、テクスチャ編集）は「未実装」と表示する。
+- ホログラムは画面の中の 3D ビュー。実際の空間に投影する装置にはつながっていない。
+
 ## 拡張ガイド
 
 ### 新しい Agent を追加する（例: Search Agent）

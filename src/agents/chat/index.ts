@@ -18,6 +18,7 @@ import { asksForDocument, lectureMaterial, quizMaterial, recentLectures, recentW
 import { inQuiz } from "./quiz";
 import { asksForMorning } from "./morning";
 import { asksForSchedule } from "./schedule";
+import { KAREN_SECTION } from "./karen-persona";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
@@ -276,7 +277,7 @@ export const chatAgent: Agent = {
         lectureDocs,
         usage,
         voice: ctx.voice,
-      });
+      }) + (ctx.persona === "karen" ? KAREN_SECTION : "");
     // Gemini が使えなければ、ローカル AI（Ollama）で答える（サーバーが PC 上で動いているときだけ）。
     // Ollama が読める長さ（num_ctx 2048）に収まるよう、人格の要点・記憶の一部・直近の会話だけを渡す
     for await (const chunk of withLocalFallback(
@@ -290,7 +291,7 @@ export const chatAgent: Agent = {
           reminders,
           events,
           recallMark: ctx.memory.connected ? memories.map((m) => `## ${m.title ?? m.source}\n${m.content}`).join("\n\n").slice(0, 1200) : null,
-        })}${OFFLINE_NOTE}`,
+        })}${ctx.persona === "karen" ? KAREN_SECTION : ""}${OFFLINE_NOTE}`,
         messages: buildConversationWindow(ctx.messages, { maxMessages: 6, maxChars: 1500 }).messages.map((m) => ({ role: m.role, content: m.content })),
         signal: ctx.signal,
       }),

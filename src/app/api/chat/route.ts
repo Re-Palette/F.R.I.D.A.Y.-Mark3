@@ -35,12 +35,14 @@ export async function POST(req: Request): Promise<Response> {
   let voice = false;
   let amazon: AmazonMusicState | undefined;
   let calendarSnapshot: CalendarSnapshot | undefined;
+  let persona: "karen" | undefined;
   try {
-    const body = (await req.json()) as { messages?: unknown; mode?: unknown; music?: unknown; calendar?: unknown };
+    const body = (await req.json()) as { messages?: unknown; mode?: unknown; music?: unknown; calendar?: unknown; persona?: unknown };
     history = sanitizeHistory(body?.messages);
     voice = body?.mode === "voice";
     amazon = toAmazonState(body?.music);
     calendarSnapshot = parseCalendarSnapshot(body?.calendar);
+    persona = body?.persona === "karen" ? "karen" : undefined;
     preflight();
   } catch (err) {
     if (err instanceof SyntaxError) {
@@ -91,6 +93,7 @@ export async function POST(req: Request): Promise<Response> {
     onTurn: resolveTurn,
     calendar,
     calendarSnapshot,
+    persona,
     news: news.context,
     mail,
     mailRecent,

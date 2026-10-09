@@ -158,6 +158,8 @@ export async function* handleConversation(
     calendar?: CalendarAccess;
     /** 画面が持っている予定の控え（Google から間に合わなかったときの予備） */
     calendarSnapshot?: AgentContext["calendarSnapshot"];
+    /** 答える AI（K.A.R.E.N. のときはクリエイティブ担当として答える） */
+    persona?: AgentContext["persona"];
     /** ニュースの設定と、今回まとめて伝えるか */
     news?: AgentContext["news"];
     /** 未読メールを読む */
@@ -226,6 +228,7 @@ export async function* handleConversation(
       voice: options.voice ?? false,
       calendar: options.calendar,
       calendarSnapshot: options.calendar ? options.calendarSnapshot : undefined,
+      persona: options.persona,
       news: options.news,
       mail: options.mail,
       mailRecent: options.mailRecent,

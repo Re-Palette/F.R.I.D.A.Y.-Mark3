@@ -93,7 +93,18 @@ function makeNetwork() {
  * onSlow：この端末では描画が追いつかない（なめらかに動かない）と分かったときに 1 回だけ呼ぶ。
  * そのあとは自分でも軽い描き方（低い解像度・少ないコマ数）に切り替える。
  */
-export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }: { mode: CoreMode; active: boolean; onSlow?: () => void }) {
+export const ParticleCore = memo(function ParticleCore({
+  mode,
+  active,
+  onSlow,
+  cool = false,
+}: {
+  mode: CoreMode;
+  active: boolean;
+  onSlow?: () => void;
+  /** 青い色合いで描く（K.A.R.E.N.）。暖色の赤と青を入れ替えるので、光り方・明るさはそのまま */
+  cool?: boolean;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -105,6 +116,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx || !active) return;
     const { pts, edges, dust } = makeNetwork();
+    const col = (r: number, g: number, b: number, a: number) => (cool ? `rgba(${b}, ${g}, ${r}, ${a})` : `rgba(${r}, ${g}, ${b}, ${a})`);
     const sx = new Float32Array(N);
     const sy = new Float32Array(N);
     const sn = new Float32Array(N);
@@ -125,31 +137,31 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       const b = back.getContext("2d")!;
       const c = size / 2;
       const halo = b.createRadialGradient(c, c, 0, c, c, R * 1.1);
-      halo.addColorStop(0, "rgba(255, 160, 50, 0.75)");
-      halo.addColorStop(0.4, "rgba(255, 110, 10, 0.35)");
-      halo.addColorStop(1, "rgba(255, 80, 0, 0)");
+      halo.addColorStop(0, col(255, 160, 50, 0.75));
+      halo.addColorStop(0.4, col(255, 110, 10, 0.35));
+      halo.addColorStop(1, col(255, 80, 0, 0));
       b.fillStyle = halo;
       b.fillRect(0, 0, size, size);
       b.lineWidth = 0.8;
-      b.strokeStyle = "rgba(255, 160, 70, 0.22)";
+      b.strokeStyle = col(255, 160, 70, 0.22);
       for (const k of [0.3, 0.55, 0.8]) {
         b.beginPath();
         b.arc(c, c, R * k, 0, Math.PI * 2);
         b.stroke();
       }
       for (let i = 0; i < DUST; i++) {
-        b.fillStyle = `rgba(255, 170, 80, ${(0.15 + dust[i * 3 + 2] * 0.3).toFixed(2)})`;
+        b.fillStyle = col(255, 170, 80, +(0.15 + dust[i * 3 + 2] * 0.3).toFixed(2));
         b.fillRect(c + dust[i * 3] * R - 0.6, c + dust[i * 3 + 1] * R - 0.6, 1.2, 1.2);
       }
       const sr = Math.ceil(R * 0.6);
       sun.width = sun.height = sr * 2;
       const g = sun.getContext("2d")!;
       const grad = g.createRadialGradient(sr, sr, 0, sr, sr, sr);
-      grad.addColorStop(0, "rgba(255, 255, 235, 1)");
-      grad.addColorStop(0.12, "rgba(255, 236, 160, 1)");
-      grad.addColorStop(0.35, "rgba(255, 170, 50, 0.75)");
-      grad.addColorStop(0.7, "rgba(255, 120, 10, 0.3)");
-      grad.addColorStop(1, "rgba(255, 100, 0, 0)");
+      grad.addColorStop(0, col(255, 255, 235, 1));
+      grad.addColorStop(0.12, col(255, 236, 160, 1));
+      grad.addColorStop(0.35, col(255, 170, 50, 0.75));
+      grad.addColorStop(0.7, col(255, 120, 10, 0.3));
+      grad.addColorStop(1, col(255, 100, 0, 0));
       g.fillStyle = grad;
       g.fillRect(0, 0, sr * 2, sr * 2);
 
@@ -161,21 +173,21 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       d.arc(hs, hs, R, 0, Math.PI * 2);
       d.clip();
       const dark = d.createRadialGradient(hs - R * 0.35, hs - R * 0.4, R * 0.2, hs - R * 0.1, hs - R * 0.12, R * 1.25);
-      dark.addColorStop(0, "rgba(0, 0, 0, 0)");
-      dark.addColorStop(0.55, "rgba(0, 0, 0, 0)");
-      dark.addColorStop(1, "rgba(20, 6, 0, 0.42)");
+      dark.addColorStop(0, col(0, 0, 0, 0));
+      dark.addColorStop(0.55, col(0, 0, 0, 0));
+      dark.addColorStop(1, col(20, 6, 0, 0.42));
       d.fillStyle = dark;
       d.fillRect(0, 0, hs * 2, hs * 2);
       const rim = d.createRadialGradient(hs, hs, R * 0.82, hs, hs, R);
-      rim.addColorStop(0, "rgba(255, 170, 80, 0)");
-      rim.addColorStop(0.85, "rgba(255, 180, 90, 0.16)");
-      rim.addColorStop(1, "rgba(255, 210, 150, 0.04)");
+      rim.addColorStop(0, col(255, 170, 80, 0));
+      rim.addColorStop(0.85, col(255, 180, 90, 0.16));
+      rim.addColorStop(1, col(255, 210, 150, 0.04));
       d.fillStyle = rim;
       d.fillRect(0, 0, hs * 2, hs * 2);
       const spec = d.createRadialGradient(hs - R * 0.42, hs - R * 0.46, 0, hs - R * 0.42, hs - R * 0.46, R * 0.42);
-      spec.addColorStop(0, "rgba(255, 246, 225, 0.26)");
-      spec.addColorStop(0.4, "rgba(255, 220, 170, 0.08)");
-      spec.addColorStop(1, "rgba(255, 200, 140, 0)");
+      spec.addColorStop(0, col(255, 246, 225, 0.26));
+      spec.addColorStop(0.4, col(255, 220, 170, 0.08));
+      spec.addColorStop(1, col(255, 200, 140, 0));
       d.fillStyle = spec;
       d.fillRect(0, 0, hs * 2, hs * 2);
     };
@@ -211,9 +223,9 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
     const cosT = Math.cos(TILT);
     const sinT = Math.sin(TILT);
     const NODE = [
-      { lo: -1, hi: 0.45, size: 1.6, color: "rgba(255, 170, 80, 0.45)" },
-      { lo: 0.45, hi: 0.8, size: 2.3, color: "rgba(255, 200, 110, 0.75)" },
-      { lo: 0.8, hi: 9, size: 3, color: "rgba(255, 238, 170, 1)" },
+      { lo: -1, hi: 0.45, size: 1.6, color: col(255, 170, 80, 0.45) },
+      { lo: 0.45, hi: 0.8, size: 2.3, color: col(255, 200, 110, 0.75) },
+      { lo: 0.8, hi: 9, size: 3, color: col(255, 238, 170, 1) },
     ];
 
     const draw = (now: number) => {
@@ -317,7 +329,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
         [0.45, 0.8, 0.34],
         [0.8, 9, 0.6],
       ] as const) {
-        ctx.strokeStyle = `rgba(255, 150, 50, ${alpha})`;
+        ctx.strokeStyle = col(255, 150, 50, alpha);
         ctx.lineWidth = alpha > 0.5 ? 1.1 : 0.8;
         ctx.beginPath();
         for (let e = 0; e < edges.length; e += 2) {
@@ -415,7 +427,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       ro.disconnect();
       fitLater.cancel();
     };
-  }, [active]);
+  }, [active, cool]);
 
   return <canvas ref={ref} className="pcore" aria-hidden="true" />;
 });

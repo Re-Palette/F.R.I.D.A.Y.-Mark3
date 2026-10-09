@@ -4,7 +4,7 @@
  * F.R.I.D.A.Y. Mark3 メイン画面。
  * HUB（Core + Agent カード）と CHAT（会話ログ）を中央ステージで切り替える。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
 import { CALENDAR_CHANGED, STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
@@ -40,6 +40,10 @@ import { FOCUS_END, focusLeft, stopFocus, useFocus, type FocusEnd } from "@/lib/
 import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 import { asksAboutScreen, captureScreen, getScreenState, toggleScreen, useScreenState } from "@/lib/screen";
 import { refreshCalendarCache } from "@/lib/calendar-cache";
+import { detectModeCommand, getAiMode, setAiMode, useAiMode } from "@/lib/ai-mode";
+import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
+import { dispatchKaren } from "@/lib/karen-state";
+import { KarenHud } from "./karen/KarenHud";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -192,7 +196,7 @@ export function Dashboard() {
   const { send: chatSendRaw } = chat;
   const brainOn = useRef(false);
   brainOn.current = Boolean(agent.brain.connected);
-  const send = useCallback(
+  const sendToAi = useCallback(
     (text: string, opts: SendOptions = {}) => {
       // 読み込み済みの添付ファイルも一緒に送る（文字が無ければ「読んで」と頼む）
       const atts = takeAttachments();
@@ -227,6 +231,58 @@ export function Dashboard() {
       return true;
     },
     [chatSendRaw],
+  );
+
+  /* ---- F.R.I.D.A.Y. と K.A.R.E.N.（クリエイティブ AI）の切り替え ---- */
+  const aiMode = useAiMode();
+  /** 会話とは別に一言話す（音声会話の間だけ。下で定義する sayAloud を使う） */
+  const sayRef = useRef<(text: string) => void>(() => {});
+  const karenIo = useMemo<KarenIo>(
+    () => ({
+      speak: (text) => {
+        if (voiceRef.current && voiceRef.current.state !== "off") sayRef.current(text);
+      },
+    }),
+    [],
+  );
+  /**
+   * 声・文字の発言の入り口。AI の切り替えの言葉はこの端末で見分け、K.A.R.E.N. の間は制作の指示として受け取る
+   * （制作・編集でない発言は、K.A.R.E.N. の人格で AI に渡す。会話の履歴は F.R.I.D.A.Y. と共有）。
+   */
+  const send = useCallback(
+    (text: string, opts: SendOptions = {}) => {
+      const cmd = detectModeCommand(text);
+      const mode = getAiMode();
+      // 声の指示を AI に渡さずに片付けたら、聞き取りに戻す（考え中のまま止まらないように）
+      const settle = () => {
+        if (opts.voice) window.setTimeout(() => voiceRef.current?.replyFinished(), 0);
+      };
+      if (cmd === "to-karen" && mode === "friday") {
+        setAiMode("karen");
+        karenIo.speak?.("K.A.R.E.N.、起動します。");
+        settle();
+        return true;
+      }
+      if (cmd === "to-friday" && mode === "karen") {
+        if (requestExit(karenIo)) karenIo.speak?.("F.R.I.D.A.Y. に戻ります。");
+        settle();
+        return true;
+      }
+      if (mode === "karen") {
+        let chatted = false;
+        void handleKarenText(text, {
+          ...karenIo,
+          chat: (t) => {
+            chatted = true;
+            sendToAi(t, opts);
+          },
+        });
+        if (!chatted) settle();
+        return true;
+      }
+      return sendToAi(text, opts);
+    },
+    [sendToAi, karenIo],
   );
 
   // 画面のどこにファイルをドロップしても添付する
@@ -456,6 +512,12 @@ export function Dashboard() {
     },
     [cloudTts],
   );
+  sayRef.current = (text: string) => sayAloud(text);
+  // K.A.R.E.N. の間は、声を聞いている状態を画面（状態）に伝える
+  useEffect(() => {
+    if (aiMode !== "karen") return;
+    dispatchKaren({ type: voice.state === "listening" ? "LISTEN_START" : "LISTEN_END" });
+  }, [aiMode, voice.state]);
   const announce = useCallback(
     (r: DueReminder, late: boolean) => {
       setReminder(r);
@@ -542,7 +604,7 @@ export function Dashboard() {
   const inChat = view === "chat";
 
   return (
-    <div className="app" data-view={view}>
+    <div className="app" data-view={view} data-ai={aiMode}>
       {dropping && (
         <div className="drop-overlay" aria-hidden="true">
           <span>ここにドロップして添付（写真・PDF・Word / Excel / PowerPoint・テキスト）</span>
@@ -583,6 +645,17 @@ export function Dashboard() {
       <div className="activation-spot" data-activation-spot aria-hidden="true" />
 
       <Header />
+      {/* K.A.R.E.N.（クリエイティブ AI）の画面。F.R.I.D.A.Y. の画面は裏でそのまま（戻ったら続きから） */}
+      {aiMode === "karen" && (
+        <KarenHud
+          active
+          messages={chat.messages}
+          voiceState={voice.state}
+          onCommand={(t) => void send(t)}
+          onMic={() => (voice.state === "listening" ? voice.toggle() : voice.talkNow())}
+          io={karenIo}
+        />
+      )}
 
       <Sidebar
         view={view}
@@ -602,7 +675,7 @@ export function Dashboard() {
             chatStatus={agent.status}
             onOpenChat={openChat}
             onNavigate={navigate}
-            hidden={view !== "home"}
+            hidden={view !== "home" || aiMode === "karen"}
             brain={agent.brain}
             calendar={agent.calendar}
             automation={agent.automation}

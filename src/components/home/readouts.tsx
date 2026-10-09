@@ -82,7 +82,7 @@ interface Metrics {
 
 const mb = (bytes: number) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)}GB` : `${Math.max(0.1, bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)}MB`);
 
-function useDeviceMetrics(active: boolean): Metrics {
+export function useDeviceMetrics(active: boolean): Metrics {
   const [m, setM] = useState<Metrics>({ cpu: null, mem: null, memText: "—", storage: null, storageText: "—", net: null, netText: "—" });
   useEffect(() => {
     if (!active) return;

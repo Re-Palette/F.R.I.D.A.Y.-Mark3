@@ -96,7 +96,7 @@ export async function requestHologram(subject: string, opts: { skipFind?: boolea
 }
 
 /** .glb を読み込む（まず直接、だめならサーバーの中継から）。読めなければ null */
-async function downloadAsset(url: string): Promise<ArrayBuffer | null> {
+export async function downloadAsset(url: string): Promise<ArrayBuffer | null> {
   for (const src of [url, `/api/hologram/asset?u=${encodeURIComponent(url)}`]) {
     try {
       const res = await fetch(src, { signal: AbortSignal.timeout(20000) });

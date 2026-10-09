@@ -4,6 +4,8 @@
  *  - 読み上げ: speechSynthesis
  */
 
+import { getAiMode } from "./ai-mode";
+
 /* ---------- 音声認識 ---------- */
 
 interface RecognitionAlternative {
@@ -52,17 +54,24 @@ export function getRecognitionCtor(): (new () => RecognitionLike) | null {
 const WAKE_RE =
   /(?:[フふプぷブぶ]\s*[ラら]\s*[イいィぃ]\s*[デでテて]\s*[ーィぃイいエえ〜]?|f\s*r\s*i\s*d\s*a\s*y|ｆ\s*ｒ\s*ｉ\s*ｄ\s*ａ\s*ｙ)[\s、。,.!！?？ー〜]*/i;
 
+/** K.A.R.E.N. の呼び方（カレン / K.A.R.E.N.）。「カレンダー」「カレント」は呼びかけではない */
+const KAREN_WAKE_RE = /(?:[カか]\s*[レれ]\s*[ンん](?![ダだトとシし])|k\.?\s*a\.?\s*r\.?\s*e\.?\s*n\.?(?![a-z]))[\s、。,.!！?？ー〜]*/i;
+
 export function splitWake(text: string): { woke: boolean; command: string } {
   const m = WAKE_RE.exec(text);
-  if (!m) return { woke: false, command: "" };
-  const command = text.slice(m.index + m[0].length).trim();
-  return { woke: true, command };
+  if (m) return { woke: true, command: text.slice(m.index + m[0].length).trim() };
+  // 「カレン、起動」でも呼べる。K.A.R.E.N. の間は名前を取り除き、F.R.I.D.A.Y. の間は名前ごと渡す（切り替えの言葉として見分けるため）
+  const k = KAREN_WAKE_RE.exec(text);
+  if (!k) return { woke: false, command: "" };
+  return { woke: true, command: getAiMode() === "karen" ? text.slice(k.index + k[0].length).trim() : text.slice(k.index).trim() };
 }
 
 /** 発言の先頭に付いた呼びかけを取り除く（「フライデー、今日の予定は？」→「今日の予定は？」） */
 export function stripWake(text: string): string {
   const m = WAKE_RE.exec(text);
-  return m && m.index <= 2 ? text.slice(m.index + m[0].length).trim() : text.trim();
+  if (m && m.index <= 2) return text.slice(m.index + m[0].length).trim();
+  const k = getAiMode() === "karen" ? KAREN_WAKE_RE.exec(text) : null;
+  return k && k.index <= 2 ? text.slice(k.index + k[0].length).trim() : text.trim();
 }
 
 /* ---------- 読み上げ用の整形 ---------- */
