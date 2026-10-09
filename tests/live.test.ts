@@ -95,6 +95,11 @@ describe("使い捨ての鍵と宛先（模擬の Google）", () => {
     delete process.env.GEMINI_API_KEY;
   });
 
+  it("K.A.R.E.N. は F.R.I.D.A.Y. と違う声で話す", async () => {
+    const base = { now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [] };
+    assert.equal((await prepareLive({ ...base, persona: "karen" })).voiceName, "Aoede");
+    assert.equal((await prepareLive(base)).voiceName, null);
+  });
   it("鍵入りの宛先とモデルを返し、API キーは返さない", async () => {
     const setup = await prepareLive({ now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [] });
     assert.equal(setup.model, "gemini-live-test");

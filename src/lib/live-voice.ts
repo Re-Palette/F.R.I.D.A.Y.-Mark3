@@ -120,7 +120,8 @@ export function buildSetup(
       model: prep.model.startsWith("models/") ? prep.model : `models/${prep.model}`,
       generationConfig: {
         responseModalities: ["AUDIO"],
-        ...(prep.voiceName ? { speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: prep.voiceName } } } } : {}),
+        // 声の指定は、細かい設定を受け付けるモデルのときだけ（受け付けなければ最小の設定でつなぎ直し、モデルの既定の声で話す）
+        ...(full && prep.voiceName ? { speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: prep.voiceName } } } } : {}),
       },
       systemInstruction: { parts: [{ text: prep.systemInstruction }] },
       inputAudioTranscription: {},

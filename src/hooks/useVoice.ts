@@ -1073,6 +1073,8 @@ export function useVoice({
     s.notify(text);
     return true;
   }, []);
+  /** 前もってつないでおく会話を、いまの AI（F.R.I.D.A.Y. / K.A.R.E.N.）に合わせてつなぎ直す */
+  const rewarmLive = useCallback(() => warmUpRef.current(), []);
   /** リアルタイム会話を、話しかけが無くてもしばらく閉じない（制作を待っている間など） */
   const liveKeepAlive = useCallback(() => liveRef.current?.keepAlive(), []);
 
@@ -1356,6 +1358,7 @@ export function useVoice({
     endLive,
     liveNotify,
     liveKeepAlive,
+    rewarmLive,
     dismissError: () => setError(null),
   };
 }

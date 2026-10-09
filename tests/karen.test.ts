@@ -223,3 +223,13 @@ describe("K.A.R.E.N. の間は「フライデー」では起きない", () => {
     assert.equal(splitWake("フライデー").woke, true, "F.R.I.D.A.Y. に戻れば、また「フライデー」で起きる");
   });
 });
+
+describe("「カレン」が漢字で文字になっても呼べる", () => {
+  it("K.A.R.E.N. の間：「花蓮、球体を作って」で起きる。「可憐な花」では切り替えない", () => {
+    setAiMode("karen");
+    assert.deepEqual(splitWake("花蓮、球体を作って"), { woke: true, command: "球体を作って" });
+    setAiMode("friday");
+    assert.equal(detectModeCommand("可憐、起動"), "to-karen");
+    assert.equal(splitWake("可憐な花ですね").woke, false);
+  });
+});

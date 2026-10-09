@@ -54,7 +54,7 @@ export function useAiMode(): AiMode {
 }
 
 /** 名前の呼び方（K.A.R.E.N. / KAREN / カレン / かれん） */
-const KAREN = /(k\.?\s*a\.?\s*r\.?\s*e\.?\s*n\.?(?![a-z])|カレン(?![ダトシ])|かれん)/i;
+const KAREN = /(k\.?\s*a\.?\s*r\.?\s*e\.?\s*n\.?(?![a-z])|カレン(?![ダトシ])|かれん|(?:可憐|花蓮|華蓮|夏蓮|佳蓮)(?!な))/i;
 const FRIDAY = /(f\.?\s*r\.?\s*i\.?\s*d\.?\s*a\.?\s*y\.?|フライデー|ふらいでー)/i;
 
 /**

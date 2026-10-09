@@ -654,6 +654,10 @@ export function Dashboard() {
     [cloudTts],
   );
   sayRef.current = (text: string) => sayAloud(text);
+  // F.R.I.D.A.Y. ⇄ K.A.R.E.N. を切り替えたら、前もってつないでおく会話もその AI に合わせる（切り替えてすぐ話せるように）
+  useEffect(() => {
+    voiceRef.current?.rewarmLive();
+  }, [aiMode]);
   // K.A.R.E.N. の間は、声を聞いている状態を画面（状態）に伝える
   useEffect(() => {
     if (aiMode !== "karen") return;

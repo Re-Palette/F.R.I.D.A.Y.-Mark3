@@ -94,6 +94,9 @@ export interface LiveContext {
   persona?: "karen";
 }
 
+/** K.A.R.E.N. のリアルタイム会話の声（Gemini の声の名前。GEMINI_LIVE_VOICE_KAREN で変えられる） */
+const KAREN_VOICE = "Aoede";
+
 /** K.A.R.E.N. の制作・編集を画面に頼む道具の名前（画面の live-voice.ts と同じ） */
 export const KAREN_TOOL = "karen_operate";
 /** F.R.I.D.A.Y. の操作（予定・ToDo・メールの下書き・音楽・ページやアプリを開くなど）を頼む道具の名前（画面の live-voice.ts と同じ） */
@@ -166,6 +169,8 @@ export async function prepareLive(ctx: LiveContext, signal?: AbortSignal): Promi
     url: `${ws}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`,
     model,
     systemInstruction: buildLiveInstruction(ctx),
-    voiceName: process.env.GEMINI_LIVE_VOICE?.trim() || null,
+    // K.A.R.E.N. は F.R.I.D.A.Y. と違う声で話す（誰が話しているか分かるように）
+    voiceName:
+      ctx.persona === "karen" ? process.env.GEMINI_LIVE_VOICE_KAREN?.trim() || KAREN_VOICE : process.env.GEMINI_LIVE_VOICE?.trim() || null,
   };
 }

@@ -61,7 +61,7 @@ const WAKE_RE = new RegExp(`^[\\s、。「]*${WAKE_LEAD}${WAKE_BODY}${WAKE_TAIL}
 
 /** K.A.R.E.N. の呼び方（カレン / K.A.R.E.N.）。「カレンダー」「カレント」は呼びかけではない。これも発言の頭で呼んだときだけ */
 const KAREN_WAKE_RE = new RegExp(
-  `^[\\s、。「]*${WAKE_LEAD}(?:[カか]\\s*[レれ]\\s*[ンん](?![ダだトとシし])|k\\.?\\s*a\\.?\\s*r\\.?\\s*e\\.?\\s*n\\.?(?![a-z]))${WAKE_TAIL}`,
+  `^[\\s、。「]*${WAKE_LEAD}(?:[カか]\\s*[レれ]\\s*[ンん](?![ダだトとシし])|(?:可憐|花蓮|華蓮|夏蓮|佳蓮)(?!な)|k\\.?\\s*a\\.?\\s*r\\.?\\s*e\\.?\\s*n\\.?(?![a-z]))${WAKE_TAIL}`,
   "i",
 );
 
