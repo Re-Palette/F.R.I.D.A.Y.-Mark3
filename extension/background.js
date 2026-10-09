@@ -31,12 +31,21 @@ async function launchInstalledApp(url) {
   return true;
 }
 
-async function open(url) {
+/** 開いてよいパソコンのアプリのリンク（画面の src/lib/app-links.ts と同じ一覧） */
+const APP_SCHEMES = ["spotify:", "slack:", "discord:", "zoommtg:", "msteams:", "notion:", "line:", "obsidian:", "figma:", "vscode:", "ms-settings:"];
+
+async function open(url, sender) {
   let parsed;
   try {
     parsed = new URL(url);
   } catch {
     return { ok: false, error: "URL が正しくありません。" };
+  }
+  // パソコンのアプリ：F.R.I.D.A.Y. のタブからアプリのリンクを開く（ページはそのまま。Chrome が「開きますか？」と確かめる）
+  if (APP_SCHEMES.includes(parsed.protocol.toLowerCase())) {
+    if (!sender?.tab?.id) return { ok: false, error: "アプリを開けませんでした。" };
+    await chrome.tabs.update(sender.tab.id, { url: parsed.toString() });
+    return { ok: true, app: true };
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return { ok: false, error: "開けない URL です。" };
   // アプリで開けなければ、ふつうにタブで開く
@@ -425,7 +434,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       : msg.type === "focus"
         ? focusTab(msg, sender)
         : msg.type === "open"
-          ? open(msg.url)
+          ? open(msg.url, sender)
           : msg.type === "close"
             ? close(msg.target)
             : msg.type === "music"

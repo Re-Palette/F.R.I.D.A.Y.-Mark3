@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
-import { CALENDAR_CHANGED, STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
+import { CALENDAR_CHANGED, STATUS_CHANGED, useChat, type SendOptions, type UiMessage } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
 import { useVoice, type LiveTurn } from "@/hooks/useVoice";
 import { useBargeIn } from "@/hooks/useBargeIn";
@@ -46,7 +46,8 @@ import { calendarForChat } from "@/lib/calendar-cache";
 import { stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { dispatchKaren, getKarenState } from "@/lib/karen-state";
-import { KAREN_TOOL } from "@/lib/live-voice";
+import { FRIDAY_TOOL, KAREN_TOOL } from "@/lib/live-voice";
+import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
 
 const CALENDAR_NOTICE: Record<string, string> = {
@@ -420,10 +421,36 @@ export function Dashboard() {
     [chat.messages],
   );
   // K.A.R.E.N. のリアルタイム会話：AI が頼んできた制作・編集を、制作ワークスペースで実行して結果を返す
+  // F.R.I.D.A.Y. のリアルタイム会話：頼まれた操作（予定・メールの下書き・アプリを開くなど）を、これまでの会話の仕組みで実行して結果を返す
+  const chatMessagesRef = useRef(chat.messages);
+  chatMessagesRef.current = chat.messages;
+  const runFridayAction = useCallback(
+    async (request: string): Promise<Record<string, unknown>> => {
+      const reply = await new Promise<UiMessage | null>((resolve) => {
+        const timer = window.setTimeout(() => resolve(null), ACTION_TIMEOUT_MS);
+        const sent = chatSendRaw(request, {
+          onDone: (m) => {
+            clearTimeout(timer);
+            resolve(m);
+          },
+        });
+        if (!sent) {
+          clearTimeout(timer);
+          resolve(null);
+        }
+      });
+      if (!reply) return { ok: false, error: "時間内に終わりませんでした。画面で結果を確かめてください。" };
+      // ページやアプリを開いた結果はあとから届くので、少し待ってから最新の状態で伝える
+      await new Promise((r) => window.setTimeout(r, 600));
+      return summarizeAction(chatMessagesRef.current.find((m) => m.id === reply.id) ?? reply);
+    },
+    [chatSendRaw],
+  );
   const onLiveTool = useCallback(async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    if (name !== KAREN_TOOL || getAiMode() !== "karen") return { ok: false, error: "いまは K.A.R.E.N. のモードではありません。" };
     const request = typeof args.request === "string" ? args.request.trim() : "";
     if (!request) return { ok: false, error: "頼みの内容が空です。" };
+    if (name === FRIDAY_TOOL) return runFridayAction(request);
+    if (name !== KAREN_TOOL || getAiMode() !== "karen") return { ok: false, error: "いまは K.A.R.E.N. のモードではありません。" };
     const notices: string[] = [];
     let chatOnly = false;
     const run = handleKarenText(request, { speak: (t) => notices.push(t), chat: () => (chatOnly = true) });
@@ -431,7 +458,7 @@ export function Dashboard() {
     const finished = await Promise.race([run.then(() => true), new Promise<boolean>((r) => window.setTimeout(() => r(false), 1500))]);
     if (chatOnly) return { ok: true, status: "not-creative", note: "制作・編集の指示ではなかった。会話として答える。" };
     return { ok: true, status: finished ? "done" : "started", notices, phase: getKarenState().phase };
-  }, []);
+  }, [runFridayAction]);
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
@@ -963,3 +990,4 @@ export function Dashboard() {
     </div>
   );
 }
+

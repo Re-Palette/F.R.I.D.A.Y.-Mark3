@@ -7,6 +7,7 @@
  *   ・クリックの無い依頼（音声など）はポップアップとして止められることがある → TAB_BLOCKED で「開く」ボタンを出す
  *   ・YouTube・Google など安全のため開いた側とのつながりを切るページは、あとから閉じられない
  */
+import { isAppUrl } from "./app-links";
 
 /** ポップアップが止められたときのイベント（detail: { url, label }） */
 export const TAB_BLOCKED = "friday:tab-blocked";
@@ -66,7 +67,9 @@ export async function hasExtension(): Promise<boolean> {
 /** Amazon Music の操作に必要な拡張機能の版 */
 export const MUSIC_EXTENSION_VERSION = "1.3.0";
 /** いちばん新しい拡張機能の版（インストールしたアプリで開く・Amazon Music もアプリで） */
-export const LATEST_EXTENSION_VERSION = "1.6.0";
+export const LATEST_EXTENSION_VERSION = "1.7.0";
+/** パソコンのアプリ（Spotify など）を声で開くのに必要な版 */
+export const APP_EXTENSION_VERSION = "1.7.0";
 /** 「Chrome を開いたら裏で開いておき、呼ばれたら前に出す」に必要な版 */
 export const KEEP_OPEN_EXTENSION_VERSION = "1.6.0";
 const KEEP_OPEN_KEY = "friday.keepOpen.v1";
@@ -137,6 +140,11 @@ export async function openTab(url: string, label: string): Promise<boolean> {
     const r = await askExtension({ type: "open", url }, 3000);
     if (r?.ok) return true;
   }
+  // パソコンのアプリは、クリックの中でないと Chrome が開かせない → 「開く」ボタンを出す
+  if (isAppUrl(url)) {
+    window.dispatchEvent(new CustomEvent(TAB_BLOCKED, { detail: { url, label } }));
+    return false;
+  }
   const win = window.open(url, "_blank");
   if (!win) {
     window.dispatchEvent(new CustomEvent(TAB_BLOCKED, { detail: { url, label } }));
@@ -148,6 +156,11 @@ export async function openTab(url: string, label: string): Promise<boolean> {
 
 /** クリックの中で開く（ポップアップとして止められない）。あとで「閉じて」で閉じられるよう覚えておく */
 export function openTabNow(url: string): void {
+  // パソコンのアプリはこのページからリンクを開く（ページはそのまま。Chrome が「開きますか？」と確かめる）
+  if (isAppUrl(url)) {
+    window.location.href = url;
+    return;
+  }
   const win = window.open(url, "_blank");
   if (win) opened.push(win);
 }

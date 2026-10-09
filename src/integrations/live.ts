@@ -96,6 +96,14 @@ export interface LiveContext {
 
 /** K.A.R.E.N. の制作・編集を画面に頼む道具の名前（画面の live-voice.ts と同じ） */
 export const KAREN_TOOL = "karen_operate";
+/** F.R.I.D.A.Y. の操作（予定・ToDo・メールの下書き・音楽・ページやアプリを開くなど）を頼む道具の名前（画面の live-voice.ts と同じ） */
+export const FRIDAY_TOOL = "friday_action";
+
+const FRIDAY_LIVE = `
+- 次のような操作を頼まれたら、まず「入れますね」「開きますね」のように一言だけ言ってから、${FRIDAY_TOOL} を呼ぶ（request にはユーザーの頼みを、日時や名前を補って日本語の 1 文で入れる）：
+  予定の追加・変更・削除、ToDo の追加・完了、リマインダー、覚えておくこと、Gmail の下書き（送信はしない）、音楽の再生・停止、Web ページやパソコンのアプリ（Spotify・Slack・Zoom など）を開く・タブを閉じる、文書づくり、ホログラム。
+- ${FRIDAY_TOOL} の結果（result・done）を、1〜2 文で短く伝える。ok が false なら、うまくいかなかったことと理由を短く伝える。結果に無いことを「やりました」と言わない。
+- 予定・天気・ToDo を聞かれただけのとき（操作でないとき）は、${FRIDAY_TOOL} を呼ばずに上の情報から答える。`;
 
 const KAREN_LIVE = `
 
@@ -129,8 +137,8 @@ export function buildLiveInstruction(ctx: LiveContext): string {
 - いまは声だけで会話している。返事はすぐ・短く（1〜2 文）。前置き（「承知しました」など）は付けない。
 - 日本語の自然な話し言葉で、落ち着いた秘書の声で話す。
 - 予定・天気・ToDo は上の情報から答える。上に無い最新情報は、Google 検索が使えるときは調べて答え、使えなければ「分からない」と正直に言う。
-- メールの下書き・予定の追加や変更・ToDo の追加・ファイルの作成のような操作は、ここではできない。頼まれたら「画面の入力欄で頼んでください」と短く伝える。`;
-  if (ctx.persona === "karen") out += KAREN_SECTION + KAREN_LIVE;
+`;
+  out += ctx.persona === "karen" ? KAREN_SECTION + KAREN_LIVE : FRIDAY_LIVE;
   return out;
 }
 

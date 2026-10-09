@@ -36,6 +36,22 @@ export interface LiveHandlers {
 
 /** K.A.R.E.N. の制作・編集を画面に頼む道具（サーバーの integrations/live.ts と同じ名前） */
 export const KAREN_TOOL = "karen_operate";
+/** F.R.I.D.A.Y. の操作を、これまでの会話の仕組み（予定・メールなどの操作ができる）に頼む道具 */
+export const FRIDAY_TOOL = "friday_action";
+const FRIDAY_TOOL_DECL = {
+  functionDeclarations: [
+    {
+      name: FRIDAY_TOOL,
+      description:
+        "F.R.I.D.A.Y. の操作をする：予定の追加・変更・削除、ToDo・リマインダー、覚えておくこと、Gmail の下書き（送信はしない）、音楽、Web ページやパソコンのアプリを開く・タブを閉じる、文書づくり、ホログラム。",
+      parameters: {
+        type: "OBJECT",
+        properties: { request: { type: "STRING", description: "頼みの内容（日本語の 1 文。例：10月14日の15時から1時間、打ち合わせを予定に入れて）" } },
+        required: ["request"],
+      },
+    },
+  ],
+};
 const KAREN_TOOL_DECL = {
   functionDeclarations: [
     {
@@ -89,9 +105,9 @@ export function buildSetup(
   full: boolean,
   persona?: "karen",
 ) {
-  // K.A.R.E.N. は制作の道具が無いと働けないので、最小の設定にも入れる
-  const karen = persona === "karen" ? [KAREN_TOOL_DECL] : [];
-  const tools = full ? [{ googleSearch: {} }, ...karen] : karen;
+  // 操作の道具は、細かい設定を受け付けないモデル向けの最小の設定にも入れる（無いと操作ができない）
+  const own = [persona === "karen" ? KAREN_TOOL_DECL : FRIDAY_TOOL_DECL];
+  const tools = full ? [{ googleSearch: {} }, ...own] : own;
   return {
     setup: {
       model: prep.model.startsWith("models/") ? prep.model : `models/${prep.model}`,

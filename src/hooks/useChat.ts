@@ -88,6 +88,8 @@ export interface SendOptions {
   audio?: { mimeType: string; data: string };
   /** 録った声から何も聞き取れなかったとき（発言も返答も出さずに、聞き取りに戻る） */
   onNoSpeech?: () => void;
+  /** 返答が終わったとき（返答。始められなかったら null）。リアルタイム会話に操作の結果を返すのに使う */
+  onDone?: (reply: UiMessage | null) => void;
 }
 
 /** 声で話しかけて、まだ文字になっていない発言の表示 */
@@ -711,8 +713,12 @@ export function useChat() {
           await previous;
         }
         const history = build(store.current);
-        if (!history) return;
+        if (!history) return opts.onDone?.(null);
         await run(history, opts);
+        if (opts.onDone) {
+          const last = store.current[store.current.length - 1];
+          opts.onDone(last?.role === "assistant" ? last : null);
+        }
       })();
       runningRef.current = job;
       setPhase((p) => (p === "idle" ? "waiting" : p));

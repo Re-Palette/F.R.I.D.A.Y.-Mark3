@@ -5,6 +5,7 @@
  * 実際に開く・閉じるのは画面（ブラウザ）側。ここでは URL を確かめてイベントにするだけ。
  */
 import type { StreamEvent } from "@/core/types";
+import { appName, appUrl } from "@/lib/app-links";
 
 import { BROWSER_TAGS } from "./tag-names";
 export { BROWSER_TAGS };
@@ -27,6 +28,9 @@ export function safeUrl(raw: string): string | null {
 
 export function toBrowserEvent(tag: (typeof BROWSER_TAGS)[number], content: string, attrs: Record<string, string> = {}): BrowserEvent {
   if (tag === "close-tab") return { type: "browser", action: "close", target: /all|全部|すべて/i.test(content) ? "all" : "last" };
+  // パソコンのアプリ（一覧にあるアプリの専用リンクだけ）
+  const app = appUrl(content);
+  if (app) return { type: "browser", action: "open", ok: true, url: app, label: (attrs.label || appName(app)).slice(0, 60) };
   const url = safeUrl(content);
   if (!url) return { type: "browser", action: "open", ok: false, label: attrs.label || content.slice(0, 60), error: "開けない URL でした。" };
   const label = (attrs.label || new URL(url).hostname.replace(/^www\./, "")).slice(0, 60);

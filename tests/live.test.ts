@@ -13,6 +13,9 @@ import type { AddressInfo } from "node:net";
 
 const { pickLiveModel, buildLiveInstruction, prepareLive } = await import("../src/integrations/live");
 const { buildSetup, int16ToBase64, base64ToFloat32, rateOf } = await import("../src/lib/live-voice");
+const { summarizeAction } = await import("../src/lib/live-actions");
+const { appUrl } = await import("../src/lib/app-links");
+const { toBrowserEvent } = await import("../src/core/browser-actions");
 
 describe("Live 用のモデルを選ぶ", () => {
   const bidi = ["generateContent", "bidiGenerateContent"];
@@ -115,7 +118,8 @@ describe("最初に送る設定と声のデータ", () => {
     assert.ok("tools" in full && "realtimeInputConfig" in full);
     const min = buildSetup({ model: "models/x", systemInstruction: "指示" }, false).setup;
     assert.equal(min.model, "models/x");
-    assert.ok(!("tools" in min) && !("realtimeInputConfig" in min) && !("speechConfig" in min.generationConfig));
+    assert.ok(!("realtimeInputConfig" in min) && !("speechConfig" in min.generationConfig));
+    assert.doesNotMatch(JSON.stringify(min.tools), /googleSearch/, "最小の設定には検索を入れない（操作の道具だけ）");
   });
   it("K.A.R.E.N. のときは制作の道具を渡す（最小の設定にも入れる）。F.R.I.D.A.Y. には渡さない", () => {
     const names = (setup: { tools?: unknown[] }) => JSON.stringify(setup.tools ?? []);
@@ -133,5 +137,53 @@ describe("最初に送る設定と声のデータ", () => {
     assert.equal(rateOf("audio/pcm;rate=24000"), 24000);
     assert.equal(rateOf("audio/pcm"), 24000);
     assert.equal(rateOf("audio/pcm;rate=16000"), 16000);
+  });
+});
+
+describe("リアルタイム会話からの操作（F.R.I.D.A.Y.）", () => {
+  it("F.R.I.D.A.Y. には操作の道具を渡し、最初の指示に使い方を書く", () => {
+    assert.match(JSON.stringify(buildSetup({ model: "m", systemInstruction: "i" }, false).setup.tools), /friday_action/);
+    const text = buildLiveInstruction({ now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [] });
+    assert.match(text, /friday_action/);
+    assert.doesNotMatch(text, /入力欄で頼んでください/);
+  });
+  it("操作の結果を短くまとめる（予定・下書き・開けなかったページ）", () => {
+    const r = summarizeAction({
+      id: "a",
+      role: "assistant",
+      content: "打ち合わせを入れました。",
+      createdAt: 0,
+      status: "done",
+      calendar: [{ action: "add", ok: true, title: "打ち合わせ", when: "10/14 15:00" }],
+      drafts: [{ ok: true, to: "a@example.com", subject: "日程" }],
+      tabs: [{ action: "open", ok: true, label: "Spotify", url: "spotify:", blocked: true }],
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.result, "打ち合わせを入れました。");
+    const done = (r.done as string[]).join("\n");
+    assert.match(done, /予定の追加：打ち合わせ 10\/14 15:00 成功/);
+    assert.match(done, /送信はしていない/);
+    assert.match(done, /「開く」ボタン/);
+  });
+  it("失敗は ok: false と理由", () => {
+    const r = summarizeAction({ id: "a", role: "assistant", content: "", createdAt: 0, status: "error", error: { code: "X", message: "つながりません", retryable: true } });
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "つながりません");
+  });
+});
+
+describe("パソコンのアプリを開くリンク", () => {
+  it("一覧にあるアプリのリンクだけ通す", () => {
+    assert.equal(appUrl("spotify:"), "spotify:");
+    assert.equal(appUrl("Slack://open"), "slack://open");
+    assert.equal(appUrl("javascript:alert(1)"), null);
+    assert.equal(appUrl("file:///C:/Windows"), null);
+    assert.equal(appUrl("ms-excel:ofe|u|x"), null);
+    assert.equal(appUrl("spotify: x"), null);
+  });
+  it("<open-url> にアプリのリンクを入れると、アプリを開く操作になる（名前も付く）", () => {
+    assert.deepEqual(toBrowserEvent("open-url", "spotify:", {}), { type: "browser", action: "open", ok: true, url: "spotify:", label: "Spotify" });
+    const bad = toBrowserEvent("open-url", "javascript:alert(1)", {});
+    assert.equal(bad.type === "browser" && bad.action === "open" && bad.ok, false);
   });
 });

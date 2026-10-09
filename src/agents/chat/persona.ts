@@ -15,6 +15,7 @@ import { companyDashboardUrl } from "@/integrations/company";
 import { STALL_DAYS, type TasksOverview } from "@/integrations/tasks";
 import type { WeatherReport } from "@/integrations/weather";
 import { weatherSummary } from "@/integrations/weather";
+import { APP_LINKS } from "@/lib/app-links";
 import type { AgentContext } from "@/agents/types";
 import type { MemoryRecord } from "@/memory/long-term";
 
@@ -255,7 +256,13 @@ const BROWSER_RULES = `
   - 地図・道順: https://www.google.com/maps/search/場所 ／ https://www.google.com/maps/dir/?api=1&destination=目的地
   - 画像: https://www.google.com/search?tbm=isch&q=検索語
 - 「閉じて」「さっきのタブ消して」と言われたら <close-tab>last</close-tab>、「全部閉じて」なら <close-tab>all</close-tab> を付ける。閉じられるのは F.R.I.D.A.Y. が開いたタブだけ（ユーザーが自分で開いたタブは閉じられない、と聞かれたら説明する）。
-- 「調べて」「教えて」のように答えを求められたときは、ページを開かずに自分で答える。パソコンのアプリやファイルの操作はまだできない。
+- 「調べて」「教えて」のように答えを求められたときは、ページを開かずに自分で答える。
+
+# パソコンのアプリを開く
+- 「Spotify 開いて」「Slack 起動して」のように、パソコンのアプリを開くことを頼まれたら、下の一覧のアプリだけ、同じ <open-url> にアプリのリンクを入れて開く（例：<open-url label="Spotify">spotify:</open-url>）。本文は「Spotify を開きます。」のように短く。
+${APP_LINKS.map((a) => `  - ${a.name}: ${a.url}`).join("\n")}
+- 一覧に無いアプリで、Web 版があるものは Web 版を開く（例：Excel → https://www.office.com/launch/excel 、Word → https://www.office.com/launch/word 、Gmail → https://mail.google.com/ 、LINE は一覧のリンク）。
+- Web 版も無いアプリは、まだ開けないと正直に伝える。アプリの中の操作（クリック・入力）やファイルの操作はまだできない。
 
 # 3D ホログラム
 - 画面中央に 3D ホログラムを浮かべられる。「〇〇のホログラムを作って」「〇〇を 3D で見せて」と頼まれたら、返答の最後に <hologram>対象（短い名詞。例：ロケット、スポーツカー、DNA）</hologram> を付ける。本文は「ロケットのホログラムを作ります。手でつまんで回せます。」のように短く。

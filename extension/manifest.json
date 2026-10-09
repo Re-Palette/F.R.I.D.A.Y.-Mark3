@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "F.R.I.D.A.Y. Tabs",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "F.R.I.D.A.Y. Mark3 から、Web ページを開く・閉じる操作（インストールしたアプリはアプリで開く）と、Amazon Music の再生の操作をできるようにします。Chrome を開いたら F.R.I.D.A.Y. を裏で開いておき、「フライデー」と呼ぶと前に出します。",
   "permissions": [
     "storage",
