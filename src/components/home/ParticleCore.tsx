@@ -4,7 +4,9 @@
  * コアの中心：光る太陽と、線でつながった光の点の網（canvas 2D）。F.R.I.D.A.Y. の状態で動きが変わる。
  *   待機：ゆっくり回って呼吸する／聞き取り中：網が波打つ／考え中：速く渦を巻く
  *   検索中：光の帯が上下に走査する／処理中：縮んで広がる／返事中：中心から光の波が広がる
- * 音声モードの間は、実際の声の大きさ（voiceLevel）に合わせて明るさ・大きさ・波打ちが変わる。
+ * 音声モードの間は、実際の声（voiceLevel）に合わせて動く：
+ *   大きさ → 明るさ・大きさ・波打ちの強さ／音節の立ち上がり → 中心から光の波が 1 つ広がり、回転が一瞬速まる
+ *   抑揚（声が上がる・下がる）→ 球が縦に伸びる・つぶれる／低い声 → 赤道がふくらむ／高い子音 → 表面がきらめく
  * 見えていないとき・タブが裏のときは描かない。動きを減らす設定なら止まった絵を 1 枚だけ描く。
  */
 import { memo, useEffect, useRef } from "react";
@@ -158,6 +160,10 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
 
     let angle = 0;
     let glow = TUNE[modeRef.current].glow;
+    /** 音節の立ち上がりごとに出す光の波（出た時刻） */
+    const ripples: number[] = [];
+    let seenOnsets = voiceLevel.onsets;
+    const RIPPLE_S = 0.75;
     let last = performance.now();
     let raf = 0;
     const cosT = Math.cos(TILT);
@@ -174,11 +180,24 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       // お知らせを読み上げているときも（音声会話でなくても）話している動きにする
       const m: CoreMode = modeRef.current === "idle" && voiceLevel.talking ? "speaking" : modeRef.current;
       const tune = TUNE[m];
-      angle += tune.spin * dt;
       // 声の大きさ（音声モードの間だけ。0〜1）。声に合わせて明るく・大きく脈打つ
       const lv = voiceLevel.value;
-      glow += (tune.glow + lv * 0.35 - glow) * Math.min(1, dt * 3); // 明るさはなめらかに変える
+      const { low, mid, high, inflection, onset } = voiceLevel;
+      const g = Math.min(1, lv * 2.5); // 声が出ているほど、声の中身（抑揚など）を強く映す
+      // 音節が立ち上がるたびに、回転が一瞬速まる
+      angle += (tune.spin + lv * 0.25 + onset * 1.4) * dt;
+      glow += (tune.glow + lv * 0.35 + inflection * 0.12 * g - glow) * Math.min(1, dt * 3); // 明るさはなめらかに変える
       const t = now / 1000;
+      // 音節の立ち上がりごとに光の波を 1 つ出す（古いものは消す）
+      if (voiceLevel.onsets !== seenOnsets) {
+        seenOnsets = voiceLevel.onsets;
+        ripples.push(t);
+        if (ripples.length > 4) ripples.shift();
+      }
+      while (ripples.length && t - ripples[0] > RIPPLE_S) ripples.shift();
+      // 抑揚：声が上がると縦に伸び、下がると少しつぶれる
+      const stretchY = 1 + inflection * 0.1 * g;
+      const stretchX = 1 - inflection * 0.04 * g;
       const cx = w / 2;
       const cy = h / 2;
       const R = Math.min(w, h) * 0.44;
@@ -204,6 +223,21 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
         const y0 = pts[i * 3 + 1];
         let z = pts[i * 3 + 2];
         let s = breath;
+        if (g > 0.01) {
+          // 低い声は赤道をふくらませ、高い子音は表面の点をきらめかせる
+          s *= 1 + low * 0.07 * g * (1 - y0 * y0) + high * 0.05 * g * Math.sin(t * 17 + i * 1.7);
+        }
+        let ring = 0;
+        if (ripples.length) {
+          // 音節の光の波：中心から外へ広がる輪の近くの点を押し出して光らせる
+          const d = Math.hypot(x, y0, z);
+          for (const r0 of ripples) {
+            const a = (t - r0) / RIPPLE_S;
+            const near = Math.exp(-(((d - a * 1.25) * 5) ** 2)) * (1 - a);
+            ring = Math.max(ring, near);
+          }
+          s *= 1 + ring * 0.09;
+        }
         if (m === "think") {
           const tw = y0 * Math.sin(t * 0.8) * 0.9;
           const c = Math.cos(tw);
@@ -211,11 +245,11 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
           [x, z] = [x * c - z * d, x * d + z * c];
         } else if (m === "listening") {
           // 聞いている間は、声が大きいほど表面が大きく波打つ
-          s *= 1 + (0.03 + lv * 0.2) * Math.sin(t * 6 + y0 * 5 + x * 3);
+          s *= 1 + (0.03 + lv * 0.12 + mid * 0.1) * Math.sin(t * (6 + inflection * 2) + y0 * 5 + x * 3);
         } else if (m === "speaking") {
           // 話している間は、声の大きさに合わせて中心から外へ波が広がるように脈打つ
           const d = Math.hypot(x, y0, z);
-          s *= 1 + lv * 0.1 + (0.015 + lv * 0.14) * Math.sin(t * 9 - d * 5);
+          s *= 1 + lv * 0.1 + (0.015 + lv * 0.08 + mid * 0.07) * Math.sin(t * (9 + inflection * 3) - d * 5);
         } else if (m === "connect") {
           s *= 0.9 + 0.1 * Math.sin(t * 3);
         }
@@ -223,9 +257,9 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
         const rz = x * sinA + z * cosA;
         const ry = y0 * cosT - rz * sinT;
         const pz = y0 * sinT + rz * cosT;
-        sx[i] = cx + rx * R * s;
-        sy[i] = cy + ry * R * s;
-        let n = (pz + 1) / 2; // 0 奥 … 1 手前
+        sx[i] = cx + rx * R * s * stretchX;
+        sy[i] = cy + ry * R * s * stretchY;
+        let n = (pz + 1) / 2 + ring * 0.7; // 0 奥 … 1 手前（音節の光の波の上は明るく）
         if (m === "search") n += Math.max(0, 1 - Math.abs(ry * s - scan) * 5) * 0.9;
         else if (m === "create" || m === "speaking") n += Math.max(0, 1 - Math.abs(Math.hypot(rx, ry) * s - wave * 1.1) * 7) * 0.8;
         sn[i] = n;
@@ -263,7 +297,7 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       // 中心の太陽（描いておいた絵を脈に合わせて拡大して貼る。ここだけ光を足し合わせる）
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = Math.min(1, glow);
-      const ss = sun.width * (1 + Math.sin(t * 2.2) * 0.04 * glow + lv * 0.25);
+      const ss = sun.width * (1 + Math.sin(t * 2.2) * 0.04 * glow + lv * 0.25 + onset * 0.15);
       ctx.drawImage(sun, cx - ss / 2, cy - ss / 2, ss, ss);
       ctx.globalAlpha = 1;
     };
