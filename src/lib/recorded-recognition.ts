@@ -24,11 +24,11 @@ const EARLY_SEND_MS = 200;
 let fallbackCtx: AudioContext | null = null;
 
 /** 音声を送って文字にしてもらう */
-async function sendForText(samples: Float32Array, signal: AbortSignal): Promise<string> {
+async function sendForText(samples: Float32Array, signal: AbortSignal, purpose: "talk" | "wake" = "talk"): Promise<string> {
   const res = await fetch("/api/stt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ audio: toBase64(toWav(samples, RATE)), mimeType: "audio/wav" }),
+    body: JSON.stringify({ audio: toBase64(toWav(samples, RATE)), mimeType: "audio/wav", purpose }),
     signal,
   });
   const json = (await res.json().catch(() => ({}))) as { ok?: boolean; text?: string };
@@ -107,6 +107,8 @@ export class RecordedRecognition implements RecognitionLike {
   onaudio: ((audio: { mimeType: string; data: string }) => void) | null = null;
   /** 声紋認証。録った 1 発言が本人の声か確かめる（false なら文字にも送りもせず、聞き直す） */
   verify: ((samples: Float32Array) => Promise<boolean>) | null = null;
+  /** 呼びかけを待っている間（wake）か、話を聞いている間（talk）か。呼びかけ待ちは文字起こしの指示を変える */
+  purpose: "talk" | "wake" = "talk";
 
   private session = 0;
   private stream: MediaStream | null = null;
@@ -165,6 +167,7 @@ export class RecordedRecognition implements RecognitionLike {
   }
 
   private async run(id: number) {
+    const purpose = this.purpose; // 始めた時点の用途（途中で変わっても、この発言はこの用途で文字にする）
     const ctx = getAudioContext() ?? (fallbackCtx ??= new AudioContext());
     if (ctx.state !== "running") await ctx.resume().catch(() => {});
     // パソコンは、音量を測るために開いているマイクをそのまま使う（発言のたびに開き直さないので、話し始めを取りこぼさず速い）
@@ -255,7 +258,7 @@ export class RecordedRecognition implements RecognitionLike {
         } else silentMs += frameMs;
         if (!early && !this.onaudio && silentMs >= EARLY_SEND_MS && spokeMs - silentMs >= 350) {
           const controller = new AbortController();
-          early = { controller, promise: sendForText(concat(), controller.signal) };
+          early = { controller, promise: sendForText(concat(), controller.signal, purpose) };
           early.promise.catch(() => {}); // 取り消したときのエラーは無視（使うときに改めて受け取る）
         }
         if (silentMs >= END_SILENCE_MS || spokeMs >= MAX_UTTER_MS) resolve(concat());
@@ -278,7 +281,7 @@ export class RecordedRecognition implements RecognitionLike {
           pending?.controller.abort();
           return "";
         }
-        return pending?.promise ?? sendForText(utterance, new AbortController().signal);
+        return pending?.promise ?? sendForText(utterance, new AbortController().signal, purpose);
       })();
       const before = this.delivering;
       this.delivering = (async () => {
@@ -311,7 +314,7 @@ export class RecordedRecognition implements RecognitionLike {
 
     const pending = early as { controller: AbortController; promise: Promise<string> } | null;
     this.controller = pending?.controller ?? new AbortController();
-    const text = await (pending?.promise ?? sendForText(utterance, this.controller.signal));
+    const text = await (pending?.promise ?? sendForText(utterance, this.controller.signal, purpose));
     if (id !== this.session) return;
     if (text) this.onresult?.(result(text));
     this.finish(id);

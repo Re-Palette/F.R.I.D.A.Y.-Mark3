@@ -48,30 +48,38 @@ export function getRecognitionCtor(): (new () => RecognitionLike) | null {
 /* ---------- 呼びかけ（ウェイクワード）検出 ---------- */
 
 /**
- * 音声認識での表記ゆれをまとめて拾う。
- * フライデー / フライデイ / フライディ / プライデー / ブライデー / ふらいでー / フライ デー / Friday / ＦＲＩＤＡＹ など。
+ * 音声認識での表記ゆれを拾う：フライデー / フライデイ / フライディ / ふらいでー / フライ・デー / Friday / ＦＲＩＤＡＹ、
+ * 聞き間違いの多い プライデー / ブライデー（伸ばす音まであるときだけ）。
+ * 発言の頭で呼んだときだけ起きる（「ねえ」「ヘイ」などは前に付いてよい）。文の途中の「ブラックフライデー」「今日はフライデー」では起きない。
  */
-const WAKE_RE =
-  /(?:[フふプぷブぶ][\s・]*[ラら][\s・]*[イいィぃ][\s・]*(?:ディ|[デでテて])[\s・]*[ーィぃイいエえ〜]?|f\s*r\s*i\s*d\s*a\s*y|ｆ\s*ｒ\s*ｉ\s*ｄ\s*ａ\s*ｙ|fry\s*day)[\s、。,.!！?？ー〜]*/i;
+const WAKE_BODY =
+  "(?:[フふ][\\s・]*[ラら][\\s・]*[イいィぃ][\\s・]*(?:ディ|でぃ|[デで])[\\s・]*[ーィぃイいエえ〜]?|[プぷブぶ][\\s・]*[ラら][\\s・]*[イい][\\s・]*[デで][\\s・]*[ーイい]|f\\s*r\\s*i\\s*d\\s*a\\s*y|ｆ\\s*ｒ\\s*ｉ\\s*ｄ\\s*ａ\\s*ｙ)";
+/** 呼びかけの前に付いてよい言葉 */
+const WAKE_LEAD = "(?:(?:ねえ|ねぇ|ねー|ヘイ|へい|hey|おい|あの|えっと|えーと|ちょっと|ok|オッケー)[\\s、。,.!！ー〜]*)?";
+const WAKE_TAIL = "[\\s、。,.!！?？ー〜]*";
+const WAKE_RE = new RegExp(`^[\\s、。「]*${WAKE_LEAD}${WAKE_BODY}${WAKE_TAIL}`, "i");
 
-/** K.A.R.E.N. の呼び方（カレン / K.A.R.E.N.）。「カレンダー」「カレント」は呼びかけではない */
-const KAREN_WAKE_RE = /(?:[カか]\s*[レれ]\s*[ンん](?![ダだトとシし])|k\.?\s*a\.?\s*r\.?\s*e\.?\s*n\.?(?![a-z]))[\s、。,.!！?？ー〜]*/i;
+/** K.A.R.E.N. の呼び方（カレン / K.A.R.E.N.）。「カレンダー」「カレント」は呼びかけではない。これも発言の頭で呼んだときだけ */
+const KAREN_WAKE_RE = new RegExp(
+  `^[\\s、。「]*${WAKE_LEAD}(?:[カか]\\s*[レれ]\\s*[ンん](?![ダだトとシし])|k\\.?\\s*a\\.?\\s*r\\.?\\s*e\\.?\\s*n\\.?(?![a-z]))${WAKE_TAIL}`,
+  "i",
+);
 
 export function splitWake(text: string): { woke: boolean; command: string } {
   const m = WAKE_RE.exec(text);
-  if (m) return { woke: true, command: text.slice(m.index + m[0].length).trim() };
+  if (m) return { woke: true, command: text.slice(m[0].length).trim() };
   // 「カレン、起動」でも呼べる。K.A.R.E.N. の間は名前を取り除き、F.R.I.D.A.Y. の間は名前ごと渡す（切り替えの言葉として見分けるため）
   const k = KAREN_WAKE_RE.exec(text);
   if (!k) return { woke: false, command: "" };
-  return { woke: true, command: getAiMode() === "karen" ? text.slice(k.index + k[0].length).trim() : text.slice(k.index).trim() };
+  return { woke: true, command: getAiMode() === "karen" ? text.slice(k[0].length).trim() : text.trim() };
 }
 
 /** 発言の先頭に付いた呼びかけを取り除く（「フライデー、今日の予定は？」→「今日の予定は？」） */
 export function stripWake(text: string): string {
   const m = WAKE_RE.exec(text);
-  if (m && m.index <= 2) return text.slice(m.index + m[0].length).trim();
+  if (m) return text.slice(m[0].length).trim();
   const k = getAiMode() === "karen" ? KAREN_WAKE_RE.exec(text) : null;
-  return k && k.index <= 2 ? text.slice(k.index + k[0].length).trim() : text.trim();
+  return k ? text.slice(k[0].length).trim() : text.trim();
 }
 
 /* ---------- 読み上げ用の整形 ---------- */

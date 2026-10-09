@@ -15,17 +15,26 @@ const PROMPT = `この音声は、日本語で AI 秘書「フライデー」に
 - 声が入っていない・物音だけ・音楽やテレビの音・聞き取れないときは、何も返さない（空にする）。
 - 「フライデー」「カレン」は、はっきりそう話しかけた声のときだけ書く。似た音・雑音を「フライデー」と書かない。`;
 
+/**
+ * 呼びかけを待っている間の文字起こし。「フライデー」という言葉を指示に入れない
+ * （入れると、雑音やテレビの音まで「フライデー」と書いてしまい、呼んでいないのに起動するため）。
+ */
+const WAKE_PROMPT = `この音声を、聞こえたとおりに日本語で文字にしてください。
+- 文字起こしだけを返す（説明・かぎかっこ・前置きは付けない）。
+- 人がはっきり話した言葉だけを書く。雑音・物音・音楽・テレビやほかの人の小さな声・聞き取れない音は書かない。
+- 話した言葉が無いときは、何も返さない（空にする）。推測で言葉を補わない。`;
+
 /** 1 回に受け付ける音声の大きさ（base64 の文字数。16kHz・モノラルの WAV で約 60 秒） */
 export const MAX_AUDIO_CHARS = 2_600_000;
 
-export async function transcribe(audio: string, mimeType: string, signal?: AbortSignal): Promise<string> {
+export async function transcribe(audio: string, mimeType: string, signal?: AbortSignal, purpose: "talk" | "wake" = "talk"): Promise<string> {
   const config = getGeminiConfig();
   // 速さ優先：軽いモデル（Flash-Lite）を先に、考える時間は最小で
   const models = [...config.models].sort((a, b) => Number(b.includes("lite")) - Number(a.includes("lite")));
   let text = "";
   for await (const chunk of streamGemini({
     config: { ...config, models, model: models[0], thinkingLevel: "minimal", temperature: 0, maxOutputTokens: 300 },
-    contents: [{ role: "user", parts: [{ inlineData: { mimeType, data: audio } }, { text: PROMPT }] }],
+    contents: [{ role: "user", parts: [{ inlineData: { mimeType, data: audio } }, { text: purpose === "wake" ? WAKE_PROMPT : PROMPT }] }],
     signal,
   })) {
     text += chunk.text;

@@ -320,6 +320,8 @@ export function useVoice({
     if (!rec || runningRef.current || abortingRef.current || liveRef.current) return;
     // ネットが切れているときは、対応している Chrome なら PC の中だけで聞き取る（日本語の音声データが入っている場合）
     if ("processLocally" in rec) (rec as { processLocally?: boolean }).processLocally = shouldRecognizeLocally();
+    // 録音の聞き取りは、呼びかけ待ちの間だけ文字起こしの指示を変える（雑音を「フライデー」と書かないように）
+    if (rec instanceof RecordedRecognition) rec.purpose = stateRef.current === "standby" ? "wake" : "talk";
     try {
       rec.start();
       runningRef.current = true;
