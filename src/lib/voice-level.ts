@@ -58,6 +58,8 @@ let lastOnset = 0;
 /** 声の高さのふだんの位置（抑揚はここからのずれ） */
 let pitchAvg = 0;
 let pitchSpread = 0.08;
+/** いま測っている声（マイクの声か、F.R.I.D.A.Y. の声か）。替わったら、ふだんの高さを覚え直す */
+let pitchSource: "mic" | "speech" = "mic";
 let lastNow = 0;
 
 interface Shape {
@@ -379,6 +381,13 @@ function loop(now: number) {
   voiceLevel.high = ease(voiceLevel.high, shape?.high ?? 0);
 
   // 抑揚：ふだんの声の高さを覚えておき、そこから上がったか下がったか
+  // （あなたの声と F.R.I.D.A.Y. の声・拍手では高さがまったく違うので、替わったら覚え直す。そうしないと替わった瞬間に大きく揺れる）
+  const source = voiceLevel.talking ? "speech" : "mic";
+  if (source !== pitchSource) {
+    pitchSource = source;
+    pitchAvg = 0;
+    pitchSpread = 0.08;
+  }
   let inflect = 0;
   if (shape && shape.pitch > 0) {
     if (!pitchAvg) pitchAvg = shape.pitch;

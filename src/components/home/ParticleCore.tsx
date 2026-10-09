@@ -199,6 +199,12 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
     /** 音節の立ち上がりごとに出す光の波（出た時刻） */
     const ripples: number[] = [];
     let seenOnsets = voiceLevel.onsets;
+    /**
+     * 聞き取り中・返事中の波の進み具合（位相）。抑揚で波の速さを変えるので、時刻 × 速さではなく、毎フレーム足していく。
+     * （時刻 × 速さだと、画面を開いてからの秒数が大きいほど、速さが少し変わっただけで波の位置が大きく飛んで暴れる）
+     */
+    let listenPhase = 0;
+    let speakPhase = 0;
     const RIPPLE_S = 0.75;
     let last = performance.now();
     let raf = 0;
@@ -232,6 +238,8 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
       }
       while (ripples.length && t - ripples[0] > RIPPLE_S) ripples.shift();
       // 抑揚：声が上がると縦に伸び、下がると少しつぶれる
+      listenPhase = (listenPhase + dt * (6 + inflection * 2)) % (Math.PI * 2);
+      speakPhase = (speakPhase + dt * (9 + inflection * 3)) % (Math.PI * 2);
       const stretchY = 1 + inflection * 0.1 * g;
       const stretchX = 1 - inflection * 0.04 * g;
       const cx = w / 2;
@@ -281,11 +289,11 @@ export const ParticleCore = memo(function ParticleCore({ mode, active, onSlow }:
           [x, z] = [x * c - z * d, x * d + z * c];
         } else if (m === "listening") {
           // 聞いている間は、声が大きいほど表面が大きく波打つ
-          s *= 1 + (0.03 + lv * 0.12 + mid * 0.1) * Math.sin(t * (6 + inflection * 2) + y0 * 5 + x * 3);
+          s *= 1 + (0.03 + lv * 0.12 + mid * 0.1) * Math.sin(listenPhase + y0 * 5 + x * 3);
         } else if (m === "speaking") {
           // 話している間は、声の大きさに合わせて中心から外へ波が広がるように脈打つ
           const d = Math.hypot(x, y0, z);
-          s *= 1 + lv * 0.1 + (0.015 + lv * 0.08 + mid * 0.07) * Math.sin(t * (9 + inflection * 3) - d * 5);
+          s *= 1 + lv * 0.1 + (0.015 + lv * 0.08 + mid * 0.07) * Math.sin(speakPhase - d * 5);
         } else if (m === "connect") {
           s *= 0.9 + 0.1 * Math.sin(t * 3);
         }
