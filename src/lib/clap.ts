@@ -6,8 +6,13 @@
  *   - 高い音まで含むザラッとした音（音全体で見たゼロ交差の速さがおよそ 900Hz 以上。声の母音やノックのような低い音は遅い）
  *   - すぐ消える（大きさが山の 1/4 まで落ちるのが 150ms 以内。部屋の響きは少し残る。話し声は音節が長く続く）
  *   - 消えたあと静かなまま（「パ」のような破裂音は、すぐ後に母音が続くので除く）
- * 拍手らしい音が 0.12〜1 秒の間隔で 2 回続き、そのあと 0.3 秒何も鳴らなければ「2 回の拍手」。
+ * 拍手らしい音が 0.12〜0.8 秒の間隔で 2 回続き、そのあと 0.3 秒何も鳴らなければ「2 回の拍手」。
  * 3 回以上続いたとき（拍手喝采・ノックの連打など）は反応しない。
+ * キーボードを打つ音（短く高い「カチッ」が続く）でも反応しないよう、小さな音も含めた「音の立ち上がり」を全部数えて、
+ *   - 1 回目の拍手の前 0.5 秒は静か（打鍵の途中ではない）
+ *   - 2 回の拍手の間と、2 回目のあとに、ほかの音（キーを離す音など小さな音も）が無い
+ *   - 直前 3 秒に音の立ち上がりが 3 回以上ない（タイピング中ではない）
+ * のときだけ「2 回の拍手」とする。
  *
  * 音は録音も送信もしない。大きさとゼロ交差率だけを見る。
  */
@@ -36,9 +41,20 @@ const MAX_CLAP_S = 0.15;
 const MIN_ZC_HZ = 900;
 /** 2 回の拍手の間隔 */
 const MIN_GAP_S = 0.12;
-const MAX_GAP_S = 1.0;
+const MAX_GAP_S = 0.8;
 /** 2 回目のあと、3 回目が来ないことを確かめる時間 */
 const QUIET_AFTER_S = 0.3;
+/** 小さな音も含めた「音の立ち上がり」の下限（キーを離す音のような小さな音まで数える） */
+const ONSET_MIN_RMS = 0.003;
+const ONSET_FLOOR_RATIO = 4;
+const ONSET_ATTACK_RATIO = 3;
+/** 1 回目の拍手の前に静かであるべき時間 */
+const PRE_QUIET_S = 0.5;
+/** タイピング中かを見る時間と、その間の音の立ち上がりの上限 */
+const BUSY_S = 1.5;
+const BUSY_MAX = 3;
+/** 拍手そのものの立ち上がりとみなす前後の幅 */
+const ONSET_TOLERANCE_S = 0.02;
 /** 一度反応したら、しばらく反応しない */
 const COOLDOWN_S = 2.5;
 
@@ -59,6 +75,8 @@ export class DoubleClapDetector {
   /** 3 回以上続いた（拍手喝采など）。静かになるまで数えない。値は最後の拍手の区切り番号 */
   private burstUntilQuiet: number | null = null;
   private coolUntil = 0;
+  /** 小さな音も含めた音の立ち上がり（区切りの番号。直近の数秒分） */
+  private onsets: number[] = [];
 
   private readonly sampleRate: number;
   private readonly onDoubleClap: () => void;
@@ -99,7 +117,14 @@ export class DoubleClapDetector {
     this.claps = [];
     this.burstUntilQuiet = null;
     this.recent = [];
+    this.onsets = [];
     this.fill = 0;
+  }
+
+  /** from より後・to より前の音の立ち上がりの数（拍手そのものの立ち上がりは前後の幅で除く） */
+  private onsetsBetween(from: number, to: number): number {
+    const tol = Math.max(1, Math.round(ONSET_TOLERANCE_S / this.secs(1)));
+    return this.onsets.filter((o) => o > from + tol && o < to - tol).length;
   }
 
   private step(w: Float32Array): void {
@@ -112,6 +137,12 @@ export class DoubleClapDetector {
     }
     const rms = Math.sqrt(sum / w.length);
     const before = this.recent.length ? Math.max(...this.recent) : this.floor;
+    // 小さな音も含めて、音の立ち上がりを数える（キーボードの連打を見分けるため）
+    if (rms > ONSET_MIN_RMS && rms > this.floor * ONSET_FLOOR_RATIO && rms > before * ONSET_ATTACK_RATIO) {
+      const last = this.onsets[this.onsets.length - 1];
+      if (last === undefined || this.secs(this.t - last) > 0.03) this.onsets.push(this.t);
+    }
+    while (this.onsets.length && this.secs(this.t - this.onsets[0]) > BUSY_S + 1) this.onsets.shift();
 
     if (this.event) {
       const e = this.event;
@@ -154,8 +185,11 @@ export class DoubleClapDetector {
     }
     // 2 回目のあと静かなままなら確定
     if (this.claps.length === 2 && !this.event && !this.tail && this.secs(this.t - this.claps[1]) >= QUIET_AFTER_S) {
+      const [a, b] = this.claps;
       this.claps = [];
-      if (this.t >= this.coolUntil) {
+      // 2 回の間・2 回目のあとに小さな音（キーを離す音など）があれば、拍手ではない
+      const clean = this.onsetsBetween(a, b) === 0 && this.onsetsBetween(b, this.t + 1) === 0;
+      if (clean && this.t >= this.coolUntil) {
         this.coolUntil = this.t + Math.round(COOLDOWN_S / this.secs(1));
         this.onDoubleClap();
       }
@@ -170,7 +204,12 @@ export class DoubleClapDetector {
       return;
     }
     const last = this.claps[this.claps.length - 1];
-    if (last !== undefined) {
+    if (last === undefined) {
+      // 1 回目：直前が静かで、タイピング中でもないときだけ数え始める
+      const pre = this.onsetsBetween(start - Math.round(PRE_QUIET_S / this.secs(1)), start);
+      const busy = this.onsetsBetween(start - Math.round(BUSY_S / this.secs(1)), start);
+      if (pre > 0 || busy >= BUSY_MAX) return;
+    } else {
       const gap = this.secs(start - last);
       if (gap < MIN_GAP_S) return; // 同じ拍手の残響
       if (gap > MAX_GAP_S) this.claps = [];

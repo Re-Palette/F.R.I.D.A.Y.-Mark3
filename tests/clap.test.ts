@@ -1,7 +1,7 @@
 /**
  * 拍手 2 回の検出のテスト（作った音で試す。本物のマイクは使わない）。
  *   - いろいろな拍手（高い音の拍手・こもった拍手・響く部屋・小さめ・間隔が長め・16kHz のマイク）は 2 回で反応する
- *   - 1 回だけ・3 回以上・「パ、パ」と話す声・ノックのような低い音・続く音では反応しない
+ *   - 1 回だけ・3 回以上・「パ、パ」と話す声・ノックのような低い音・続く音・キーボードを打つ音では反応しない
  *   npm test
  */
 import { describe, it } from "node:test";
@@ -114,7 +114,7 @@ describe("拍手 2 回で反応する", () => {
     ["手を丸めて打つ低めの拍手（1kHz あたり）", { hz: 1000 }, [0.5, 0.85]],
     ["響く部屋（なかなか消えない）", { decay: 0.035 }, [0.5, 1.0]],
     ["小さめの拍手（離れた所から）", { amp: 0.06 }, [0.5, 0.9]],
-    ["間隔が長め（0.95 秒）", {}, [0.5, 1.45]],
+    ["間隔が長め（0.75 秒）", {}, [0.5, 1.25]],
     ["速い拍手（0.2 秒）", {}, [0.5, 0.7]],
   ];
   for (const [name, o, times] of cases) {
@@ -132,7 +132,7 @@ describe("拍手 2 回以外では反応しない", () => {
   const sr = 48_000;
   it("1 回だけ", () => assert.equal(count(scene(sr, 3, claps(sr, [0.5])), sr), 0));
   it("3 回続く（拍手喝采）", () => assert.equal(count(scene(sr, 3, claps(sr, [0.5, 0.75, 1.0, 1.25])), sr), 0));
-  it("間が空きすぎ（1.5 秒）", () => assert.equal(count(scene(sr, 4, claps(sr, [0.5, 2.0])), sr), 0));
+  it("間が空きすぎ（1 秒以上）", () => assert.equal(count(scene(sr, 4, claps(sr, [0.5, 1.5])), sr), 0));
   it("「パ、パ」と話す声", () => {
     const rand = rng(3);
     assert.equal(count(scene(sr, 3, [{ at: 0.5, sound: pa(sr, rand) }, { at: 0.9, sound: pa(sr, rand) }]), sr), 0);
@@ -144,5 +144,62 @@ describe("拍手 2 回以外では反応しない", () => {
     const tone = new Float32Array(sr / 2);
     for (let i = 0; i < tone.length; i++) tone[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / sr);
     assert.equal(count(scene(sr, 3, [{ at: 0.5, sound: tone }, { at: 1.2, sound: tone }]), sr), 0);
+  });
+});
+
+/**
+ * キーボードを打つ音：キーを押す「カチッ」（短く高い音）と、少し遅れて離す小さな音。
+ * 単語ごとに 3〜7 回、0.09〜0.22 秒の間隔で打ち、単語の間は 0.3〜1.1 秒あける。
+ */
+function typing(sr: number, seconds: number, seed: number, loud = 0.18) {
+  const rand = rng(seed);
+  const r01 = () => rand() + 0.5;
+  const parts: { at: number; sound: Float32Array }[] = [];
+  let t = 0.3;
+  while (t < seconds - 0.5) {
+    const keys = 3 + Math.floor(r01() * 5);
+    for (let k = 0; k < keys && t < seconds - 0.5; k++) {
+      const amp = loud * (0.5 + r01());
+      parts.push({ at: t, sound: clapSound(sr, { decay: 0.003 + r01() * 0.003, amp, hz: 2500 + r01() * 2000 }, rand) });
+      parts.push({ at: t + 0.06 + r01() * 0.05, sound: clapSound(sr, { decay: 0.003, amp: amp * 0.35, hz: 3000 }, rand) });
+      t += 0.09 + r01() * 0.13;
+    }
+    t += 0.3 + r01() * 0.8;
+  }
+  return scene(sr, seconds, parts, 0.002, seed);
+}
+
+/** 1 本指でゆっくり打つ（1 回ずつ、0.25〜0.95 秒あけて。押す音と離す音） */
+function slowTyping(sr: number, seconds: number, seed: number) {
+  const rand = rng(seed);
+  const r01 = () => rand() + 0.5;
+  const parts: { at: number; sound: Float32Array }[] = [];
+  let t = 0.3;
+  while (t < seconds - 0.5) {
+    const amp = 0.18 * (0.5 + r01());
+    parts.push({ at: t, sound: clapSound(sr, { decay: 0.004, amp, hz: 3000 }, rand) });
+    parts.push({ at: t + 0.07 + r01() * 0.05, sound: clapSound(sr, { decay: 0.003, amp: amp * 0.35, hz: 3000 }, rand) });
+    t += 0.25 + r01() * 0.7;
+  }
+  return scene(sr, seconds, parts, 0.002, seed);
+}
+
+describe("キーボードを打つ音では反応しない", () => {
+  const sr = 48_000;
+  for (const seed of [11, 12, 13, 14, 15]) {
+    it(`30 秒タイピング（パターン ${seed}）`, () => assert.equal(count(typing(sr, 30, seed), sr), 0));
+  }
+  it("強めに打つタイピング", () => assert.equal(count(typing(sr, 30, 21, 0.4), sr), 0));
+  for (const seed of [41, 42, 43, 44, 45]) {
+    it(`1 本指でゆっくり打つ（パターン ${seed}）`, () => assert.equal(count(slowTyping(sr, 30, seed), sr), 0));
+  }
+  it("タイピングを止めて 1 秒ほどしてから拍手 2 回なら反応する", () => {
+    const sig = typing(sr, 6, 31);
+    // 最後の 2.5 秒は打っていない（typing は最後 0.5 秒あける）ので、その後ろに静かな部屋と拍手を足す
+    const tail = scene(sr, 3, claps(sr, [1.2, 1.6]));
+    const all = new Float32Array(sig.length + tail.length);
+    all.set(sig);
+    all.set(tail, sig.length);
+    assert.equal(count(all, sr), 1);
   });
 });
