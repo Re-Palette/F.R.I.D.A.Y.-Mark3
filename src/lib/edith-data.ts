@@ -18,7 +18,7 @@ export interface EdithNewsItem {
 export type NewsState =
   | { status: "loading" }
   | { status: "error"; error: string }
-  | { status: "ready"; items: EdithNewsItem[]; fetchedAt: string };
+  | { status: "ready"; items: EdithNewsItem[]; fetchedAt: string; refs: { uri: string; title: string }[] };
 
 const CACHE_MS = 10 * 60_000;
 const store = new Map<EdithCategory, { at: number; state: NewsState }>();
@@ -36,9 +36,11 @@ async function load(cat: EdithCategory, force = false): Promise<void> {
   notify();
   try {
     const res = await fetch(`/api/edith/news?cat=${cat}`, { cache: "no-store" });
-    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; items?: EdithNewsItem[]; fetchedAt?: string; error?: string };
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; items?: EdithNewsItem[]; fetchedAt?: string; error?: string; refs?: { uri: string; title: string }[] };
     if (!res.ok || !json.ok) throw new Error(json.error || "ニュースを取得できませんでした。");
-    store.set(cat, { at: Date.now(), state: { status: "ready", items: json.items ?? [], fetchedAt: json.fetchedAt ?? new Date().toISOString() } });
+    const items = json.items ?? [];
+    // 0 件は覚えない（次に開いたとき・再取得でやり直す）
+    store.set(cat, { at: items.length ? Date.now() : 0, state: { status: "ready", items, refs: json.refs ?? [], fetchedAt: json.fetchedAt ?? new Date().toISOString() } });
   } catch (err) {
     store.set(cat, { at: 0, state: { status: "error", error: err instanceof Error ? err.message : "ニュースを取得できませんでした。" } });
   }

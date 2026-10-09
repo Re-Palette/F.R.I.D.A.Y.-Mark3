@@ -329,7 +329,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                   <h3>{selectedItem.title}</h3>
                   <p>{selectedItem.summary}</p>
                   {news.status === "ready" && <p className="epoint__time">{ago(news.fetchedAt)}（地点は国・都市の代表地点）</p>}
-                  <Sources sources={selectedItem.sources} />
+                  <Sources sources={selectedItem.sources.length ? selectedItem.sources : news.status === "ready" ? news.refs : []} />
+                  {!selectedItem.sources.length && <p className="epoint__time">（この話題だけの出典は特定できなかったため、一覧を作るのに参照したページを出しています）</p>}
                   <button type="button" className="ebtn" onClick={() => submit(`「${selectedItem.title}」について詳しく調べて`)}>詳しく調べる</button>
                 </>
               ) : (
@@ -370,7 +371,12 @@ export const EdithHud = memo(function EdithHud(props: Props) {
               <button type="button" className="ebtn" onClick={retry}>再試行</button>
             </p>
           )}
-          {news.status === "ready" && items.length === 0 && <p className="estate">出典を確かめられる話題が見つかりませんでした。<button type="button" className="ebtn" onClick={retry}>再取得</button></p>}
+          {news.status === "ready" && items.length === 0 && (
+            <p className="estate">
+              Google 検索で、出典を確かめられる話題を取得できませんでした。
+              <button type="button" className="ebtn" onClick={retry}>再取得</button>
+            </p>
+          )}
           {news.status === "ready" && items.length > 0 && (
             <ul className="enews__list">
               {items.map((it, i) => (
@@ -380,12 +386,18 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                     <span className="enews__text">
                       <b>{it.title}</b>
                       <small>{it.summary}</small>
-                      <em>{it.sources[0]?.title ?? ""} · {ago(news.fetchedAt)}</em>
+                      <em>{it.sources[0]?.title ?? "出典は下の参照ページ"} · {ago(news.fetchedAt)}</em>
                     </span>
                   </button>
                 </li>
               ))}
             </ul>
+          )}
+          {news.status === "ready" && items.length > 0 && news.refs.length > 0 && (
+            <div className="enews__refs">
+              <p>この一覧を作るのに Google 検索で参照したページ（話題ごとの出典は特定できませんでした）</p>
+              <Sources sources={news.refs} />
+            </div>
           )}
         </section>
 

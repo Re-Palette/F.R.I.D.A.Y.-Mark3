@@ -672,6 +672,14 @@
   font-size: 10px;
   color: var(--e-glow);
 }
+.enews__refs {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--e-dim);
+}
+.enews__refs p {
+  margin: 0 0 4px;
+}
 .estate {
   margin: 6px 0;
   font-size: 12px;

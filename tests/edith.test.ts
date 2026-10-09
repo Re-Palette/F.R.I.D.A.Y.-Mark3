@@ -290,3 +290,75 @@ describe("合言葉「グローバルプロトコル起動」", () => {
     assert.equal(splitWake("グローバルプロトコルとは？").woke, false);
   });
 });
+
+describe("REAL-TIME NEWS：Gemini の書き方の揺れ・出典の結び付けができないとき", async () => {
+  const http = await import("node:http");
+  const { getEdithNews } = await import("../src/integrations/edith-news");
+  it("番号付き・太字・半角の区切り・「見出し：要約（地域）」も読む。前置きの文は読まない", () => {
+    const lines = parseNewsLines(`以下が最新の話題です。
+1. **米国でAI規制の新しい枠組み** | 政府が方針を発表 | アメリカ
+2. 欧州で再エネ導入が加速｜EUが新目標[1]｜EU
+- インドで半導体工場：政府が支援策を発表（インド）
+出典：example.com`);
+    assert.deepEqual(
+      lines.map((l) => [l.title, l.region]),
+      [
+        ["米国でAI規制の新しい枠組み", "アメリカ"],
+        ["欧州で再エネ導入が加速", "EU"],
+        ["インドで半導体工場", "インド"],
+      ],
+    );
+  });
+  it("話題ごとの出典が結び付けられなくても、検索で参照したページがあれば話題を出し、参照ページをまとめて返す", async () => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        const chunk = {
+          candidates: [
+            {
+              content: { parts: [{ text: "1. 宇宙ステーションで新しい実験 | 新ミッションが始まった | 世界\n2. 日経平均が3日続伸 | 投資家の心理が改善 | 日本\n" }] },
+              finishReason: "STOP",
+              groundingMetadata: { groundingChunks: [{ web: { uri: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/y", title: "nhk.or.jp" } }] },
+            },
+          ],
+        };
+        res.end(`data: ${JSON.stringify(chunk)}\n\n`);
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    process.env.GEMINI_API_BASE_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1beta`;
+    process.env.GEMINI_API_KEY = "test-key";
+    try {
+      const news = await getEdithNews("more");
+      assert.equal(news.items.length, 2);
+      assert.deepEqual(news.items[0].sources, [], "話題ごとの出典は作らない");
+      assert.deepEqual(news.refs.map((r) => r.title), ["nhk.or.jp"], "参照したページとしてまとめて出す");
+      assert.equal(news.items[1].place?.name, "日本");
+    } finally {
+      server.close();
+      delete process.env.GEMINI_API_BASE_URL;
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+  it("検索の参照ページが 1 つも無ければ、話題を出さない（作り話を出さない）", async () => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.end(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. 根拠の無い話題 | 検索していない | 世界\n" }] }, finishReason: "STOP" }] })}\n\n`);
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    process.env.GEMINI_API_BASE_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1beta`;
+    process.env.GEMINI_API_KEY = "test-key";
+    try {
+      const news = await getEdithNews("education");
+      assert.equal(news.items.length, 0);
+    } finally {
+      server.close();
+      delete process.env.GEMINI_API_BASE_URL;
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+});

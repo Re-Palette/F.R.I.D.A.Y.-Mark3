@@ -36,28 +36,51 @@ export interface EdithNewsItem {
 export interface EdithNews {
   category: EdithCategory;
   items: EdithNewsItem[];
+  /**
+   * この一覧を作るのに Google 検索で参照したページ（話題ごとの出典が結び付けられなかったときにまとめて出す）。
+   * 話題ごとの出典ではないので、画面では「参照したページ」として分けて表示する。
+   */
+  refs: GeminiSource[];
   /** 取得した時刻（ISO） */
   fetchedAt: string;
 }
 
 /** 1 行「・見出し｜要約｜地域」を読み取る */
+/**
+ * 1 行 1 件の話題を読み取る。Gemini の書き方の揺れも受け付ける：
+ *   「・見出し｜要約｜地域」「1. 見出し | 要約 | 地域」「- **見出し**｜要約｜地域」「・見出し：要約（地域）」
+ * 区切り（｜）の無い行は、箇条書き・番号付きの行だけを見出しとして読む（前置きの文は読まない）。
+ */
 export function parseNewsLines(text: string): { line: string; title: string; summary: string; region: string }[] {
-  return text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => /^[・\-*•]/.test(l))
-    .map((l) => {
-      const body = l.replace(/^[・\-*•]\s*/, "");
-      const [title = "", summary = "", region = ""] = body.split(/[｜|]/).map((x) => x.trim());
-      return { line: body, title, summary, region: region || "世界" };
-    })
-    .filter((x) => x.title.length >= 4);
+  const out: { line: string; title: string; summary: string; region: string }[] = [];
+  const lead = /^([・\-*•●]|\d{1,2}[.)．、]|[①-⑩])\s*/;
+  for (const raw of text.split("\n")) {
+    const l = raw.trim();
+    if (!l || /^#|^(出典|参考|ソース|sources?)[:：]/i.test(l)) continue;
+    const bulleted = lead.test(l);
+    const body = l
+      .replace(lead, "")
+      .replace(/\*\*|__/g, "")
+      .replace(/\[\d+(,\s*\d+)*\]/g, "") // 引用番号 [1] [2, 3]
+      .trim();
+    let parts = body.split(/\s*[｜|]\s*/).filter(Boolean);
+    if (parts.length < 2) {
+      if (!bulleted) continue;
+      // 「見出し：要約（地域）」の形
+      const m = body.match(/^(.{4,40}?)[：:]\s*(.+?)(?:[（(]([^（）()]{1,12})[）)])?$/);
+      parts = m ? [m[1], m[2], m[3] ?? ""] : [body];
+    }
+    const [title = "", summary = "", region = ""] = parts.map((x) => x.trim());
+    if (title.length < 4 || title.length > 80) continue;
+    out.push({ line: body, title, summary, region: region || "世界" });
+  }
+  return out.slice(0, 8);
 }
 
 /** その行の文に結びついた出典（groundingSupports の文が行に含まれるもの） */
 export function sourcesForLine(line: string, grounding: GeminiChunk["grounding"]): GeminiSource[] {
   if (!grounding) return [];
-  const norm = (s: string) => s.replace(/[\s・\-*•｜|]/g, "");
+  const norm = (s: string) => s.replace(/[\s・\-*•｜|]|\[\d+(,\s*\d+)*\]/g, "");
   const target = norm(line);
   const out: GeminiSource[] = [];
   for (const s of grounding.supports) {
@@ -78,10 +101,26 @@ const cache = new Map<EdithCategory, { at: number; value: Promise<EdithNews> }>(
 export function getEdithNews(category: EdithCategory, signal?: AbortSignal): Promise<EdithNews> {
   const hit = cache.get(category);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-  const value = fetchNews(category, signal);
+  // 失敗・空の答えなら 1 回だけやり直す（Google 検索の一時的な失敗に備えて）
+  const value = fetchNews(category, signal)
+    .then((n) => (n.items.length ? n : fetchNews(category, signal)))
+    .catch(() => fetchNews(category, signal));
   cache.set(category, { at: Date.now(), value });
-  value.catch(() => cache.delete(category)); // 失敗は覚えない（次はやり直す）
+  value.then(
+    (n) => {
+      if (!n.items.length) cache.delete(category); // 空の結果は覚えない（次はやり直す）
+    },
+    () => cache.delete(category), // 失敗は覚えない
+  );
   return value;
+}
+
+/** 少しずつ届く検索の情報をまとめる（出典の並びが同じなら、文と出典の結び付きを足していく） */
+function mergeGrounding(prev: GeminiChunk["grounding"], next: NonNullable<GeminiChunk["grounding"]>): GeminiChunk["grounding"] {
+  if (!prev) return next;
+  const same = prev.chunks.length === next.chunks.length && prev.chunks.every((c, i) => c?.uri === next.chunks[i]?.uri);
+  if (!same) return next.chunks.length >= prev.chunks.length ? next : prev;
+  return { chunks: prev.chunks, supports: [...prev.supports, ...next.supports] };
 }
 
 async function fetchNews(category: EdithCategory, signal?: AbortSignal): Promise<EdithNews> {
@@ -93,6 +132,7 @@ async function fetchNews(category: EdithCategory, signal?: AbortSignal): Promise
 検索で確かめられた話題だけを書き、確かめられないことは書かないでください。`;
   let text = "";
   let grounding: GeminiChunk["grounding"];
+  const refs: GeminiSource[] = [];
   for await (const chunk of streamGemini({
     config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500 },
     systemInstruction: "あなたは世界のニュースを正確に短くまとめる係。検索結果に書かれた事実だけを書く。",
@@ -101,16 +141,21 @@ async function fetchNews(category: EdithCategory, signal?: AbortSignal): Promise
     signal,
   })) {
     text += chunk.text;
-    if (chunk.grounding) grounding = chunk.grounding;
+    if (chunk.grounding) grounding = mergeGrounding(grounding, chunk.grounding);
+    for (const src of chunk.sources ?? []) if (!refs.some((r) => r.uri === src.uri)) refs.push(src);
   }
-  const items = parseNewsLines(text)
-    .map((l) => ({
-      title: l.title,
-      summary: l.summary,
-      region: l.region,
-      place: findPlaces(`${l.region} ${l.title}`, 1)[0] ?? null,
-      sources: sourcesForLine(l.line, grounding),
-    }))
-    .filter((i) => i.sources.length > 0);
-  return { category, items, fetchedAt: new Date().toISOString() };
+  const lines = parseNewsLines(text);
+  const all = lines.map((l) => ({
+    title: l.title,
+    summary: l.summary,
+    region: l.region,
+    place: findPlaces(`${l.region} ${l.title}`, 1)[0] ?? null,
+    sources: sourcesForLine(l.line, grounding),
+  }));
+  const linked = all.filter((i) => i.sources.length > 0);
+  // 話題ごとの出典が結び付けられたものだけを出す。1 件も結び付けられなかったが検索で参照したページはあるときは、
+  // 話題を出し、参照したページをまとめて「参照したページ」として出す（検索していない作り話は出さない）
+  const items = linked.length ? linked : refs.length ? all : [];
+  console.info(`[edith-news] ${category}: lines=${lines.length} linked=${linked.length} refs=${refs.length} supports=${grounding?.supports.length ?? 0} shown=${items.length}`);
+  return { category, items, refs: linked.length ? [] : refs.slice(0, 6), fetchedAt: new Date().toISOString() };
 }
