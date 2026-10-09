@@ -30,12 +30,33 @@ export interface LiveHandlers {
   /** F.R.I.D.A.Y. の返事（ここまでの全文）。done で確定（stopped は割り込まれて途中で止まった） */
   onModelText?: (text: string, done: boolean, stopped?: boolean) => void;
   onEnd?: (reason: LiveEndReason, error?: string) => void;
+  /** AI が画面の操作（K.A.R.E.N. の制作・編集）を頼んできたとき。結果を返すと AI がそれを伝える */
+  onTool?: (name: string, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
+
+/** K.A.R.E.N. の制作・編集を画面に頼む道具（サーバーの integrations/live.ts と同じ名前） */
+export const KAREN_TOOL = "karen_operate";
+const KAREN_TOOL_DECL = {
+  functionDeclarations: [
+    {
+      name: KAREN_TOOL,
+      description:
+        "K.A.R.E.N. の制作ワークスペースで 3D の制作・編集をする（3D モデルの作成、形の追加、色・大きさ・向き・位置の変更、削除、回転、保存、書き出し、制作のキャンセル）。",
+      parameters: {
+        type: "OBJECT",
+        properties: { request: { type: "STRING", description: "ユーザーの頼み（日本語のまま。例：未来都市の3Dホログラムを作って、青くして）" } },
+        required: ["request"],
+      },
+    },
+  ],
+};
 
 export interface LiveStartOptions {
   /** 呼びかけと一緒に話した用件（「フライデー、今日の天気は」の「今日の天気は」）。最初に文字で渡す */
   firstText?: string;
   recent?: { role: "user" | "assistant"; content: string }[];
+  /** K.A.R.E.N.（クリエイティブ AI）として話す（制作・編集の道具も渡す） */
+  persona?: "karen";
   calendar?: unknown;
 }
 
@@ -59,10 +80,18 @@ export interface LiveServerMessage {
     outputTranscription?: { text?: string };
   };
   goAway?: unknown;
+  toolCall?: { functionCalls?: { id?: string; name?: string; args?: Record<string, unknown> }[] };
 }
 
 /** 最初に送る設定。full=false は、細かい設定を受け付けないモデル向けの最小の設定 */
-export function buildSetup(prep: Required<Pick<LivePrep, "model" | "systemInstruction">> & { voiceName?: string | null }, full: boolean) {
+export function buildSetup(
+  prep: Required<Pick<LivePrep, "model" | "systemInstruction">> & { voiceName?: string | null },
+  full: boolean,
+  persona?: "karen",
+) {
+  // K.A.R.E.N. は制作の道具が無いと働けないので、最小の設定にも入れる
+  const karen = persona === "karen" ? [KAREN_TOOL_DECL] : [];
+  const tools = full ? [{ googleSearch: {} }, ...karen] : karen;
   return {
     setup: {
       model: prep.model.startsWith("models/") ? prep.model : `models/${prep.model}`,
@@ -73,9 +102,9 @@ export function buildSetup(prep: Required<Pick<LivePrep, "model" | "systemInstru
       systemInstruction: { parts: [{ text: prep.systemInstruction }] },
       inputAudioTranscription: {},
       outputAudioTranscription: {},
+      ...(tools.length ? { tools } : {}),
       ...(full
         ? {
-            tools: [{ googleSearch: {} }],
             // 話し終わりを早めに見分ける（返事を速く）
             realtimeInputConfig: { automaticActivityDetection: { endOfSpeechSensitivity: "END_SENSITIVITY_HIGH", silenceDurationMs: 500 } },
           }
@@ -222,7 +251,7 @@ export class LiveSession {
     const res = await fetch("/api/live", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recent: opts.recent ?? [], calendar: opts.calendar }),
+      body: JSON.stringify({ recent: opts.recent ?? [], calendar: opts.calendar, persona: opts.persona }),
       cache: "no-store",
     });
     const prep = (await res.json().catch(() => ({ ok: false }))) as LivePrep;
@@ -239,7 +268,7 @@ export class LiveSession {
           /* noop */
         }
       }, CONNECT_MS);
-      ws.onopen = () => ws.send(JSON.stringify(buildSetup({ model: prep.model!, systemInstruction: prep.systemInstruction!, voiceName: prep.voiceName }, full)));
+      ws.onopen = () => ws.send(JSON.stringify(buildSetup({ model: prep.model!, systemInstruction: prep.systemInstruction!, voiceName: prep.voiceName }, full, opts.persona)));
       ws.onerror = () => {
         clearTimeout(timer);
         reject(new Error("リアルタイム会話につながりませんでした。"));
@@ -267,6 +296,10 @@ export class LiveSession {
   }
 
   private onMessage(msg: LiveServerMessage) {
+    if (msg.toolCall?.functionCalls?.length) {
+      void this.runTools(msg.toolCall.functionCalls);
+      return;
+    }
     if (msg.goAway !== undefined) {
       // 会話の時間切れが近い：いま話している分を言い終えたら閉じる（次は呼びかけでまたつなぐ）
       this.bumpIdle(3000);
@@ -303,6 +336,24 @@ export class LiveSession {
       this.afterPlayback(() => this.setStatus("listening"));
       this.bumpIdle();
     }
+  }
+
+  /** AI に頼まれた画面の操作をして、結果を返す */
+  private async runTools(calls: { id?: string; name?: string; args?: Record<string, unknown> }[]) {
+    this.flushUser();
+    this.bumpIdle();
+    const functionResponses = await Promise.all(
+      calls.map(async (c) => {
+        let response: Record<string, unknown>;
+        try {
+          response = this.h.onTool ? await this.h.onTool(c.name ?? "", c.args ?? {}) : { ok: false, error: "この操作はできません。" };
+        } catch (err) {
+          response = { ok: false, error: err instanceof Error ? err.message : "操作に失敗しました。" };
+        }
+        return { id: c.id, name: c.name, response };
+      }),
+    );
+    if (!this.ended) this.send({ toolResponse: { functionResponses } });
   }
 
   /** ユーザーの発言を確定する（返事が始まった時点） */

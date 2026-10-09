@@ -7,6 +7,7 @@
  */
 import { getGeminiConfig } from "@/lib/config";
 import { buildCompactInstruction } from "@/agents/chat/persona";
+import { KAREN_SECTION } from "@/agents/chat/karen-persona";
 import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { TasksOverview } from "@/integrations/tasks";
 import type { Reminder } from "@/integrations/reminders";
@@ -89,7 +90,19 @@ export interface LiveContext {
   weather: WeatherReport | null;
   /** 直近の会話（古い順。続きとして話せるように） */
   recent: { role: "user" | "assistant"; content: string }[];
+  /** K.A.R.E.N.（クリエイティブ AI）として話す */
+  persona?: "karen";
 }
+
+/** K.A.R.E.N. の制作・編集を画面に頼む道具の名前（画面の live-voice.ts と同じ） */
+export const KAREN_TOOL = "karen_operate";
+
+const KAREN_LIVE = `
+
+# K.A.R.E.N. のリアルタイム音声会話
+- 3D モデルの制作・形の追加・色や大きさや向きや位置の変更・削除・回転・保存・書き出し・制作のキャンセルを頼まれたら、必ず ${KAREN_TOOL} を呼ぶ（request にはユーザーの頼みを日本語でそのまま入れる）。自分では作らない。
+- ${KAREN_TOOL} の結果（notices）を短く伝える。started なら「制作を始めます」のように言い、「作りました」とは言わない。
+- 「フライデーに戻して」などの切り替えは画面が行うので、「通常モードに戻ります」とだけ言う。`;
 
 /** リアルタイム会話の最初の指示 */
 export function buildLiveInstruction(ctx: LiveContext): string {
@@ -117,6 +130,7 @@ export function buildLiveInstruction(ctx: LiveContext): string {
 - 日本語の自然な話し言葉で、落ち着いた秘書の声で話す。
 - 予定・天気・ToDo は上の情報から答える。上に無い最新情報は、Google 検索が使えるときは調べて答え、使えなければ「分からない」と正直に言う。
 - メールの下書き・予定の追加や変更・ToDo の追加・ファイルの作成のような操作は、ここではできない。頼まれたら「画面の入力欄で頼んでください」と短く伝える。`;
+  if (ctx.persona === "karen") out += KAREN_SECTION + KAREN_LIVE;
   return out;
 }
 

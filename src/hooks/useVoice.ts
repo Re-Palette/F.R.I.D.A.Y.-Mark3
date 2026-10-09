@@ -116,6 +116,7 @@ export function useVoice({
   live = false,
   onLiveTurn,
   liveContext,
+  onLiveTool,
 }: {
   onCommand: (text: string) => void;
   /** 返答の途中でユーザーが話し始めた（返答の生成を止める） */
@@ -153,6 +154,8 @@ export function useVoice({
   onLiveTurn?: (turn: LiveTurn) => void;
   /** リアルタイム会話を始めるときに渡す材料（直近の会話・予定の控え） */
   liveContext?: () => Omit<LiveStartOptions, "firstText">;
+  /** リアルタイム会話の AI が画面の操作（K.A.R.E.N. の制作・編集）を頼んできたとき */
+  onLiveTool?: (name: string, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }) {
   const wakeWordOn = useRef(wakeWord);
   /** 開いた時点で自分から聞き始めたところ（ブラウザに止められたら、黙って最初の操作を待つ） */
@@ -211,6 +214,8 @@ export function useVoice({
   onLiveTurnRef.current = onLiveTurn;
   const liveContextRef = useRef(liveContext);
   liveContextRef.current = liveContext;
+  const onLiveToolRef = useRef(onLiveTool);
+  onLiveToolRef.current = onLiveTool;
   /** いまのリアルタイム会話（無ければ null）。この間はこれまでの聞き取りを止める */
   const liveRef = useRef<LiveSession | null>(null);
   /** リアルタイム会話につながらなかった時刻（しばらくはこれまでの方式で答える） */
@@ -331,6 +336,7 @@ export function useVoice({
   }, []);
 
   const toStandby = useCallback(() => {
+    if (liveRef.current) return; // リアルタイム会話が終わったら、そちらから呼び直す
     clearTimeout(followTimer.current);
     setInterim("");
     set("standby");
@@ -347,6 +353,7 @@ export function useVoice({
   /** 呼びかけなしで話せる状態（一定時間で待機に戻る） */
   const listenFor = useCallback(
     (ms: number) => {
+      if (liveRef.current) return; // リアルタイム会話の最中は、そちらが聞いている
       clearTimeout(followTimer.current);
       set("listening");
       startRec();
@@ -644,12 +651,14 @@ export function useVoice({
     if (stateRef.current === "off") return;
     // 読み上げ中の認識には自分の声の残響が混ざるので、いったん打ち切って聞き直す
     if (stateRef.current === "speaking") stopRec();
-    if (bargeInOn.current) listenFor(FOLLOW_UP_MS);
-    else {
+    // 話し終えたあとの続きの会話も、リアルタイム会話で聞く（使えなければこれまでの聞き取り）
+    if (bargeInOn.current) {
+      if (!startLiveRef.current()) listenFor(FOLLOW_UP_MS);
+    } else {
       // 割り込みオフ: スピーカーの残響が消えてから聞き始める
       clearTimeout(followTimer.current);
       followTimer.current = window.setTimeout(() => {
-        if (stateRef.current !== "off" && !speech.current.speaking) listenFor(FOLLOW_UP_MS);
+        if (stateRef.current !== "off" && !speech.current.speaking && !startLiveRef.current()) listenFor(FOLLOW_UP_MS);
       }, 700);
     }
   }, [listenFor, stopRec]);
@@ -953,6 +962,7 @@ export function useVoice({
           setInterim("");
         }
       },
+      onTool: (name, args) => (onLiveToolRef.current ? onLiveToolRef.current(name, args) : Promise.resolve({ ok: false, error: "この操作はできません。" })),
       onEnd: (reason) => {
         if (liveRef.current !== session) return;
         liveRef.current = null;
@@ -1047,13 +1057,17 @@ export function useVoice({
     setError(null);
     unlockAudio();
     if (stateRef.current === "off") enable();
+    if (liveRef.current) return; // リアルタイム会話の最中はそのまま話せる（話し始めれば返事も止まる）
     const s = stateRef.current;
     if (s === "speaking") bargeInRef.current();
     // スマホ（呼びかけなし）は一言返さず、タップしたその場で聞き始める
     // （iPhone などは、タップの操作の中で聞き取りを始めないと音声を拾わないことがあるため）
-    else if (s === "standby") wakeWordOn.current ? acknowledgeRef.current() : listenFor(FOLLOW_UP_MS);
+    else if (s === "standby") {
+      if (wakeWordOn.current) acknowledgeRef.current();
+      else if (!startLiveRef.current()) listenFor(FOLLOW_UP_MS);
+    }
     // 聞き取り中のタップ：止まっていたらタップの操作の中で聞き取りを始め直す（受付時間も延ばす）
-    else if (s === "listening" && !wakeWordOn.current) listenFor(FOLLOW_UP_MS);
+    else if (s === "listening" && !wakeWordOn.current && !startLiveRef.current()) listenFor(FOLLOW_UP_MS);
   }, [enable, listenFor]);
 
   /**

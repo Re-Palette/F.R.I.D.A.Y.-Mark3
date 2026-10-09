@@ -1,6 +1,6 @@
 /**
  * POST /api/live — リアルタイム音声会話を始める準備
- *   { calendar?: スナップショット, recent?: 直近の会話 } → { ok, url, model, systemInstruction, voiceName }
+ *   { calendar?: スナップショット, recent?: 直近の会話, persona?: "karen" } → { ok, url, model, systemInstruction, voiceName }
  * Gemini API キーは返さない（返すのは 1 回だけ・数分で切れる使い捨ての鍵入りの宛先）。
  * 声は画面と Google の間で直接やりとりし、このサーバーには届かない。
  */
@@ -40,7 +40,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!getGeminiConfig().apiKey) {
     return Response.json({ ok: false, error: "Gemini API キーが設定されていません。" }, { status: 503, headers });
   }
-  const body = (await req.json().catch(() => null)) as { calendar?: unknown; recent?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { calendar?: unknown; recent?: unknown; persona?: unknown } | null;
   const timezone = getTimezone();
   const now = new Date();
   const snap = parseCalendarSnapshot(body?.calendar);
@@ -54,7 +54,7 @@ export async function POST(req: Request): Promise<Response> {
       within(brain ? listReminders() : undefined, CONTEXT_MS, null),
     ]);
     const events = live ?? (snap ? snapshotEvents(snap, now, timezone) : null);
-    const setup = await prepareLive({ now, timezone, events, tasks, reminders, weather, recent: toRecent(body?.recent) }, req.signal);
+    const setup = await prepareLive({ now, timezone, events, tasks, reminders, weather, recent: toRecent(body?.recent), persona: body?.persona === "karen" ? "karen" : undefined }, req.signal);
     return Response.json({ ok: true, ...setup }, { headers });
   } catch (err) {
     return Response.json({ ok: false, error: toFridayError(err).message }, { status: 502, headers });

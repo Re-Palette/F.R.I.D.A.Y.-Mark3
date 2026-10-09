@@ -45,7 +45,8 @@ import { autoSwitchToRecorded, useLiveVoice, useVoiceInput } from "@/lib/voice-i
 import { calendarForChat } from "@/lib/calendar-cache";
 import { stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
-import { dispatchKaren } from "@/lib/karen-state";
+import { dispatchKaren, getKarenState } from "@/lib/karen-state";
+import { KAREN_TOOL } from "@/lib/live-voice";
 import { KarenHud } from "./karen/KarenHud";
 
 const CALENDAR_NOTICE: Record<string, string> = {
@@ -393,7 +394,7 @@ export function Dashboard() {
   }, [ownerOnly, phone]);
   // 声の聞き取りの方式（Chrome の音声認識／録音してサーバーで文字にする）
   const voiceInput = useVoiceInput();
-  // リアルタイム音声会話（声のまま直接やりとりして、すぐ返事をする）。パソコンの F.R.I.D.A.Y. で、オンラインのとき
+  // リアルタイム音声会話（声のまま直接やりとりして、すぐ返事をする）
   const liveSetting = useLiveVoice();
   const { upsertLive } = chat;
   const onLiveTurn = useCallback(
@@ -414,9 +415,23 @@ export function Dashboard() {
         .slice(-8)
         .map((m) => ({ role: m.role, content: m.content })),
       calendar: calendarForChat(),
+      persona: getAiMode() === "karen" ? ("karen" as const) : undefined,
     }),
     [chat.messages],
   );
+  // K.A.R.E.N. のリアルタイム会話：AI が頼んできた制作・編集を、制作ワークスペースで実行して結果を返す
+  const onLiveTool = useCallback(async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    if (name !== KAREN_TOOL || getAiMode() !== "karen") return { ok: false, error: "いまは K.A.R.E.N. のモードではありません。" };
+    const request = typeof args.request === "string" ? args.request.trim() : "";
+    if (!request) return { ok: false, error: "頼みの内容が空です。" };
+    const notices: string[] = [];
+    let chatOnly = false;
+    const run = handleKarenText(request, { speak: (t) => notices.push(t), chat: () => (chatOnly = true) });
+    // 時間のかかる制作（3D モデル）は始まったところで返す（返事を待たせない。進み具合は画面に出る）
+    const finished = await Promise.race([run.then(() => true), new Promise<boolean>((r) => window.setTimeout(() => r(false), 1500))]);
+    if (chatOnly) return { ok: true, status: "not-creative", note: "制作・編集の指示ではなかった。会話として答える。" };
+    return { ok: true, status: finished ? "done" : "started", notices, phase: getKarenState().phase };
+  }, []);
   const voice = useVoice({
     onCommand: onVoiceCommand,
     onBargeIn: chatStop, // 返答の途中で話し始めたら、生成を止めてそちらを聞く
@@ -441,9 +456,11 @@ export function Dashboard() {
       });
     },
     verifyVoice: ownerOnly ? verifyVoice : undefined,
-    live: liveSetting && !phone && !offlineAi && aiMode === "friday",
+    // 声の会話はすべてリアルタイム会話（パソコン・スマホ・K.A.R.E.N.）。オフラインのときだけこれまでの方式
+    live: liveSetting && !offlineAi,
     onLiveTurn,
     liveContext,
+    onLiveTool,
     onWoke: () => bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;

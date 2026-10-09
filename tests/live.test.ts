@@ -50,6 +50,12 @@ describe("最初の指示", () => {
     assert.match(text, /あなた: 晴れです。/);
     assert.match(text, /リアルタイム音声会話/);
   });
+  it("K.A.R.E.N. のときは K.A.R.E.N. として話し、制作・編集は道具で画面に頼む", () => {
+    const karen = buildLiveInstruction({ now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [], persona: "karen" });
+    assert.match(karen, /K\.A\.R\.E\.N\./);
+    assert.match(karen, /karen_operate/);
+    assert.doesNotMatch(text, /karen_operate/, "F.R.I.D.A.Y. のときは入れない");
+  });
   it("声では出せない隠しタグの説明は入れない", () => {
     assert.doesNotMatch(text, /隠しタグ|<memory>|<todo-add>/);
   });
@@ -110,6 +116,12 @@ describe("最初に送る設定と声のデータ", () => {
     const min = buildSetup({ model: "models/x", systemInstruction: "指示" }, false).setup;
     assert.equal(min.model, "models/x");
     assert.ok(!("tools" in min) && !("realtimeInputConfig" in min) && !("speechConfig" in min.generationConfig));
+  });
+  it("K.A.R.E.N. のときは制作の道具を渡す（最小の設定にも入れる）。F.R.I.D.A.Y. には渡さない", () => {
+    const names = (setup: { tools?: unknown[] }) => JSON.stringify(setup.tools ?? []);
+    assert.match(names(buildSetup({ model: "m", systemInstruction: "i" }, true, "karen").setup), /karen_operate/);
+    assert.match(names(buildSetup({ model: "m", systemInstruction: "i" }, false, "karen").setup), /karen_operate/);
+    assert.doesNotMatch(names(buildSetup({ model: "m", systemInstruction: "i" }, true).setup), /karen_operate/);
   });
   it("16bit PCM ⇄ base64 で元の音に戻る", () => {
     const src = new Float32Array([0, 0.5, -0.5, 0.999, -1]);
