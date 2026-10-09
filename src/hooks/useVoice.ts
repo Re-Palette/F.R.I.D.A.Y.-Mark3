@@ -131,6 +131,20 @@ export function useVoice({
   const speedRef = useRef(speed);
   speedRef.current = speed;
   const [state, setState] = useState<VoiceState>("off");
+  /**
+   * 音声モードを使いたいか（あなたがオンにしたか）。聞き取りがエラーで止まっても（オフラインなど）オンのまま。
+   * 拍手 2 回の起動は、これがオンの間マイクを開いて聞き続ける（聞き取りが動いていなくても拍手で起動できるように）
+   */
+  const [wanted, setWanted] = useState(false);
+  useEffect(() => {
+    try {
+      setWanted(localStorage.getItem(STORAGE_KEY) === "on");
+    } catch {
+      /* noop */
+    }
+  }, []);
+  /** 直近に「ネットに届かない」で聞き取りが止まった時刻（すぐ再開を繰り返さないように） */
+  const netErrorAt = useRef(0);
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
@@ -491,13 +505,15 @@ export function useVoice({
     };
 
     rec.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      if (e.error === "not-allowed" || (e.error === "service-not-allowed" && !voiceOffline())) {
         // 開いた時点で自分から始めたのを止められただけなら、黙って最初の操作を待つ
         if (!autoStarting.current) setError("マイクの使用が許可されていません。アドレスバーのマイクのアイコンから許可してください。");
         autoStarting.current = false;
         runningRef.current = false;
         set("off");
-      } else if (e.error === "network" || e.error === "language-not-supported") {
+      } else if (e.error === "network" || e.error === "language-not-supported" || (e.error === "service-not-allowed" && voiceOffline())) {
+        // オフラインで聞き取りが使えない：音声モードはオンのまま（拍手 2 回での起動・読み上げは使える）。少し間を空けて試し直す
+        netErrorAt.current = Date.now();
         setError(
           voiceOffline()
             ? "オフラインでは声の聞き取りが使えません。オンラインのときに SETTINGS → VOICE の「オフラインの聞き取り」を入れてください（今は文字で入力できます）。"
@@ -523,7 +539,9 @@ export function useVoice({
       if ((s === "standby" && wakeWordOn.current) || s === "listening" || (listenWhileTalking && (s === "speaking" || s === "thinking"))) {
         clearTimeout(restartTimer.current);
         // 自分で止めた直後はすぐ再開（話し始めの言葉を取りこぼさない）。それ以外は少し待つ
-        restartTimer.current = window.setTimeout(startRec, wasAborting ? 0 : 200);
+        // オフラインで聞き取りが使えないときは 3 秒ごとに試し直す（すぐ繰り返すとマイクを何度も開け閉めして重い）
+        const netDown = Date.now() - netErrorAt.current < 2000;
+        restartTimer.current = window.setTimeout(startRec, netDown ? 3000 : wasAborting ? 0 : 200);
       }
     };
 
@@ -845,6 +863,7 @@ export function useVoice({
     } catch {
       /* noop */
     }
+    setWanted(true);
     toStandby();
   }, [toStandby]);
 
@@ -859,6 +878,7 @@ export function useVoice({
     } catch {
       /* noop */
     }
+    setWanted(false);
   }, [cancelSpeech, set, stopRec]);
 
   const toggle = useCallback(() => (stateRef.current === "off" ? enable() : disable()), [enable, disable]);
@@ -997,6 +1017,7 @@ export function useVoice({
 
   return {
     state,
+    wanted,
     interim,
     error,
     supported,

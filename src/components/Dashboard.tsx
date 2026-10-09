@@ -393,11 +393,13 @@ export function Dashboard() {
     voice.state !== "off" && agent.tts.reason && !ttsNoticeClosed ? `${agent.tts.reason}（今はブラウザの声で読み上げます）` : null;
 
   // 音声モードの間は、マイクの声の大きさを測って HOME のコアと波形を揺らす（音は録音・送信しない）
+  // 拍手 2 回の起動がオンなら、音声モードを使いたい間は聞き取りが止まっていても（オフラインなど）マイクを開いておく
+  const clapListen = clapWake && !phone && voice.wanted;
   useEffect(() => {
-    if (voice.state === "off") stopVoiceLevel();
+    if (voice.state === "off" && !clapListen) stopVoiceLevel();
     else void startVoiceLevel();
     voiceLevel.speaking = voice.state === "speaking";
-  }, [voice.state]);
+  }, [voice.state, clapListen]);
 
   // 聞いている・考えている・話している間は、Amazon Music の音を小さくする（呼びかけた瞬間から）
   const duck = voice.state === "listening" || voice.state === "thinking" || voice.state === "speaking" || voice.interim === "…";
