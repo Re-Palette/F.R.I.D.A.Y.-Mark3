@@ -83,7 +83,14 @@ interface LivePrep {
   systemInstruction?: string;
   voiceName?: string | null;
   error?: string;
+  /** 画面が古い版（読み込み直す） */
+  stale?: boolean;
 }
+
+/** この画面の版（サーバーの版と同じでなければ、画面が古い） */
+export const CLIENT_BUILD = process.env.NEXT_PUBLIC_FRIDAY_BUILD ?? "dev";
+/** 画面が古い版だと分かったときのイベント（呼び出し側が、手が空いたときに読み込み直す） */
+export const STALE_CLIENT = "friday:stale-client";
 
 /** サーバーからの 1 通（必要なところだけ） */
 export interface LiveServerMessage {
@@ -221,6 +228,10 @@ export class LiveSession {
         break;
       } catch (err) {
         lastError = err;
+        if (err instanceof Error && err.name === "STALE") {
+          window.dispatchEvent(new Event(STALE_CLIENT));
+          break;
+        }
       }
     }
     if (lastError || this.ended) {
@@ -267,10 +278,11 @@ export class LiveSession {
     const res = await fetch("/api/live", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recent: opts.recent ?? [], calendar: opts.calendar, persona: opts.persona }),
+      body: JSON.stringify({ recent: opts.recent ?? [], calendar: opts.calendar, persona: opts.persona, build: CLIENT_BUILD }),
       cache: "no-store",
     });
     const prep = (await res.json().catch(() => ({ ok: false }))) as LivePrep;
+    if (prep.stale) throw Object.assign(new Error(prep.error || "画面が古い版です。"), { name: "STALE" });
     if (!res.ok || !prep.ok || !prep.url || !prep.model || !prep.systemInstruction) throw new Error(prep.error || "リアルタイム会話を始められませんでした。");
     if (this.ended) throw new Error("closed");
     const ws = new WebSocket(prep.url);

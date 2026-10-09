@@ -145,7 +145,8 @@ describe("リアルタイム会話からの操作（F.R.I.D.A.Y.）", () => {
     assert.match(JSON.stringify(buildSetup({ model: "m", systemInstruction: "i" }, false).setup.tools), /friday_action/);
     const text = buildLiveInstruction({ now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [] });
     assert.match(text, /friday_action/);
-    assert.doesNotMatch(text, /入力欄で頼んでください/);
+    assert.doesNotMatch(text, /ここではできない。頼まれたら/, "古い「入力欄で頼んで」の指示は入れない");
+    assert.match(text, /断らない/);
   });
   it("操作の結果を短くまとめる（予定・下書き・開けなかったページ）", () => {
     const r = summarizeAction({
@@ -185,5 +186,17 @@ describe("パソコンのアプリを開くリンク", () => {
     assert.deepEqual(toBrowserEvent("open-url", "spotify:", {}), { type: "browser", action: "open", ok: true, url: "spotify:", label: "Spotify" });
     const bad = toBrowserEvent("open-url", "javascript:alert(1)", {});
     assert.equal(bad.type === "browser" && bad.action === "open" && bad.ok, false);
+  });
+});
+
+describe("古い版の画面と、断った返事", () => {
+  it("画面の版がサーバーと違えば、使い捨ての鍵を作らずに古い版だと返す", async () => {
+    const { POST } = await import("../src/app/api/live/route");
+    process.env.GEMINI_API_KEY = "k";
+    const res = await POST(new Request("http://x/api/live", { method: "POST", body: JSON.stringify({ build: "old-version" }) }));
+    const json = (await res.json()) as { ok: boolean; stale?: boolean };
+    assert.equal(res.status, 409);
+    assert.equal(json.stale, true);
+    delete process.env.GEMINI_API_KEY;
   });
 });

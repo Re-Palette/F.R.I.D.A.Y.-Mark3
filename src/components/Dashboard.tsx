@@ -46,7 +46,7 @@ import { calendarForChat } from "@/lib/calendar-cache";
 import { stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { dispatchKaren, getKarenState } from "@/lib/karen-state";
-import { FRIDAY_TOOL, KAREN_TOOL } from "@/lib/live-voice";
+import { FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-voice";
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
 
@@ -491,6 +491,19 @@ export function Dashboard() {
     onWoke: () => bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
+
+  // 裏で開きっぱなしの古い版の画面だと分かったら、手が空いたとき（返事が終わって呼びかけ待ち）に読み込み直す
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    const on = () => setStale(true);
+    window.addEventListener(STALE_CLIENT, on);
+    return () => window.removeEventListener(STALE_CLIENT, on);
+  }, []);
+  useEffect(() => {
+    if (!stale || chat.phase !== "idle" || (voice.state !== "standby" && voice.state !== "off")) return;
+    const t = window.setTimeout(() => window.location.reload(), 1500);
+    return () => clearTimeout(t);
+  }, [stale, chat.phase, voice.state]);
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
 

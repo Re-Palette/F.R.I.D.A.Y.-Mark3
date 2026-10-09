@@ -17,6 +17,9 @@ import { isBrainConfigured } from "@/memory/github-brain";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** このサーバーの版（画面の版と同じでなければ、画面が古い） */
+const SERVER_BUILD = process.env.VERCEL_GIT_COMMIT_SHA ?? "dev";
+
 /** 予定・天気・ToDo を待てる時間（キャッシュがあればすぐ。会話を始めるのを待たせない） */
 const CONTEXT_MS = 700;
 
@@ -31,6 +34,8 @@ function toRecent(raw: unknown): { role: "user" | "assistant"; content: string }
     .filter((m): m is { role: "user" | "assistant"; content: string } =>
       Boolean(m) && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim().length > 0,
     )
+    // 「入力欄で頼んでください」と操作を断った古い返事は渡さない（今は声で操作できるのに、まねして断らないように）
+    .filter((m) => !(m.role === "assistant" && /入力欄/.test(m.content)))
     .slice(-8)
     .map((m) => ({ role: m.role, content: m.content.slice(0, 600) }));
 }
@@ -40,7 +45,11 @@ export async function POST(req: Request): Promise<Response> {
   if (!getGeminiConfig().apiKey) {
     return Response.json({ ok: false, error: "Gemini API キーが設定されていません。" }, { status: 503, headers });
   }
-  const body = (await req.json().catch(() => null)) as { calendar?: unknown; recent?: unknown; persona?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { calendar?: unknown; recent?: unknown; persona?: unknown; build?: unknown } | null;
+  // 古い版の画面（裏で開きっぱなしのタブなど）には使わせない：画面はこれまでの方式で答えて、読み込み直す
+  if (body?.build !== SERVER_BUILD) {
+    return Response.json({ ok: false, stale: true, error: "画面が古い版です。読み込み直してください。" }, { status: 409, headers });
+  }
   const timezone = getTimezone();
   const now = new Date();
   const snap = parseCalendarSnapshot(body?.calendar);
