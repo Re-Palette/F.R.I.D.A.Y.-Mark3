@@ -488,7 +488,22 @@ export function Dashboard() {
     onLiveTurn,
     liveContext,
     onLiveTool,
-    onWoke: () => bringToFront(), // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
+    onWoke: (why) => {
+      // 裏にいたのに前に出たときは、何で起動したかを知らせる（何もしていないのに開いたときに、原因が分かるように）
+      if (typeof document !== "undefined" && (document.hidden || !document.hasFocus())) {
+        setReminder({
+          id: `woke-${Date.now()}`,
+          at: Date.now(),
+          label: "",
+          title: "WAKE",
+          text:
+            why.kind === "clap"
+              ? "拍手 2 回を聞き取ったので起動しました。物音で間違って起動するときは、SETTINGS → VOICE で拍手での起動をオフにしてください。"
+              : `「${why.text.slice(0, 40)}」と聞こえたので起動しました。話しかけていないのに起動したときは、この画面を教えてください。`,
+        });
+      }
+      return bringToFront();
+    }, // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
 

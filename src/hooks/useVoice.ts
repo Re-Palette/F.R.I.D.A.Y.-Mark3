@@ -34,7 +34,7 @@ import { withReadings } from "@/lib/reading";
 import { canRecord, RecordedRecognition } from "@/lib/recorded-recognition";
 import { detectTone } from "@/lib/tone";
 import { detectModeCommand } from "@/lib/ai-mode";
-import { LiveSession, type LiveStartOptions } from "@/lib/live-voice";
+import { LiveSession, type LiveHandlers, type LiveStartOptions } from "@/lib/live-voice";
 import { trackSpeech, voiceLevel } from "@/lib/voice-level";
 
 export type VoiceState = "off" | "standby" | "listening" | "thinking" | "speaking";
@@ -89,6 +89,11 @@ const ECHO_THRESHOLD_LATE = 0.75;
 /** 自分の声でも必ず割り込みとして扱う言葉 */
 /** リアルタイム会話につながらなかったら、これだけの間はこれまでの方式で答える */
 const LIVE_RETRY_MS = 60_000;
+/** 前もってつないでおいた会話を、これだけ経ったらつなぎ直す（予定などを新しくする・接続の時間切れより前に） */
+const WARM_REFRESH_MS = 5 * 60_000;
+
+/** 何で起動したか（声の呼びかけ・拍手 2 回） */
+export type WakeReason = { kind: "voice"; text: string } | { kind: "clap" };
 
 export interface LiveTurn {
   id: string;
@@ -132,7 +137,7 @@ export function useVoice({
   /** ブラウザの音声認識の代わりに、録った音声をサーバーで文字にする（スマホ。ブラウザの認識が声を拾わないことがあるため） */
   recorded?: boolean;
   /** 「フライデー」と呼ばれたとき（タブが裏にあれば前に出すため。前に出し終わるまでの Promise を返してよい） */
-  onWoke?: () => void | Promise<unknown>;
+  onWoke?: (why: WakeReason) => void | Promise<unknown>;
   /** 録った声をそのまま会話に送る（recorded のとき。会話のサーバーが文字にするので往復が 1 回で済む） */
   onAudio?: (audio: { mimeType: string; data: string }) => void;
   /**
@@ -222,6 +227,11 @@ export function useVoice({
   const liveFailedAt = useRef(0);
   /** リアルタイム会話を始める（始めたら true。使えなければ false で、呼び出し側はこれまでの方式で続ける） */
   const startLiveRef = useRef<(firstText?: string) => boolean>(() => false);
+  /** 前もってつないでおいた会話（話しかけられたら、これをすぐ使う） */
+  const warmRef = useRef<LiveSession | null>(null);
+  const warmTimer = useRef(0);
+  const warmFailures = useRef(0);
+  const warmUpRef = useRef<() => void>(() => {});
   const onStallRef = useRef(onStall);
   onStallRef.current = onStall;
   const onBargeInRef = useRef(onBargeIn);
@@ -442,11 +452,11 @@ export function useVoice({
         }
         if (verifyRef.current && !(rec instanceof RecordedRecognition)) {
           void isOwner().then((ok) => {
-            if (ok && stateRef.current === "standby") woken(command);
+            if (ok && stateRef.current === "standby") woken(command, text);
           });
           return;
         }
-        woken(command);
+        woken(command, text);
       } else if (mode === "listening") {
         // 送る直前にもう一度確かめる（遅れて届いた自分の声の聞き取りを送らない）
         if (looksLikeEcho(text, speech.current.speaking)) {
@@ -460,8 +470,8 @@ export function useVoice({
     };
 
     /** 呼びかけられた（本人の声と確かめたあと） */
-    const woken = (command: string) => {
-        onWokeRef.current?.();
+    const woken = (command: string, heard: string) => {
+        onWokeRef.current?.({ kind: "voice", text: heard });
         if (command.length >= 2) {
           // 呼びかけと一緒に話した用件は、リアルタイム会話の最初の一言として渡す
           if (startLiveRef.current(command)) return;
@@ -933,11 +943,18 @@ export function useVoice({
     stopRec();
     cancelSpeech();
     setDiag("");
-    setInterim(firstText ?? "つないでいます…");
+    // 前もってつないでおいた会話があれば、それをすぐ使う（同じ AI のときだけ）
+    const ctx = liveContextRef.current?.() ?? {};
+    const warm = warmRef.current;
+    warmRef.current = null;
+    clearTimeout(warmTimer.current);
+    const useWarm = Boolean(warm?.isReady && warm.persona === ctx.persona);
+    if (warm && !useWarm) warm.stop("closed");
+    setInterim(firstText ?? (useWarm ? "どうぞ" : "つないでいます…"));
     set(firstText ? "thinking" : "listening");
     let userId = "";
     let modelId = "";
-    const session = new LiveSession({
+    const handlers: LiveHandlers = {
       onStatus: (st) => {
         if (liveRef.current !== session) return;
         if (st === "speaking") set("speaking");
@@ -970,9 +987,11 @@ export function useVoice({
         setInterim("");
         if (stateRef.current !== "off") toStandby();
       },
-    });
+    };
+    const session = useWarm ? warm! : new LiveSession(handlers);
+    session.setHandlers(handlers);
     liveRef.current = session;
-    session.start({ ...(liveContextRef.current?.() ?? {}), firstText }).catch(() => {
+    (useWarm ? session.begin(firstText) : session.start({ ...ctx, firstText })).catch(() => {
       if (liveRef.current !== session) return;
       liveRef.current = null;
       liveFailedAt.current = Date.now();
@@ -987,6 +1006,57 @@ export function useVoice({
     });
     return true;
   };
+
+  /**
+   * 前もってつないでおく（呼びかけ・マイクのボタンのあと、つなぐのを待たずにすぐ話せるように）。
+   * マイクの声はまだ送らない。数分ごとにつなぎ直す（予定などを新しくし、接続の時間切れを避ける）。
+   */
+  warmUpRef.current = () => {
+    clearTimeout(warmTimer.current);
+    if (!liveOn.current || liveRef.current || stateRef.current === "off") return;
+    if (Date.now() - liveFailedAt.current < LIVE_RETRY_MS || !navigator.onLine || typeof WebSocket === "undefined") return;
+    const persona = liveContextRef.current?.().persona;
+    const current = warmRef.current;
+    if (current && current.persona === persona && (current.isReady ? Date.now() - current.preparedAt < WARM_REFRESH_MS : true)) return;
+    warmRef.current = null;
+    current?.stop("closed");
+    const session = new LiveSession({
+      onEnd: () => {
+        if (warmRef.current !== session) return;
+        warmRef.current = null;
+        warmTimer.current = window.setTimeout(() => warmUpRef.current(), 2000); // 切れたらつなぎ直す
+      },
+    });
+    session.persona = persona;
+    warmRef.current = session;
+    session
+      .prepare(liveContextRef.current?.() ?? {})
+      .then(() => {
+        warmFailures.current = 0;
+        if (warmRef.current === session) warmTimer.current = window.setTimeout(() => warmUpRef.current(), WARM_REFRESH_MS);
+      })
+      .catch((err: unknown) => {
+        if (warmRef.current !== session) return;
+        warmRef.current = null;
+        if (err instanceof Error && err.name === "STALE") return; // 画面が古い：読み込み直すまでつながない
+        warmFailures.current++;
+        warmTimer.current = window.setTimeout(() => warmUpRef.current(), Math.min(5 * 60_000, 5000 * 2 ** warmFailures.current));
+      });
+  };
+
+  /** 前もってつないでおいた会話を閉じる */
+  const dropWarm = useCallback(() => {
+    clearTimeout(warmTimer.current);
+    const w = warmRef.current;
+    warmRef.current = null;
+    w?.stop("closed");
+  }, []);
+
+  // 音声モードの間は、いつでもすぐ話せるように前もってつないでおく（オフ・使えないときは閉じる）
+  useEffect(() => {
+    if (state !== "off" && live) warmUpRef.current();
+    else dropWarm();
+  }, [state, live, dropWarm]);
 
   /** リアルタイム会話を閉じる（呼びかけを待つ状態に戻る） */
   const endLive = useCallback(() => {
@@ -1077,7 +1147,7 @@ export function useVoice({
   const boot = useCallback(() => {
     if (!recRef.current) return;
     // まず最初にタブを前に出す（拍手とほぼ同時に画面が出るように。声はそのあと）
-    const front = Promise.resolve(onWokeRef.current?.()).catch(() => {});
+    const front = Promise.resolve(onWokeRef.current?.({ kind: "clap" })).catch(() => {});
     setError(null);
     unlockAudio();
     if (stateRef.current === "off") enable();
@@ -1234,6 +1304,10 @@ export function useVoice({
       const session = liveRef.current;
       liveRef.current = null;
       session?.stop("closed");
+      clearTimeout(warmTimer.current);
+      const w = warmRef.current;
+      warmRef.current = null;
+      w?.stop("closed");
     },
     [],
   );

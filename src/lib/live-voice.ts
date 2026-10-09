@@ -194,34 +194,44 @@ export class LiveSession {
     return !this.ended;
   }
 
+  /** 前もってつないだときの K.A.R.E.N. かどうか・つないだ時刻（古ければつなぎ直す） */
+  persona: "karen" | undefined;
+  preparedAt = 0;
+
+  /** 前もってつないで、すぐ話せる状態か */
+  get isReady(): boolean {
+    return this.ready && !this.ended;
+  }
+
+  /** 呼び出し側の受け口を差し替える（前もってつないでおいた会話を、話しかけられたときに使い始める） */
+  setHandlers(h: LiveHandlers): void {
+    this.h = h;
+  }
+
   /** つないで話せる状態にする（つながらなければ例外。呼び出し側はこれまでの聞き取りに戻す） */
   async start(opts: LiveStartOptions = {}): Promise<void> {
+    // マイク（パソコンは音量を測るために開いているものを共有）と、つなぐ準備を同時に
+    const mic = this.openMic();
+    try {
+      await this.prepare(opts);
+    } catch (err) {
+      mic.then((s) => this.ownStream && s.getTracks().forEach((t) => t.stop())).catch(() => {});
+      throw err;
+    }
+    await this.begin(opts.firstText, mic);
+  }
+
+  /** 前もってつないでおく（マイクはまだ使わない。話しかけられたら begin ですぐ始められる） */
+  async prepare(opts: Omit<LiveStartOptions, "firstText"> = {}): Promise<void> {
     this.setStatus("connecting");
     const ctx = getAudioContext() ?? (fallbackCtx ??= new AudioContext());
     this.ctx = ctx;
     if (ctx.state !== "running") await ctx.resume().catch(() => {});
-    // マイク（パソコンは音量を測るために開いているものを共有）と、つなぐ準備を同時に
-    const micTask = (async () => {
-      const shared = sharedMicStream();
-      if (shared) return shared;
-      this.ownStream = true;
-      return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-    })();
     this.out = ctx.createGain();
     this.out.connect(ctx.destination);
-    // つながるまでの間に話した声も取っておき、つながったら送る
-    const micReady = micTask.then((stream) => {
-      if (this.ended) {
-        if (this.ownStream) stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      this.stream = stream;
-      this.startMic();
-    });
-    micReady.catch(() => {});
     let lastError: unknown = null;
     for (const full of [true, false]) {
-      if (this.ended) return;
+      if (this.ended) break;
       try {
         await this.connect(full, opts);
         lastError = null;
@@ -235,22 +245,42 @@ export class LiveSession {
       }
     }
     if (lastError || this.ended) {
-      await micReady.catch(() => {});
       this.cleanup();
       throw lastError ?? new Error("closed");
     }
+    this.persona = opts.persona;
+    this.preparedAt = Date.now();
+  }
+
+  private openMic(): Promise<MediaStream> {
+    const task = (async () => {
+      const shared = sharedMicStream();
+      if (shared) return shared;
+      this.ownStream = true;
+      return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    })();
+    task.catch(() => {});
+    return task;
+  }
+
+  /** 話し始める（マイクの声を送り始める。firstText があれば最初の一言として渡す） */
+  async begin(firstText?: string, mic: Promise<MediaStream> = this.openMic()): Promise<void> {
+    let stream: MediaStream;
     try {
-      await micReady;
+      stream = await mic;
     } catch (err) {
       this.stop("error", "マイクを使えませんでした。");
       throw err;
     }
-    if (this.ended) return;
-    if (opts.firstText?.trim()) {
-      this.userText = opts.firstText.trim();
-      this.h.onUserText?.(this.userText, true);
-      this.userText = "";
-      this.send({ realtimeInput: { text: opts.firstText.trim() } });
+    if (this.ended) {
+      if (this.ownStream) stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    this.stream = stream;
+    this.startMic();
+    if (firstText?.trim()) {
+      this.h.onUserText?.(firstText.trim(), true);
+      this.send({ realtimeInput: { text: firstText.trim() } });
     } else this.setStatus("listening");
     this.bumpIdle();
   }
