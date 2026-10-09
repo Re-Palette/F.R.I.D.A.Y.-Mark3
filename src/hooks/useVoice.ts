@@ -1066,6 +1066,16 @@ export function useVoice({
     else dropWarm();
   }, [state, live, dropWarm]);
 
+  /** リアルタイム会話の AI に、画面で起きたことを伝えて声で知らせてもらう（会話中でなければ false） */
+  const liveNotify = useCallback((text: string): boolean => {
+    const s = liveRef.current;
+    if (!s) return false;
+    s.notify(text);
+    return true;
+  }, []);
+  /** リアルタイム会話を、話しかけが無くてもしばらく閉じない（制作を待っている間など） */
+  const liveKeepAlive = useCallback(() => liveRef.current?.keepAlive(), []);
+
   /** リアルタイム会話を閉じる（呼びかけを待つ状態に戻る） */
   const endLive = useCallback(() => {
     liveRef.current?.stop("closed");
@@ -1344,6 +1354,8 @@ export function useVoice({
     replyFinished,
     noteSpoken,
     endLive,
+    liveNotify,
+    liveKeepAlive,
     dismissError: () => setError(null),
   };
 }

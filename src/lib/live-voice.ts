@@ -396,6 +396,21 @@ export class LiveSession {
     }
   }
 
+  /**
+   * 画面で起きたこと（K.A.R.E.N. の制作が終わったなど）を AI に伝えて、声で知らせてもらう。
+   * ユーザーの発言ではないことが分かるように、印を付けて渡す。
+   */
+  notify(text: string): void {
+    if (this.ended || !this.ready) return;
+    this.bumpIdle();
+    this.send({ realtimeInput: { text: `［画面からのお知らせ（ユーザーの発言ではない）］${text}` } });
+  }
+
+  /** 話しかけが無くても、しばらく会話を閉じない（制作を待っている間など） */
+  keepAlive(): void {
+    if (!this.ended && this.stream) this.bumpIdle();
+  }
+
   /** AI に頼まれた画面の操作をして、結果を返す */
   private async runTools(calls: { id?: string; name?: string; args?: Record<string, unknown> }[]) {
     this.flushUser();

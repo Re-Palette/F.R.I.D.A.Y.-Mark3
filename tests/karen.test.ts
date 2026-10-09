@@ -210,3 +210,16 @@ describe("拍手 2 回で起動したときの一言", async () => {
     assert.equal(bootLine(at(3, 59)), "All systems are online. Good evening, sir.");
   });
 });
+
+describe("K.A.R.E.N. の間は「フライデー」では起きない", () => {
+  it("「フライデー」「フライデー、今日の天気は」では起きない。「フライデーに戻して」だけは戻る指示として受け付ける", () => {
+    setAiMode("karen");
+    assert.equal(splitWake("フライデー").woke, false);
+    assert.equal(splitWake("フライデー、今日の天気は").woke, false);
+    assert.deepEqual(splitWake("フライデーに戻して"), { woke: true, command: "に戻して" });
+    assert.equal(detectModeCommand(splitWake("フライデー、通常モードに戻って").command), "to-friday");
+    assert.deepEqual(splitWake("カレン、球体を作って"), { woke: true, command: "球体を作って" });
+    setAiMode("friday");
+    assert.equal(splitWake("フライデー").woke, true, "F.R.I.D.A.Y. に戻れば、また「フライデー」で起きる");
+  });
+});

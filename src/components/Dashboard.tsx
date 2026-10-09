@@ -45,7 +45,8 @@ import { autoSwitchToRecorded, useLiveVoice, useVoiceInput } from "@/lib/voice-i
 import { calendarForChat } from "@/lib/calendar-cache";
 import { stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
-import { dispatchKaren, getKarenState } from "@/lib/karen-state";
+import { busy as karenBusy, dispatchKaren, getKarenState, subscribeKaren } from "@/lib/karen-state";
+import { getScene } from "@/lib/karen-scene";
 import { FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-voice";
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
@@ -456,8 +457,8 @@ export function Dashboard() {
     const run = handleKarenText(request, { speak: (t) => notices.push(t), chat: () => (chatOnly = true) });
     // 時間のかかる制作（3D モデル）は始まったところで返す（返事を待たせない。進み具合は画面に出る）
     const finished = await Promise.race([run.then(() => true), new Promise<boolean>((r) => window.setTimeout(() => r(false), 1500))]);
-    if (chatOnly) return { ok: true, status: "not-creative", note: "制作・編集の指示ではなかった。会話として答える。" };
-    return { ok: true, status: finished ? "done" : "started", notices, phase: getKarenState().phase };
+    if (chatOnly) return { ok: true, status: "not-creative", note: "制作・編集の指示ではなかった。会話として答える。", scene: sceneSummary() };
+    return { ok: true, status: finished ? "done" : "started", notices, phase: getKarenState().phase, scene: sceneSummary() };
   }, [runFridayAction]);
   const voice = useVoice({
     onCommand: onVoiceCommand,
@@ -504,6 +505,31 @@ export function Dashboard() {
     }, // 裏のタブで呼ばれたら前に出す（拡張機能があるとき） // スマホは「フライデー」で起動しない（中央のコアをタップして話す）
   });
   const { speak, cancelSpeech, replyFinished } = voice;
+
+  // K.A.R.E.N. の制作の進み具合をリアルタイム会話に伝える：
+  // 制作中は会話を閉じない。終わったら（完成・失敗）K.A.R.E.N. に知らせて、声で伝えて次の提案をしてもらう
+  useEffect(() => {
+    let wasBusy = karenBusy(getKarenState());
+    return subscribeKaren(() => {
+      const s = getKarenState();
+      const nowBusy = karenBusy(s);
+      if (nowBusy) voiceRef.current?.liveKeepAlive();
+      if (wasBusy && !nowBusy && getAiMode() === "karen") {
+        const what = s.job?.title ?? "制作";
+        const text =
+          s.phase === "COMPLETED"
+            ? `${what}が完成しました。いまのシーン：${JSON.stringify(sceneSummary())}`
+            : s.phase === "ERROR"
+              ? `${what}がうまくいきませんでした（${s.error ?? "理由不明"}）。`
+              : s.phase === "CANCELLED"
+                ? `${what}を止めました。`
+                : "";
+        // 会話中なら K.A.R.E.N. が自分の言葉で伝える。会話が閉じていれば、これまでの声で短く知らせる
+        if (text && !voiceRef.current?.liveNotify(text) && s.phase === "COMPLETED") karenIo.speak?.(`${what}が完成しました。`);
+      }
+      wasBusy = nowBusy;
+    });
+  }, [karenIo]);
 
   // 裏で開きっぱなしの古い版の画面だと分かったら、手が空いたとき（返事が終わって呼びかけ待ち）に読み込み直す
   const [stale, setStale] = useState(false);
@@ -1017,3 +1043,14 @@ export function Dashboard() {
   );
 }
 
+
+/** K.A.R.E.N. に伝える、いまの制作シーンのようす（何がいくつあるか・選んでいるもの） */
+function sceneSummary(): Record<string, unknown> {
+  const scene = getScene();
+  return {
+    count: scene.objects.length,
+    objects: scene.objects.slice(-8).map((o) => ({ name: o.name, color: o.color ?? null, selected: o.id === scene.selectedId })),
+    turntable: scene.turntable,
+    project: scene.projectName,
+  };
+}

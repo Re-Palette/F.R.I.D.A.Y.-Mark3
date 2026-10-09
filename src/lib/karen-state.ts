@@ -153,6 +153,12 @@ export function dispatchKaren(e: KarenEvent): KarenState {
   return state;
 }
 
+/** 状態が変わるたびに呼ぶ（返り値で解除） */
+export function subscribeKaren(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 export function useKarenState(): KarenState {
   return useSyncExternalStore(
     (fn) => {

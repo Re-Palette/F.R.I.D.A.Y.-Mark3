@@ -4,7 +4,7 @@
  *  - 読み上げ: speechSynthesis
  */
 
-import { getAiMode } from "./ai-mode";
+import { detectModeCommand, getAiMode } from "./ai-mode";
 
 /* ---------- 音声認識 ---------- */
 
@@ -67,7 +67,12 @@ const KAREN_WAKE_RE = new RegExp(
 
 export function splitWake(text: string): { woke: boolean; command: string } {
   const m = WAKE_RE.exec(text);
-  if (m) return { woke: true, command: text.slice(m[0].length).trim() };
+  if (m) {
+    const command = text.slice(m[0].length).trim();
+    // K.A.R.E.N. の間は「フライデー」では起きない。「フライデーに戻して」のような戻る指示だけ受け付ける
+    if (getAiMode() === "karen") return detectModeCommand(command) === "to-friday" ? { woke: true, command } : { woke: false, command: "" };
+    return { woke: true, command };
+  }
   // 「カレン、起動」でも呼べる。K.A.R.E.N. の間は名前を取り除き、F.R.I.D.A.Y. の間は名前ごと渡す（切り替えの言葉として見分けるため）
   const k = KAREN_WAKE_RE.exec(text);
   if (!k) return { woke: false, command: "" };
