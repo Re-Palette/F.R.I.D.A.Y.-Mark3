@@ -252,3 +252,26 @@ describe("立体平面地図の位置", async () => {
     assert.ok(Math.abs(toPlane(0, 180)[0] - MAP_W / 2) < 1e-9, "東の端");
   });
 });
+
+describe("合言葉「グローバルプロトコル起動」", () => {
+  for (const t of ["グローバルプロトコル起動", "グローバルプロトコルを起動して", "グローバル・プロトコル、起動", "Global Protocol 起動", "グローバルプロトコル発動"]) {
+    it(`「${t}」→ E.D.I.T.H.（名前を言わなくても、どのモードからでも）`, () => {
+      assert.equal(detectModeCommand(t), "to-edith");
+      for (const mode of ["friday", "karen"] as const) {
+        setAiMode(mode);
+        const r = splitWake(t);
+        assert.equal(r.woke, true, mode);
+        assert.equal(detectModeCommand(r.command), "to-edith", mode);
+      }
+      setAiMode("friday");
+    });
+  }
+  it("「フライデー、グローバルプロトコル起動」でも起動する", () => {
+    setAiMode("friday");
+    assert.equal(detectModeCommand(splitWake("フライデー、グローバルプロトコル起動").command), "to-edith");
+  });
+  it("「グローバルプロトコルとは？」では起動しない", () => {
+    assert.equal(detectModeCommand("グローバルプロトコルとは？"), null);
+    assert.equal(splitWake("グローバルプロトコルとは？").woke, false);
+  });
+});

@@ -64,6 +64,8 @@ const KAREN = /(k\.?\s*a\.?\s*r\.?\s*e\.?\s*n\.?(?![a-z])|カレン(?![ダトシ
 export const EDITH_NAME_SRC =
   "e\\.?\\s*d\\.?\\s*i\\.?\\s*t\\.?\\s*h\\.?(?![a-z])|イ[ー・\\s]?(?:ディ|デ)ー?ス|エ[ー・\\s]?(?:ディ|デ)ス|エディット|イーディー(?=[、。,\\s]|を|に|$)|[いえ]ー?でぃす";
 const EDITH = new RegExp(`(${EDITH_NAME_SRC})`, "i");
+/** 「グローバルプロトコル起動」：名前を言わなくても E.D.I.T.H. を起動する合言葉（どのモードからでも） */
+export const GLOBAL_PROTOCOL_RE = /(グローバル|ぐろーばる|global)[\s・･\-]*(プロトコル|ぷろとこる|protocol)[\s、。]*(を)?[\s]*(起動|きどう|発動|開始|スタート|オン|start|on|開いて|開け)/i;
 const FRIDAY = /(f\.?\s*r\.?\s*i\.?\s*d\.?\s*a\.?\s*y\.?|フライデー|ふらいでー)/i;
 
 /**
@@ -76,6 +78,7 @@ export function detectModeCommand(text: string): "to-karen" | "to-friday" | "to-
   const t = text.trim().replace(/[。、！!？?\s]+/g, " ").trim();
   if (!t || t.length > 40) return null;
   if (/(って|とは|って何|ってなに|について)/.test(t) && !/(呼|起動|切り替|戻|開)/.test(t)) return null;
+  if (GLOBAL_PROTOCOL_RE.test(t)) return "to-edith";
   // 「〇〇を開いて」：名前の AI のモードへ（「カレンを開いて」「イーディスを開いて」「フライデーを開いて」）
   if (/(開いて|ひらいて|開く|ひらく|開け|あけて|オープン|open|立ち上げ)/i.test(t)) {
     if (EDITH.test(t)) return "to-edith";

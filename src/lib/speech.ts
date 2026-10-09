@@ -4,7 +4,7 @@
  *  - 読み上げ: speechSynthesis
  */
 
-import { detectModeCommand, EDITH_NAME_SRC, getAiMode } from "./ai-mode";
+import { detectModeCommand, EDITH_NAME_SRC, getAiMode, GLOBAL_PROTOCOL_RE } from "./ai-mode";
 
 /* ---------- 音声認識 ---------- */
 
@@ -81,6 +81,8 @@ export function splitWake(text: string): { woke: boolean; command: string } {
   const own = mode === "karen" ? KAREN_WAKE_RE : mode === "edith" ? EDITH_WAKE_RE : WAKE_RE;
   const m = own.exec(text);
   if (m) return { woke: true, command: text.slice(m[0].length).trim() };
+  // 合言葉「グローバルプロトコル起動」は、名前を言わなくても受け付ける
+  if (GLOBAL_PROTOCOL_RE.test(text)) return { woke: true, command: text.trim() };
   const other = [WAKE_RE, KAREN_WAKE_RE, EDITH_WAKE_RE].some((re) => re !== own && re.test(text));
   if (other && detectModeCommand(text)) return { woke: true, command: text.trim() };
   return { woke: false, command: "" };
