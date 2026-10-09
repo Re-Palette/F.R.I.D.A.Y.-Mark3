@@ -4,6 +4,7 @@
  */
 import type { AgentId, ChatMessage } from "@/core/types";
 import type { CalendarAccess } from "@/integrations/google-calendar";
+import type { CalendarSnapshot } from "@/integrations/calendar-snapshot";
 import type { MailSummary } from "@/integrations/gmail";
 import type { SpotifyAccess } from "@/integrations/spotify";
 import type { AmazonMusicState } from "@/lib/music";
@@ -17,6 +18,8 @@ export interface AgentContext {
   memory: LongTermMemory;
   /** Google カレンダー（この端末で接続済みの場合だけ） */
   calendar?: CalendarAccess;
+  /** 画面が持っている予定の控え（Google から間に合わなかったときの予備） */
+  calendarSnapshot?: CalendarSnapshot;
   /** 未読メールを読む（Google に接続済みの場合だけ） */
   mail?: () => Promise<MailSummary[]>;
   /** 返信の下書き用に、直近のメールを本文つきで読む（Google に接続済みの場合だけ） */

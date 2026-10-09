@@ -11,7 +11,7 @@
 import { settingsHint } from "@/lib/config";
 import { createHash } from "node:crypto";
 import { readCookie, seal, unseal } from "@/lib/secure-cookie";
-import { invalidate, swr } from "@/lib/swr";
+import { invalidate, latest } from "@/lib/swr";
 
 export const CALENDAR_COOKIE = "friday_gcal";
 export const STATE_COOKIE = "friday_gcal_state";
@@ -271,18 +271,31 @@ function toEvent(e: GoogleEvent, tz: string): CalendarEvent {
   };
 }
 
+/** Google カレンダーに問い合わせる。読むときは、つながらない・Google 側の一時的なエラーなら 1 回だけやり直す */
 async function api(refresh: string, path: string, init: RequestInit = {}): Promise<Response> {
   const c = getCalendarConfig();
-  const token = await accessToken(refresh);
-  try {
-    return await fetch(`${c.apiBase}/calendars/${encodeURIComponent(c.calendarId)}${path}`, {
-      ...init,
-      headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}) },
-      signal: AbortSignal.timeout(8000),
-      cache: "no-store",
-    });
-  } catch {
-    throw new CalendarError("CALENDAR_NETWORK", "Google カレンダーに接続できませんでした。");
+  const retry = !init.method || init.method === "GET";
+  for (let attempt = 0; ; attempt++) {
+    const token = await accessToken(refresh);
+    let res: Response;
+    try {
+      res = await fetch(`${c.apiBase}/calendars/${encodeURIComponent(c.calendarId)}${path}`, {
+        ...init,
+        headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}) },
+        signal: AbortSignal.timeout(6000),
+        cache: "no-store",
+      });
+    } catch {
+      if (retry && attempt === 0) continue;
+      throw new CalendarError("CALENDAR_NETWORK", "Google カレンダーに接続できませんでした。");
+    }
+    if (retry && attempt === 0 && (res.status >= 500 || res.status === 429)) continue;
+    // アクセス用トークンが先に無効になっていたら、取り直してもう 1 回
+    if (res.status === 401 && attempt === 0) {
+      accessCache.delete(refresh);
+      continue;
+    }
+    return res;
   }
 }
 
@@ -345,6 +358,11 @@ export function normalizeNewEvent(input: NewEventInput, tz: string): Record<stri
   };
 }
 
+/** この時間内に取った予定は、そのまま使う */
+const CALENDAR_FRESH_MS = 30_000;
+/** 最新の予定を待つ時間（過ぎたら前回取った予定で答える） */
+const CALENDAR_WAIT_MS = 2500;
+
 /** 1 つの端末（または全端末共通のトークン）から見たカレンダー */
 export class CalendarAccess {
   /** キャッシュの鍵（トークンそのものは使わない） */
@@ -357,19 +375,26 @@ export class CalendarAccess {
     this.cacheKey = `cal:${createHash("sha256").update(refresh).digest("hex").slice(0, 16)}:`;
   }
 
-  /**
-   * 今日から days 日分の予定。返答を待たせないよう、1 分以内は前回の結果を使い、
-   * 30 分以内なら前回の結果を返しつつ裏で取り直す。予定を書き換えたら捨てる。
-   */
-  /** 今日から offset 日ずらした日から days 日分（振り返り用に過去も読める。1 分キャッシュ） */
-  between(offset: number, days: number, max = 60): Promise<CalendarEvent[]> {
+  /** 今日から offset 日ずらした日から days 日分（振り返り用に過去も読める） */
+  async between(offset: number, days: number, max = 60): Promise<CalendarEvent[]> {
     const key = `${this.cacheKey}${ymd(new Date(), this.tz)}:range:${offset}:${days}:${max}`;
-    return swr(key, 60_000, 30 * 60_000, () => this.fetchUpcoming(days, max, offset));
+    return (await latest(key, CALENDAR_FRESH_MS, CALENDAR_WAIT_MS, () => this.fetchUpcoming(days, max, offset))).value;
   }
 
-  upcoming(days = 7, max = 40): Promise<CalendarEvent[]> {
+  /** 今日から days 日分の予定 */
+  async upcoming(days = 7, max = 40, wait = CALENDAR_WAIT_MS): Promise<CalendarEvent[]> {
+    return (await this.upcomingAt(days, max, wait)).events;
+  }
+
+  /**
+   * 今日から days 日分の予定と、それをいつ Google から取ったか。
+   * 古いままの予定を出さないよう、30 秒より前に取ったものは毎回 Google に確かめに行く。
+   * wait までに返事が無ければ、前回取った予定を返す（前回が無ければ取れるまで待つ）。予定を書き換えたら捨てる。
+   */
+  async upcomingAt(days = 7, max = 40, wait = CALENDAR_WAIT_MS): Promise<{ events: CalendarEvent[]; at: number }> {
     const key = `${this.cacheKey}${ymd(new Date(), this.tz)}:${days}:${max}`;
-    return swr(key, 60_000, 30 * 60_000, () => this.fetchUpcoming(days, max));
+    const { value, at } = await latest(key, CALENDAR_FRESH_MS, wait, () => this.fetchUpcoming(days, max));
+    return { events: value, at };
   }
 
   private async fetchUpcoming(days: number, max: number, offset = 0): Promise<CalendarEvent[]> {

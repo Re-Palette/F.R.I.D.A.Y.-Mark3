@@ -54,3 +54,40 @@ export function prime<T>(key: string, value: T): void {
 export function invalidate(prefix: string): void {
   for (const key of store.keys()) if (key.startsWith(prefix)) store.delete(key);
 }
+
+/**
+ * 「まず最新を取りに行き、間に合わなければ前回の値」で返すキャッシュ（予定など、古いままだと困るもの用）。
+ *
+ *   fresh 以内 … キャッシュをそのまま返す（すぐ）
+ *   それ以外 … 取り直しを始め、wait まで待つ。間に合えば最新、間に合わなければ前回の値（無ければ取れるまで待つ）
+ *   取り直しに失敗 … 前回の値があればそれ、無ければ失敗を投げる
+ * 取り直しは裏で最後まで走り、次の呼び出しのためにキャッシュを新しくする。at は値を取った時刻。
+ */
+export async function latest<T>(key: string, fresh: number, wait: number, load: () => Promise<T>): Promise<{ value: T; at: number }> {
+  const entry = (store.get(key) as Entry<T> | undefined) ?? { at: 0 };
+  store.set(key, entry);
+  if (entry.value !== undefined && Date.now() - entry.at < fresh) return { value: entry.value, at: entry.at };
+
+  entry.pending ??= load()
+    .then((value) => {
+      entry.value = value;
+      entry.at = Date.now();
+      return value;
+    })
+    .finally(() => {
+      entry.pending = undefined;
+    });
+  const pending = entry.pending.then((value) => ({ value, at: entry.at }));
+  if (entry.value === undefined) return pending; // 前回の値が無いので、取れるまで待つ
+
+  const stale = { value: entry.value, at: entry.at };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<{ value: T; at: number }>((resolve) => {
+    timer = setTimeout(() => resolve(stale), wait);
+  });
+  try {
+    return await Promise.race([pending.catch(() => stale), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}

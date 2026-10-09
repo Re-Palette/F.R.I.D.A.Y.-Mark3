@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { handleConversation, preflight, sanitizeHistory } from "@/core/friday";
 import type { StreamEvent } from "@/core/types";
 import { CalendarAccess, hasComposeScope, refreshTokenFrom } from "@/integrations/google-calendar";
+import { parseCalendarSnapshot, type CalendarSnapshot } from "@/integrations/calendar-snapshot";
 import { createDraft, recentMail, unreadMail } from "@/integrations/gmail";
 import { isSpotifyConfigured, SpotifyAccess, spotifyTokenFrom } from "@/integrations/spotify";
 import type { AmazonMusicState } from "@/lib/music";
@@ -33,11 +34,13 @@ export async function POST(req: Request): Promise<Response> {
   let history;
   let voice = false;
   let amazon: AmazonMusicState | undefined;
+  let calendarSnapshot: CalendarSnapshot | undefined;
   try {
-    const body = (await req.json()) as { messages?: unknown; mode?: unknown; music?: unknown };
+    const body = (await req.json()) as { messages?: unknown; mode?: unknown; music?: unknown; calendar?: unknown };
     history = sanitizeHistory(body?.messages);
     voice = body?.mode === "voice";
     amazon = toAmazonState(body?.music);
+    calendarSnapshot = parseCalendarSnapshot(body?.calendar);
     preflight();
   } catch (err) {
     if (err instanceof SyntaxError) {
@@ -87,6 +90,7 @@ export async function POST(req: Request): Promise<Response> {
     voice,
     onTurn: resolveTurn,
     calendar,
+    calendarSnapshot,
     news: news.context,
     mail,
     mailRecent,

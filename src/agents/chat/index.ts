@@ -17,6 +17,7 @@ import { asksForMusic } from "@/lib/music";
 import { asksForDocument, lectureMaterial, quizMaterial, recentLectures, recentWeakPoints, type LectureDigest } from "@/integrations/brain-notes";
 import { inQuiz } from "./quiz";
 import { asksForMorning } from "./morning";
+import { asksForSchedule } from "./schedule";
 import { listReminders, type Reminder } from "@/integrations/reminders";
 import { getTasksOverview, type TasksOverview } from "@/integrations/tasks";
 import { peekAppSettings } from "@/integrations/settings";
@@ -27,6 +28,7 @@ import { getGeminiConfig, getSearchMode, settingsHint } from "@/lib/config";
 import { streamGemini, type GeminiContent } from "@/llm/gemini";
 import { withLocalFallback } from "@/llm/providers";
 import type { CalendarEvent } from "@/integrations/google-calendar";
+import { snapshotEvents } from "@/integrations/calendar-snapshot";
 import type { MemoryRecord } from "@/memory/long-term";
 import { buildCompactInstruction, buildSystemInstruction, type MailData, type MusicContext } from "./persona";
 import { buildConversationWindow } from "@/memory/context";
@@ -36,6 +38,25 @@ import { buildConversationWindow } from "@/memory/context";
  * どれも前回の結果をキャッシュから即座に返すので、普段はほぼ待たない（上限は初回や障害時の保険）。
  */
 const CONTEXT_BUDGET_MS = { text: 650, voice: 400 };
+
+/** 予定のことを聞かれたとき、最新の予定を Google から取るのに待てる時間 */
+const CALENDAR_ASKED_MS = 3500;
+
+/**
+ * この返答で使う予定。いちばん新しいものを選ぶ：
+ *   1. Google カレンダーから取った最新の予定（予定を聞かれたら少し長めに待つ）
+ *   2. 間に合わなければ、このサーバーが前回取った予定か、画面が持っている控えのうち新しい方
+ * どれも無いときだけ null（「今は確認できない」と正直に伝える）。
+ */
+async function calendarForTurn(ctx: AgentContext, latest: string, budget: number, morning: boolean): Promise<CalendarEvent[] | null> {
+  if (!ctx.calendar) return null;
+  const wait = asksForSchedule(latest) || morning ? CALENDAR_ASKED_MS : budget;
+  const live = await within<{ events: CalendarEvent[]; at: number } | null>(ctx.calendar.upcomingAt(7, 40, wait), wait + 100, null, "calendar");
+  const snap = ctx.calendarSnapshot;
+  if (live && (!snap || live.at >= snap.at)) return live.events;
+  if (snap) return snapshotEvents(snap, ctx.now, ctx.timezone);
+  return live?.events ?? null;
+}
 
 /** 振り返り・日記の材料集めに待てる時間（頼まれたときだけなので長め） */
 const REVIEW_BUDGET_MS = 3000;
@@ -157,7 +178,7 @@ export const chatAgent: Agent = {
 
     const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company, lectureDocs, usage] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
-      ctx.calendar ? within<CalendarEvent[] | null>(ctx.calendar.upcoming(7), budget, null, "calendar") : null,
+      calendarForTurn(ctx, latest, budget, morning),
       within<WeatherReport | null>(getWeather(), budget, null, "weather"),
       // ニュースをまとめるときだけ、興味のある分野を最新の設定で
       ctx.news && briefing ? within(readNewsSettings(), budget, ctx.news.settings, "news") : ctx.news?.settings,

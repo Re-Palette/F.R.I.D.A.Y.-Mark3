@@ -24,6 +24,7 @@ import { beginLocalWork, currentRoute, localReadyForQuickChat, markGeminiFailed,
 import { runLocalConversation, runQuickChat } from "@/lib/offline-core";
 import { localAiPrefs } from "@/lib/local-ai";
 import { isQuickChat } from "@/lib/quick-chat";
+import { calendarForChat } from "@/lib/calendar-cache";
 import { shouldFallback } from "@/llm/provider";
 
 export interface UiError {
@@ -349,6 +350,7 @@ export function useChat() {
         // 音楽の話のときだけ、Amazon Music の状態（拡張機能の有無・流れている曲）を一緒に送る
         const lastUser = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
         const music = asksForMusic(lastUser) ? await amazonMusicState().catch(() => undefined) : undefined;
+        const calendar = calendarForChat();
         // 「止めて」「次の曲」などの短い操作は、AI に聞かずにその場で Amazon Music を操作する（声ですぐ効くように）
         const quick = music?.now ? quickMusicCommand(lastUser) : null;
         if (quick && (!quick.ifPlaying || music?.now?.playing)) {
@@ -599,7 +601,13 @@ export function useChat() {
             res = await fetch("/api/chat", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ messages: apiHistory, mode: opts.voice ? "voice" : "text", ...(music ? { music } : {}) }),
+              body: JSON.stringify({
+                messages: apiHistory,
+                mode: opts.voice ? "voice" : "text",
+                ...(music ? { music } : {}),
+                // 予定の控え（サーバーが Google から間に合わなかったときの予備）
+                ...(calendar ? { calendar } : {}),
+              }),
               signal: controller.signal,
             });
           } catch (err) {

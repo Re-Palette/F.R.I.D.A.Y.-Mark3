@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatusResponse } from "@/core/types";
-import { STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
+import { CALENDAR_CHANGED, STATUS_CHANGED, useChat, type SendOptions } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
 import { useVoice } from "@/hooks/useVoice";
 import { useBargeIn } from "@/hooks/useBargeIn";
@@ -39,6 +39,7 @@ import { PHONE_QUERY, useMedia } from "@/hooks/useMedia";
 import { FOCUS_END, focusLeft, stopFocus, useFocus, type FocusEnd } from "@/lib/focus";
 import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 import { asksAboutScreen, captureScreen, getScreenState, toggleScreen, useScreenState } from "@/lib/screen";
+import { refreshCalendarCache } from "@/lib/calendar-cache";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -274,7 +275,27 @@ export function Dashboard() {
     if (now - lastWarm.current < 2000 || agent.status !== "online") return;
     lastWarm.current = now;
     void fetch("/api/warm", { method: "POST", keepalive: true }).catch(() => {});
+    void refreshCalendarCache(); // 送る前に、予定の控えも新しくしておく（1 分に 1 回まで）
   }, [agent.status]);
+
+  // 予定の控え（今日から 7 日分）：開いたとき・画面に戻ったとき・5 分ごと・予定が変わったときに読み直す。
+  // 会話と一緒に送り、サーバーが Google から間に合わなかったときの予備にする
+  useEffect(() => {
+    void refreshCalendarCache(true);
+    const onFocus = () => void refreshCalendarCache();
+    const onVisible = () => document.visibilityState === "visible" && void refreshCalendarCache();
+    const onChanged = () => void refreshCalendarCache(true);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(CALENDAR_CHANGED, onChanged);
+    const timer = setInterval(onFocus, 5 * 60_000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(CALENDAR_CHANGED, onChanged);
+      clearInterval(timer);
+    };
+  }, []);
 
   // 画面を開いた時点で、脳・予定・天気の読み込みを始めておく（最初の返答を速くする）
   const warmedOnce = useRef(false);
