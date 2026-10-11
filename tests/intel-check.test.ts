@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-const { runChecks, render, checkUsgs, checkJmaTyphoon, windDiagnostics } = await import("../scripts/intel-check");
+const { runChecks, render, checkUsgs, checkJmaTyphoon, windDiagnostics, typhoonStructure } = await import("../scripts/intel-check");
 const { USGS_URL } = await import("../src/integrations/intel/sources/usgs");
 const { NHC_URL } = await import("../src/integrations/intel/sources/nhc");
 const { JMA_EQVOL_URL, JMA_EQVOL_LONG_URL, JMA_EXTRA_LONG_URL } = await import("../src/integrations/intel/sources/jma");
@@ -251,10 +251,62 @@ describe("台風の調査（電文ごとの結果・最大風速が読めない�
       [`${DATA}/t0_VPTW60_010000.xml`]: ok(typhoonWith({ number: "2620", wind: longAttr, headline: secret })),
     });
     const out = render([await checkJmaTyphoon(f.fn)], "TOK").join("\n");
-    assert.ok(!out.includes("関係のない長い本文関係のない長い本文"));
+    // 見出し文は調査のため 100 文字までは出すが、それを超えて（全文を）出さない
+    assert.ok(!out.includes(secret.slice(0, 101)));
+    // 本文 200 回分のうち、出るのは見出し文の 100 文字に入る分（11 回）まで
+    assert.ok(out.split("関係のない長い本文").length - 1 <= 11);
     assert.ok(!out.includes("長".repeat(41)));
     assert.ok(!out.includes("9".repeat(21)));
     assert.ok(!out.includes("<Report"));
+  });
+});
+
+describe("台風の電文の構造（同じ台風の見分け方・発表の終わりの印の調査）", () => {
+  it("EventID・番号の元の書き方・発表の種類・時刻・実況と予報の並びを出す", () => {
+    const st = typhoonStructure(typhoonXml);
+    assert.equal(st.eventId, "TC2621");
+    assert.equal(st.numberRaw, "2621");
+    assert.equal(st.numberDigits, 4);
+    assert.equal(st.status, "通常");
+    assert.equal(st.infoType, "発表");
+    assert.equal(st.reportDateTime, "2026-10-11T16:00:00+09:00");
+    assert.equal(st.meteorologicalInfos, 1);
+    assert.deepEqual(st.dateTimeTypes, ["実況"]);
+  });
+
+  it("予報が並ぶ電文では、その並びが分かる。番号が 2 桁ならそう分かる", () => {
+    const withForecast = typhoonXml
+      .replace("<Number>2621</Number>", "<Number>２１</Number>")
+      .replace("</MeteorologicalInfos>", '<MeteorologicalInfo><DateTime type="予報 24時間後">2026-10-12T15:00:00+09:00</DateTime><Item></Item></MeteorologicalInfo><MeteorologicalInfo><DateTime type="予報 48時間後">2026-10-13T15:00:00+09:00</DateTime><Item></Item></MeteorologicalInfo></MeteorologicalInfos>');
+    const st = typhoonStructure(withForecast);
+    assert.equal(st.numberDigits, 2);
+    assert.equal(st.meteorologicalInfos, 3);
+    assert.deepEqual(st.dateTimeTypes, ["実況", "予報 24時間後", "予報 48時間後"]);
+  });
+
+  it("見出し文は 100 文字までに切る。番号が無ければ null", () => {
+    const st = typhoonStructure(typhoonXml.replace("<Headline><Text></Text></Headline>", `<Headline><Text>台風第２１号は熱帯低気圧に変わりました。${"あ".repeat(300)}</Text></Headline>`).replace(/<Number>[^<]*<\/Number>/, ""));
+    assert.ok(String(st.headline).startsWith("台風第２１号は熱帯低気圧に変わりました。"));
+    assert.ok(String(st.headline).length <= 100);
+    assert.equal(st.numberRaw, null);
+    assert.equal(st.numberDigits, null);
+  });
+
+  it("電文ごとの結果に構造が付き、電文コードごとの発表時刻（新しい順・最大 8 件）が分かる", async () => {
+    const entries = Array.from({ length: 10 }, (_, k) => ({ title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: `h${k}_VPTW61_010000` }));
+    // atom() は同じ時刻を付けるので、時刻を差し替える
+    let feed = atom(entries);
+    entries.forEach((e, k) => {
+      feed = feed.replace(`<id>urn:${e.file}</id><updated>2026-10-11T00:00:00Z</updated>`, `<id>urn:${e.file}</id><updated>2026-10-1${k < 5 ? 0 : 1}T0${k % 5}:00:00Z</updated>`);
+    });
+    const routes: Record<string, () => Response> = { [JMA_EXTRA_LONG_URL]: ok(feed, "application/atom+xml") };
+    for (const e of entries) routes[`${DATA}/${e.file}.xml`] = ok(typhoonXml);
+    const r = await checkJmaTyphoon(fakeFetch(routes).fn);
+    const history = (r.format as { history: Record<string, string[]> }).history.VPTW61;
+    assert.equal(history.length, 8);
+    assert.equal(history[0], "2026-10-11T04:00:00Z");
+    assert.ok(Date.parse(history[0]) >= Date.parse(history[7]));
+    assert.equal((r.details?.[0].structure as { eventId: string }).eventId, "TC2621");
   });
 });
 

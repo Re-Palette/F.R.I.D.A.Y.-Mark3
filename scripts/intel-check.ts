@@ -251,6 +251,44 @@ export function windDiagnostics(xml: string): Record<string, unknown> {
   return { meteorologicalInfos: infos, observed: true, propertyTypes: types, windPart, windElements: [...windElements, ...emptyWindElements].slice(0, MAX_DIAG_ELEMENTS) };
 }
 
+/** 見出し文などの上限（公式の文章でも、全文は出さない） */
+const MAX_HEADLINE = 100;
+/** 電文コードごとに見せる発表時刻の数 */
+const MAX_HISTORY = 8;
+
+/**
+ * 台風の電文の構造（同じ台風の見分け方・発表の終わりの印を調べるため）。決まった要素の値だけを、長さを切って出す。
+ *   - EventID・番号の元の書き方（4 桁か 2 桁か）・発表の種類・通し番号・発表時刻
+ *   - 見出し文（「〜に変わりました」などの発表の終わりを示す文があるか）
+ *   - 実況・推定・予報の並び（DateTime の type の一覧）と、MeteorologicalInfo の数
+ */
+export function typhoonStructure(xml: string): Record<string, unknown> {
+  const control = /<(?:[\w-]+:)?Control[\s>][\s\S]*?<\/(?:[\w-]+:)?Control>/.exec(xml)?.[0] ?? "";
+  const head = /<(?:[\w-]+:)?Head[\s>][\s\S]*?<\/(?:[\w-]+:)?Head>/.exec(xml)?.[0] ?? "";
+  const headline = /<(?:[\w-]+:)?Headline[\s>][\s\S]*?<\/(?:[\w-]+:)?Headline>/.exec(head)?.[0] ?? "";
+  const { infos, observed } = observedBlock(xml);
+  const body = /<(?:[\w-]+:)?Body[\s>][\s\S]*<\/(?:[\w-]+:)?Body>/.exec(xml)?.[0] ?? "";
+  const dateTimeTypes = [...body.matchAll(/<(?:[\w-]+:)?DateTime\b[^>]*type="([^"]*)"/g)].map((m) => short(m[1], 30)).slice(0, 12);
+  const namePart = observed ? (/<(?:[\w-]+:)?TyphoonNamePart[\s>][\s\S]*?<\/(?:[\w-]+:)?TyphoonNamePart>/.exec(observed)?.[0] ?? "") : "";
+  const numberRaw = tag(namePart, "Number");
+  return {
+    controlTitle: short(tag(control, "Title"), 40),
+    status: short(tag(control, "Status"), 10),
+    headTitle: short(tag(head, "Title"), 40),
+    infoType: short(tag(head, "InfoType"), 10),
+    infoKind: short(tag(head, "InfoKind"), 30),
+    serial: short(tag(head, "Serial"), 10),
+    reportDateTime: short(tag(head, "ReportDateTime"), 30),
+    targetDateTime: short(tag(head, "TargetDateTime"), 30),
+    eventId: short(tag(head, "EventID"), 30),
+    numberRaw: numberRaw === null ? null : short(numberRaw, 10),
+    numberDigits: numberRaw === null ? null : (numberRaw.match(/[0-9０-９]/g) ?? []).length,
+    headline: short(tag(headline, "Text"), MAX_HEADLINE),
+    meteorologicalInfos: infos,
+    dateTimeTypes,
+  };
+}
+
 /** 電文ごとの解析結果（番号・名前・位置・気圧・風速） */
 function typhoonDetail(code: string, item: IntelItem): Record<string, unknown> {
   return {
@@ -277,7 +315,14 @@ export async function checkJmaTyphoon(fetchImpl: FetchLike): Promise<CheckReport
     // 本番と同じく、電文コード（VPTW60〜65）ごとに最新の電文だけを読む
     const latest = latestTyphoonDocs(entries);
     r.times = { newestEntry: newest(entries), newestTyphoonEntry: newest(typhoon) };
-    r.format = { entries: entries.length, typhoonEntries: typhoon.length, codes: latest.map((d) => d.code), titles: titleCounts(entries) };
+    // 電文コードごとに、フィードに載っている発表時刻（新しい順・最大 8 件）。発表の間隔と、発表が止まったかを見るため
+    const history: Record<string, string[]> = {};
+    for (const e of typhoon) {
+      const code = /_(VPTW6[0-5])_/.exec(e.link ?? "")?.[1];
+      if (code && e.updated) (history[code] ??= []).push(short(e.updated, 30));
+    }
+    for (const k of Object.keys(history)) history[k] = history[k].sort((a, b) => Date.parse(b) - Date.parse(a)).slice(0, MAX_HISTORY);
+    r.format = { entries: entries.length, typhoonEntries: typhoon.length, codes: latest.map((d) => d.code), history, titles: titleCounts(entries) };
     const items: IntelItem[] = [];
     for (const d of latest) {
       r.raw++;
@@ -293,6 +338,7 @@ export async function checkJmaTyphoon(fetchImpl: FetchLike): Promise<CheckReport
         if (item.place === null) missingFacts.push("place");
         if (missingFacts.length) r.mismatches.push(`${d.code}：読めなかった項目 ${missingFacts.join("・")}`);
         const detail = typhoonDetail(d.code, item);
+        detail.structure = typhoonStructure(xml);
         // 最大風速が読めなかったときは、値が無いのか・あるが読めていないのかを見分けるための材料を付ける
         if (item.facts.windMs === null || item.facts.windMs === undefined) detail.windDiagnostics = windDiagnostics(xml);
         (r.details ??= []).push(detail);
