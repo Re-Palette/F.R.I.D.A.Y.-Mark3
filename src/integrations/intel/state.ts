@@ -9,13 +9,89 @@
  */
 import { randomUUID } from "node:crypto";
 import { type IntelBrainIO, INTEL_STATE_PATH } from "./brain-io";
+import { isUnsupportedTracking, normalizeTracking } from "./normalize";
 import { sourceDef } from "./sources";
-import type { IntelSourceId, IntelSourceStatus, IntelState } from "./types";
+import type { IntelSourceId, IntelSourceStatus, IntelState, UnsupportedTrackingHold } from "./types";
 
 /** 印の期限（実行は 60 秒で打ち切られるので、余裕を見て 3 分） */
 export const LOCK_TTL_MS = 3 * 60_000;
 /** 失敗が続いたときの待ちの上限 */
 const MAX_BACKOFF_MS = 6 * 60 * 60_000;
+/**
+ * 知らない版の追跡の記録を、そのまま書き戻す大きさの上限（バイト。UTF-8）。
+ * 測るのは state.json の中に書かれる形そのもの（字下げ 1・tracking の項目名を含む。unsupportedTrackingBytes）。
+ * state.json 全体の大きさの上限ではない（ほかの項目の分は別）。超える記録は保てないので、state.json を書かない。
+ */
+export const MAX_UNSUPPORTED_TRACKING_BYTES = 256_000;
+/** 知らない版の追跡の記録の入れ子の深さの上限（tracking のオブジェクト自体を 1 段目とする） */
+export const MAX_UNSUPPORTED_TRACKING_DEPTH = 32;
+
+/** 知らない版の追跡の記録を保てないため、state.json を書かないときの例外（ファイルは書き換えない） */
+export class TrackingHoldError extends Error {
+  constructor(reason: string) {
+    super(`知らない版の追跡の記録を正しく書き戻せない（${reason}）ため、state.json を書きません`);
+    this.name = "TrackingHoldError";
+  }
+}
+
+/**
+ * JSON として、読んだときのまま書き戻せる値か（入れ子の深さも確かめる）。再帰を使わずに調べる。
+ *   null・真偽・文字・有限の数・配列・ふつうのオブジェクトだけ。Infinity（JSON では null になる）・BigInt・関数などは不可。
+ *   深さは、入れ物（配列・オブジェクト）ごとに 1 段。値そのもの（文字・数など）は段に数えない。
+ */
+export function inspectJsonValue(v: unknown, maxDepth: number): "ok" | "too-deep" | "not-serializable" {
+  const stack: [unknown, number][] = [[v, 1]];
+  while (stack.length) {
+    const [x, depth] = stack.pop()!;
+    if (x === null || typeof x === "string" || typeof x === "boolean") continue;
+    if (typeof x === "number") {
+      if (!Number.isFinite(x)) return "not-serializable";
+      continue;
+    }
+    if (typeof x !== "object") return "not-serializable";
+    if (depth > maxDepth) return "too-deep";
+    if (Array.isArray(x)) {
+      for (let i = 0; i < x.length; i++) {
+        if (!(i in x)) return "not-serializable"; // 穴のある配列（JSON では null になる）
+        stack.push([x[i], depth + 1]);
+      }
+      continue;
+    }
+    const proto = Object.getPrototypeOf(x);
+    if ((proto !== Object.prototype && proto !== null) || typeof (x as { toJSON?: unknown }).toJSON === "function") return "not-serializable";
+    for (const k of Object.keys(x)) stack.push([(x as Record<string, unknown>)[k], depth + 1]);
+  }
+  return "ok";
+}
+
+/** state.json の中に書かれる形での、追跡の記録の大きさ（バイト。字下げ 1・項目名 "tracking" を含む） */
+export function unsupportedTrackingBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify({ tracking: value }, null, 1), "utf8");
+}
+
+/**
+ * 知らない版の追跡の記録の預かり方を決める（state.json から読んだ値）。
+ * 先に深さと値の種類を調べ（再帰なし）、通ったものだけ実際の保存の形で大きさを測る。どこかでつまずいたら保てない扱い。
+ */
+export function holdUnsupportedTracking(value: unknown): UnsupportedTrackingHold {
+  const version = Number((value as { version?: unknown } | null)?.version);
+  try {
+    const shape = inspectJsonValue(value, MAX_UNSUPPORTED_TRACKING_DEPTH);
+    if (shape !== "ok") return { status: "rejected", version, reason: shape };
+    if (unsupportedTrackingBytes(value) > MAX_UNSUPPORTED_TRACKING_BYTES) return { status: "rejected", version, reason: "too-large" };
+    return { status: "kept", version, value };
+  } catch {
+    return { status: "rejected", version, reason: "not-serializable" };
+  }
+}
+
+/**
+ * 追跡の記録（今の版）を判定・更新して書いてよいか。知らない版の記録を預かっている間は false
+ * （判定しても書き戻さない。知らない版を消さないため。追跡の判定の処理は、これが false なら何もしない）。
+ */
+export function trackingWritable(s: IntelState): boolean {
+  return s.unsupportedTracking === undefined;
+}
 /** 送った通知の記録を覚えておく時間 */
 const NOTIFIED_KEEP_MS = 3 * 24 * 60 * 60_000;
 
@@ -36,14 +112,34 @@ export function parseState(raw: string | null): IntelState {
       notified: j.notified && typeof j.notified === "object" ? j.notified : {},
       daily: j.daily && typeof j.daily.date === "string" ? { date: j.daily.date, normal: Number(j.daily.normal) || 0, urgent: Number(j.daily.urgent) || 0 } : base.daily,
       lastRunAt: typeof j.lastRunAt === "string" ? j.lastRunAt : null,
+      // 追跡の記録（Phase 3）。無い・形が違うときは持たない（ほかの項目はそのまま読む。
+      // 追跡の記録の読み込みでつまずいても、印・情報源の状態・通知の記録まで消さない）
+      ...(() => {
+        try {
+          // 知らない版（新しい版）の記録は、読まずに預かる（壊れた記録とは区別する。保てないときも空にはしない）
+          if (isUnsupportedTracking(j.tracking)) return { unsupportedTracking: holdUnsupportedTracking(j.tracking) };
+          const tracking = normalizeTracking(j.tracking);
+          return tracking ? { tracking } : {};
+        } catch {
+          return {};
+        }
+      })(),
     };
   } catch {
     return emptyState();
   }
 }
 
+/**
+ * state.json に書く文字列。
+ * 知らない版の追跡の記録を預かっているときは、必ずそれを tracking に書き戻す（今の版の tracking があっても書かない）。
+ * 預かれなかったとき（rejected）は、書き戻すと中身が変わる・壊れるので、書かずに例外にする（ファイルはそのまま残る）。
+ */
 export function serializeState(s: IntelState): string {
-  return JSON.stringify(s, null, 1);
+  const { unsupportedTracking: hold, ...rest } = s;
+  if (hold?.status === "rejected") throw new TrackingHoldError(hold.reason);
+  const out = hold?.status === "kept" ? { ...rest, tracking: hold.value } : rest;
+  return JSON.stringify(out, null, 1);
 }
 
 export function lockHeld(s: IntelState, now = Date.now()): boolean {
