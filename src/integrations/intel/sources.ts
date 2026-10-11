@@ -25,9 +25,14 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 
 export const INTEL_SOURCES: readonly IntelSourceDef[] = [
-  { id: "usgs", label: "USGS 地震", kind: "official", minIntervalMs: 10 * MIN, maxAgeMs: 2 * HOUR, defaultOn: true, ready: false },
-  { id: "nhc", label: "NOAA ハリケーン", kind: "official", minIntervalMs: 30 * MIN, maxAgeMs: 6 * HOUR, defaultOn: true, ready: false },
-  { id: "jma", label: "気象庁 防災情報", kind: "official", minIntervalMs: 10 * MIN, maxAgeMs: 2 * HOUR, defaultOn: true, ready: false },
+  // USGS のまとめフィードは約 1 分ごとに更新。M4.5 以上・過去 1 日のフィードを 10 分ごとに読む
+  { id: "usgs", label: "USGS 地震", kind: "official", minIntervalMs: 10 * MIN, maxAgeMs: 2 * HOUR, defaultOn: true, ready: true },
+  // NHC は発表ごと（ふつう数時間おき）に更新。30 分ごとで十分
+  { id: "nhc", label: "NOAA ハリケーン", kind: "official", minIntervalMs: 30 * MIN, maxAgeMs: 6 * HOUR, defaultOn: true, ready: true },
+  // 気象庁の高頻度フィードは毎分更新・直近 10 分以上を掲載。取りこぼしたら長期フィード（毎時更新・数日分）で補う
+  { id: "jma", label: "気象庁 地震・津波", kind: "official", minIntervalMs: 10 * MIN, maxAgeMs: 2 * HOUR, defaultOn: true, ready: true },
+  // 台風の情報は数時間おき。長期フィード（毎時更新）を 1 時間ごとに読む
+  { id: "jmatyphoon", label: "気象庁 台風", kind: "official", minIntervalMs: 60 * MIN, maxAgeMs: 6 * HOUR, defaultOn: true, ready: true },
   { id: "gdelt", label: "GDELT 世界のニュース", kind: "report", minIntervalMs: 60 * MIN, maxAgeMs: 6 * HOUR, defaultOn: true, ready: false },
   { id: "gemini", label: "Gemini 検索", kind: "ai-search", minIntervalMs: 3 * HOUR, maxAgeMs: 12 * HOUR, defaultOn: true, ready: false },
   { id: "rss", label: "公的機関・報道の RSS", kind: "report", minIntervalMs: 60 * MIN, maxAgeMs: 12 * HOUR, defaultOn: false, ready: false },

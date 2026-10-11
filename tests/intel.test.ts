@@ -209,8 +209,10 @@ ON
     assert.deepEqual(activeSources(s, {}), []);
     assert.equal(inactiveReason("usgs", s, {}), "情報収集が止まっています（EDITH_INTEL）");
     assert.equal(inactiveReason("firms", s, { EDITH_INTEL: "on" }), INTEL_SOURCES.find((d) => d.id === "firms")!.ready ? "鍵（FIRMS_MAP_KEY）が未登録" : "準備中");
-    // フェーズ 1 では、どの情報源もまだ動かない（準備中）
-    assert.deepEqual(activeSources(s, { EDITH_INTEL: "on", FIRMS_MAP_KEY: "x", OPENALEX_API_KEY: "y" }), []);
+    // 準備中の情報源は、ON でも動かない（いま動くのは実装済みのものだけ）
+    const ready = INTEL_SOURCES.filter((d) => d.ready).map((d) => d.id);
+    assert.deepEqual(activeSources(s, { EDITH_INTEL: "on", FIRMS_MAP_KEY: "x", OPENALEX_API_KEY: "y" }), ready);
+    assert.equal(inactiveReason("gdelt", s, { EDITH_INTEL: "on" }), "準備中");
     s.enabled = false;
     assert.equal(inactiveReason("usgs", s, { EDITH_INTEL: "on" }), "設定ノートで全体が OFF");
   });

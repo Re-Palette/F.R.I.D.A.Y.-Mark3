@@ -1,7 +1,7 @@
 /**
  * E.D.I.T.H. が集めた情報の保存（.friday/intel/items.json）。
  *
- * - 同じ ID の情報は 1 件にまとめる（続報なら中身を新しくし、初めて見た時刻は残す）
+ * - 同じ ID の情報は 1 件にまとめる（続報なら中身を新しくし、初めて見た時刻は残す。古い発表では上書きしない）
  * - 直近 14 日分・最大 1,200 件だけ残す（GitHub の API で読める大きさに収める）
  * - 外から来た文字は、長さを切り、制御文字を除き、リンクは http(s) だけにする
  * 書くのは、実行中の印を持っている実行だけ（state.ts の acquireRun / stillOwner）。
@@ -131,7 +131,13 @@ export function mergeItems(existing: IntelItem[], incoming: IntelItem[], now = D
   for (const i of existing) map.set(i.id, i);
   for (const i of incoming) {
     const prev = map.get(i.id);
-    map.set(i.id, prev ? { ...i, firstSeenAt: prev.firstSeenAt < i.firstSeenAt ? prev.firstSeenAt : i.firstSeenAt } : i);
+    if (!prev) {
+      map.set(i.id, i);
+      continue;
+    }
+    // 古い発表が、すでにある新しい発表を上書きしないようにする（取りこぼしを補って古い電文を読んだときなど）
+    if (prev.updatedAt && i.updatedAt && i.updatedAt < prev.updatedAt) continue;
+    map.set(i.id, { ...i, firstSeenAt: prev.firstSeenAt < i.firstSeenAt ? prev.firstSeenAt : i.firstSeenAt });
   }
   return [...map.values()]
     .filter((i) => now - (Number.isFinite(itemTime(i)) ? itemTime(i) : now) <= RETENTION_MS)

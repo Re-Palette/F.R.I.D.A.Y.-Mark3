@@ -8,7 +8,7 @@
  */
 
 /** 情報源の ID（設定ノート・状態ファイルで使う。変えると記録が引き継がれない） */
-export type IntelSourceId = "usgs" | "nhc" | "jma" | "gdelt" | "gemini" | "rss" | "launches" | "arxiv" | "crossref" | "openalex" | "firms";
+export type IntelSourceId = "usgs" | "nhc" | "jma" | "jmatyphoon" | "gdelt" | "gemini" | "rss" | "launches" | "arxiv" | "crossref" | "openalex" | "firms";
 
 /** 情報の種類（公式発表と報道記事を区別する） */
 export type IntelKind = "official" | "report" | "ai-search" | "research";
