@@ -10,10 +10,13 @@
  *   台風 … 「台風解析・予報情報」（VPTW60〜65）。電文コードごとに最新の電文を読み、同じ台風は番号（無ければ EventID）で 1 件にまとめる
  * 電文の Control/Status が「通常」以外（訓練・試験）は取り込まない。InfoType が「取消」なら取消として残す。
  * 出典は気象庁（加工して表示するので、画面では「気象庁の情報をもとに作成」と示す）。
+ *
+ * 台風は、取り込みとは別に、フィードの観測の記録（FeedObservation）を ctx.observe に渡す（Phase 3。渡すだけで、保存・判定はしない）。
  */
-import { getText } from "../http";
-import type { IntelItem } from "../types";
-import { makeItem, type SourceContext } from "./common";
+import { getText, SourceError } from "../http";
+import { cleanText, isoStrict } from "../normalize";
+import { FEED_OBSERVATION_LIMITS, type FeedBulletinOutcome, type FeedObservation, type FeedStreamObservation, type IntelFetchErrorKind, type IntelItem } from "../types";
+import { makeItem, reportObservation, type SourceContext } from "./common";
 
 const BASE = "https://www.data.jma.go.jp/developer/xml/feed";
 export const JMA_EQVOL_URL = `${BASE}/eqvol.xml`;
@@ -207,13 +210,20 @@ export function typhoonCode(url: string | null): string | null {
   return url ? (/_(VPTW6[0-5])_/.exec(url)?.[1] ?? null) : null;
 }
 
+/** フィードの項目が台風の電文（台風解析・予報情報、VPTW60〜65、気象庁のリンク）なら、その電文コードとリンク */
+function typhoonEntry(e: AtomEntry): { code: string; url: string } | null {
+  const url = jmaDocUrl(e.link);
+  const code = typhoonCode(url);
+  return url && code && /台風解析・予報情報/.test(e.title) ? { code, url } : null;
+}
+
 /** フィードから、電文コードごとに最新の台風の電文を選ぶ（同じ台風の古い発表は読まない） */
 export function latestTyphoonDocs(entries: AtomEntry[]): { code: string; url: string; updated: string }[] {
   const latest = new Map<string, { code: string; url: string; updated: string }>();
   for (const e of entries) {
-    const url = jmaDocUrl(e.link);
-    const code = typhoonCode(url);
-    if (!url || !code || !/台風解析・予報情報/.test(e.title)) continue;
+    const entry = typhoonEntry(e);
+    if (!entry) continue;
+    const { url, code } = entry;
     const updated = e.updated ?? "";
     const prev = latest.get(code);
     // 時刻は文字ではなく時刻として比べる（「Z」と「+09:00」の書き方が混ざっても新旧を取り違えない）
@@ -351,19 +361,124 @@ export async function fetchJmaQuake(ctx: SourceContext): Promise<IntelItem[]> {
   return items.sort((a, b) => (a.updatedAt ?? "").localeCompare(b.updatedAt ?? ""));
 }
 
-/** 台風（電文コードごとに最新の電文だけを読む。1 通読めなくても、ほかの台風は取り込む） */
+/* ---------- 台風のフィードの観測の記録（Phase 3：記録して渡すだけ。保存・判定はしない） ---------- */
+
+const STREAM_RE = /^VPTW6[0-5]$/;
+const REPORT_RE = /^[A-Za-z0-9_.-]{1,80}$/;
+
+/** 電文 1 通の扱い（電文コードごと） */
+interface StreamOutcome {
+  bulletin: FeedBulletinOutcome;
+  itemId: string | null;
+  reportAt: string | null;
+  docError: FeedStreamObservation["docError"];
+}
+const outcome = (bulletin: FeedBulletinOutcome, rest: Partial<StreamOutcome> = {}): StreamOutcome => ({ bulletin, itemId: null, reportAt: null, docError: null, ...rest });
+
+/** 失敗の内容（種類・状態の番号・メッセージ） */
+function errorInfo(err: unknown): { kind: IntelFetchErrorKind; httpStatus: number | null; message: string } {
+  const message = cleanText(err instanceof Error ? err.message : "失敗しました", FEED_OBSERVATION_LIMITS.message);
+  return err instanceof SourceError ? { kind: err.kind, httpStatus: err.status ?? null, message } : { kind: "other", httpStatus: null, message };
+}
+
+/** フィード全体の取得・解析に失敗した回の記録（件数は null・系列は空＝分からない。0 件・系列なしではない） */
+function failedObservation(fetchedAt: string, status: "fetch-failed" | "unparseable", err: unknown): FeedObservation {
+  return { source: "jmatyphoon", fetchedAt, status, failure: errorInfo(err), feedLastModified: null, feedNewestEntryAt: null, entryCount: null, typhoonEntryCount: null, streams: [] };
+}
+
+/**
+ * 読めたフィードの記録。すでに読んだ電文で絞り込む前の、フィード全体から作る（新しい電文が無い回でも系列ごとの最新時刻が分かる）。
+ * 時刻はフィードの項目の時刻（updated）で、電文の発表時刻（reportAt）とは別。読めない時刻は使わない（推測しない）。
+ */
+export function observeTyphoonFeed(entries: AtomEntry[], fetchedAt: string, outcomes: ReadonlyMap<string, StreamOutcome>): FeedObservation {
+  let newest: string | null = null;
+  let typhoonEntryCount = 0;
+  const times = new Map<string, Set<string>>();
+  for (const e of entries) {
+    const at = isoStrict(e.updated);
+    if (at && (!newest || Date.parse(at) > Date.parse(newest))) newest = at;
+    const t = typhoonEntry(e);
+    if (!t) continue;
+    typhoonEntryCount++;
+    if (at) (times.get(t.code) ?? times.set(t.code, new Set()).get(t.code)!).add(at);
+  }
+  const streams: FeedStreamObservation[] = [];
+  for (const d of latestTyphoonDocs(entries)) {
+    if (!STREAM_RE.test(d.code)) continue;
+    const report = reportName(d.url);
+    const o = outcomes.get(d.code) ?? outcome("doc-unparseable");
+    streams.push({
+      stream: d.code,
+      latestAt: isoStrict(d.updated),
+      latestReport: REPORT_RE.test(report) ? report : null,
+      recentAt: [...(times.get(d.code) ?? [])].sort((a, b) => Date.parse(b) - Date.parse(a)).slice(0, FEED_OBSERVATION_LIMITS.recentAt),
+      ...o,
+    });
+    if (streams.length >= FEED_OBSERVATION_LIMITS.streams) break;
+  }
+  return {
+    source: "jmatyphoon",
+    fetchedAt,
+    status: "ok",
+    failure: null,
+    feedLastModified: null, // いまは取得しない（推測で埋めない）
+    feedNewestEntryAt: newest,
+    entryCount: entries.length,
+    typhoonEntryCount,
+    streams,
+  };
+}
+
+/** 取得できたが台風の項目にならなかった電文の理由（訓練・試験の電文か、読めない電文か） */
+function unreadableReason(xml: string): FeedBulletinOutcome {
+  const status = tag(block(xml, "Control") ?? "", "Status");
+  return status && status !== "通常" ? "doc-not-normal" : "doc-unparseable";
+}
+
+/**
+ * 台風（電文コードごとに最新の電文だけを読む。1 通読めなくても、ほかの台風は取り込む）。
+ * あわせて、フィードの観測の記録を ctx.observe に渡す（取り込む項目・重複の除き方・例外はこれまでと同じ）。
+ */
 export async function fetchJmaTyphoon(ctx: SourceContext): Promise<IntelItem[]> {
-  const entries = await feed(JMA_EXTRA_LONG_URL, ctx, 8_000_000);
-  const picked = latestTyphoonDocs(entries).filter((d) => !ctx.knownReports.has(reportName(d.url)));
+  const fetchedAt = new Date(ctx.now).toISOString();
+  let text: string;
+  try {
+    text = await getText(JMA_EXTRA_LONG_URL, { hosts: HOSTS, fetchImpl: ctx.fetchImpl, accept: "application/atom+xml, application/xml", maxBytes: 8_000_000 });
+  } catch (err) {
+    reportObservation(ctx, failedObservation(fetchedAt, "fetch-failed", err));
+    throw err; // これまでどおり、情報源の失敗として扱う
+  }
+  let entries: AtomEntry[];
+  try {
+    entries = parseAtom(text);
+  } catch (err) {
+    reportObservation(ctx, failedObservation(fetchedAt, "unparseable", err));
+    throw err;
+  }
+  const latest = latestTyphoonDocs(entries);
+  const outcomes = new Map<string, StreamOutcome>();
+  for (const d of latest) if (ctx.knownReports.has(reportName(d.url))) outcomes.set(d.code, outcome("already-known"));
+  const picked = latest.filter((d) => !ctx.knownReports.has(reportName(d.url)));
   const docs = await Promise.all(
     picked.map(async (d) => {
+      let xml: string;
       try {
-        const xml = await getText(d.url, { hosts: HOSTS, fetchImpl: ctx.fetchImpl, accept: "application/xml", maxBytes: 1_000_000 });
-        return parseTyphoonDoc(xml, d.url, ctx.now);
+        xml = await getText(d.url, { hosts: HOSTS, fetchImpl: ctx.fetchImpl, accept: "application/xml", maxBytes: 1_000_000 });
+      } catch (err) {
+        const e = errorInfo(err);
+        outcomes.set(d.code, outcome("doc-fetch-failed", { docError: { kind: e.kind, httpStatus: e.httpStatus } }));
+        return null;
+      }
+      try {
+        const item = parseTyphoonDoc(xml, d.url, ctx.now);
+        outcomes.set(d.code, item ? outcome("new-read", { itemId: item.id, reportAt: isoStrict(item.updatedAt) }) : outcome(unreadableReason(xml)));
+        return item;
       } catch {
+        outcomes.set(d.code, outcome("doc-unparseable"));
         return null;
       }
     }),
   );
+  reportObservation(ctx, observeTyphoonFeed(entries, fetchedAt, outcomes));
   return docs.filter((d): d is IntelItem => d !== null).sort((a, b) => (a.updatedAt ?? "").localeCompare(b.updatedAt ?? ""));
 }

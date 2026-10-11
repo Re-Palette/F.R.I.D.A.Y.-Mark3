@@ -136,31 +136,72 @@ export type UnsupportedTrackingHold =
  * 「発表が止まった」と「追跡の終わり」は別のもの。終わり（ended）は、明示的な終了の根拠があるときだけ。
  */
 
+/** 取得の失敗の種類（http.ts の SourceError.kind と同じ値） */
+export type IntelFetchErrorKind = "http" | "timeout" | "network" | "too-large" | "redirect" | "other";
+
 /**
- * 1 回の取得で見えた、フィード全体の様子（保存しない。判定の材料）。
+ * フィード全体の取得の結果。
+ *   ok           … 取得して読めた（新しい電文が無くても ok）
+ *   fetch-failed … 取得できなかった（HTTP エラー・時間切れ・通信・大きすぎる・転送など）
+ *   unparseable  … 取得できたが、フィードとして読めなかった
+ */
+export type FeedObservationStatus = "ok" | "fetch-failed" | "unparseable";
+
+/** 観測の記録の上限（大きくしすぎない） */
+export const FEED_OBSERVATION_LIMITS = { streams: 6, recentAt: 8, message: 160 } as const;
+
+/**
+ * 1 回の取得で見えた、フィード全体の様子（保存しない。判定もしない。あとの段階の判定の材料）。
  * 新しい電文が無かった回でも、電文の系列ごとの最新時刻が分かる（「発表が来なかった」を記録するため）。
+ * 取得・解析に失敗した回は、件数は null・系列は空（「0 件」「系列が無い」ではなく「分からない」）。
+ * 時刻は 3 種類を分ける：fetchedAt（こちらが取得した時刻）・フィードの項目の時刻（latestAt など）・電文の発表時刻（reportAt）。
  */
 export interface FeedObservation {
   source: IntelSourceId;
-  /** 取得した時刻 */
+  /** こちらがフィードを取得した時刻（取得を始めた時刻。発表の時刻ではない） */
   fetchedAt: string;
-  /** フィードの HTTP Last-Modified（無ければ null） */
+  status: FeedObservationStatus;
+  /** 失敗したとき（fetch-failed・unparseable）の内容。ok なら null */
+  failure: { kind: IntelFetchErrorKind; httpStatus: number | null; message: string } | null;
+  /** フィードの HTTP Last-Modified（いまは取得しないので常に null。推測で埋めない） */
   feedLastModified: string | null;
-  /** フィードに載っている一番新しい項目の時刻（判定の基準の時刻に使う。無ければ null） */
+  /** フィードに載っている一番新しい項目の時刻（台風以外の項目も含む。読めなければ・失敗なら null） */
   feedNewestEntryAt: string | null;
-  /** 電文の系列ごとの様子（例：気象庁の電文コード VPTW62） */
+  /** フィードの項目の数（失敗なら null。0 は「読めたが項目が無い」） */
+  entryCount: number | null;
+  /** そのうち台風の電文（台風解析・予報情報、VPTW60〜65）の項目の数（失敗なら null） */
+  typhoonEntryCount: number | null;
+  /** 電文の系列ごとの様子（例：気象庁の電文コード VPTW62）。失敗なら空（分からない） */
   streams: FeedStreamObservation[];
 }
 
+/**
+ * 系列の最新の電文を、今回どう扱ったか。
+ *   new-read         … 新しい電文を読んで、項目にした
+ *   already-known    … 前に読んだ電文（読み直さない。「新しい発表が無い」）
+ *   doc-fetch-failed … 電文を取得できなかった（次の実行でもう一度読む）
+ *   doc-unparseable  … 電文を取得したが、台風の項目として読めなかった（実況が無い・番号も EventID も無いなど）
+ *   doc-not-normal   … 訓練・試験の電文（通常でない。取り込まない決まり）
+ */
+export type FeedBulletinOutcome = "new-read" | "already-known" | "doc-fetch-failed" | "doc-unparseable" | "doc-not-normal";
+
 export interface FeedStreamObservation {
-  /** 電文の系列（例 "VPTW62"）。同じ系列が同じ出来事のままとは限らない（使い回しを前提にしない） */
+  /** 電文の系列（気象庁は VPTW60〜65）。同じ系列が同じ出来事のままとは限らない（使い回しを前提にしない） */
   stream: string;
-  /** その系列の最新の項目の時刻 */
-  latestAt: string;
-  /** その系列の最新の電文の名前（facts.report と同じ形） */
-  latestReport: string;
-  /** その系列の直近の発表時刻（新しい順） */
+  /** フィードに載っている、その系列の最新の項目の時刻（フィードの updated。電文の発表時刻とは別。読めなければ null） */
+  latestAt: string | null;
+  /** その系列の最新の電文の名前（facts.report と同じ形。読めなければ null） */
+  latestReport: string | null;
+  /** フィードに載っている、その系列の直近の項目の時刻（新しい順・上限あり） */
   recentAt: string[];
+  /** 最新の電文を今回どう扱ったか */
+  bulletin: FeedBulletinOutcome;
+  /** 新しく読んで項目にしたときの、項目の id（new-read のときだけ。それ以外は null） */
+  itemId: string | null;
+  /** 電文の中の発表時刻（ReportDateTime）。電文を読めたとき（new-read）だけ。それ以外は null（推測しない） */
+  reportAt: string | null;
+  /** 電文の取得に失敗したとき（doc-fetch-failed）の種類。それ以外は null */
+  docError: { kind: IntelFetchErrorKind; httpStatus: number | null } | null;
 }
 
 /** 電文の実況に書かれた現象の階級（気象庁の TyphoonClass の括弧内）。読めない・知らない値は unknown */

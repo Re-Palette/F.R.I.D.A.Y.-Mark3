@@ -4,7 +4,7 @@
  */
 import { normalizeItem } from "../normalize";
 import type { FetchLike } from "../http";
-import type { IntelItem } from "../types";
+import type { FeedObservation, IntelItem } from "../types";
 
 export interface SourceContext {
   now: number;
@@ -15,6 +15,25 @@ export interface SourceContext {
   knownReports: Set<string>;
   /** その情報源で最後に取れた時刻（取りこぼしの判定。無ければ null） */
   lastSuccessAt: number | null;
+  /**
+   * フィードの観測の記録を受け取る（省略可能。Phase 3）。いまは気象庁の台風だけが呼ぶ。
+   * 渡さなければ、これまでどおり（呼ばれない）。この中の失敗は、情報の取り込みに影響しない（reportObservation）。
+   */
+  observe?: (o: FeedObservation) => void;
+}
+
+/**
+ * 観測の記録を渡す。受け取る側の失敗（例外・失敗した Promise）は握りつぶし、情報の取り込みは続ける。
+ * 受け取る側が中身を書き換えても取り込みに響かないよう、写しを渡す。
+ */
+export function reportObservation(ctx: SourceContext, o: FeedObservation): void {
+  if (!ctx.observe) return;
+  try {
+    const r = ctx.observe(structuredClone(o)) as unknown;
+    if (r && typeof (r as Promise<unknown>).catch === "function") (r as Promise<unknown>).catch(() => {});
+  } catch {
+    /* 観測の記録の失敗で、収集を止めない */
+  }
 }
 
 export type SourceFetcher = (ctx: SourceContext) => Promise<IntelItem[]>;
