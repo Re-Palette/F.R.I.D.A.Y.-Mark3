@@ -41,6 +41,8 @@ export interface CheckReport {
   parsed: number;
   mismatches: string[];
   samples: Record<string, unknown>[];
+  /** 電文ごとの解析結果と、読めなかった項目の調査（台風だけ） */
+  details?: Record<string, unknown>[];
   error?: string;
 }
 
@@ -78,8 +80,8 @@ const pathOf = (u: string | null) => {
 };
 
 /** 見本（最大 2 件。位置は小数 1 桁、リンクはホストとパスだけ） */
-function sample(items: IntelItem[]): Record<string, unknown>[] {
-  return items.slice(0, 2).map((i) => ({
+function sample(items: IntelItem[], max = 2): Record<string, unknown>[] {
+  return items.slice(0, max).map((i) => ({
     id: short(i.id, 60),
     kind: i.kind,
     title: short(i.title),
@@ -206,6 +208,66 @@ export async function checkJmaQuake(fetchImpl: FetchLike): Promise<CheckReport> 
   return r;
 }
 
+/** 台風の見本の上限（電文コードは VPTW60〜65 の最大 6 つ） */
+const TYPHOON_SAMPLES = 6;
+/** 調査で見せる要素の数・長さの上限（電文の全文は出さない） */
+const MAX_DIAG_ELEMENTS = 10;
+const MAX_ATTR_VALUE = 40;
+const MAX_ELEMENT_VALUE = 20;
+
+/** 電文の中の「実況」の部分（本番の解析と同じく、DateTime の type に「実況」を含む MeteorologicalInfo） */
+function observedBlock(xml: string): { infos: number; observed: string | null } {
+  const body = /<(?:[\w-]+:)?Body[\s>][\s\S]*<\/(?:[\w-]+:)?Body>/.exec(xml)?.[0] ?? "";
+  const infos = [...body.matchAll(/<(?:[\w-]+:)?MeteorologicalInfo[\s>][\s\S]*?<\/(?:[\w-]+:)?MeteorologicalInfo>/g)].map((m) => m[0]);
+  return { infos: infos.length, observed: infos.find((i) => /<(?:[\w-]+:)?DateTime\b[^>]*type="[^"]*実況/.test(i)) ?? null };
+}
+
+/** 要素の属性（実際にあるものだけ。値は短く切る） */
+function attrsOf(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of raw.matchAll(/([\w:-]+)="([^"]*)"/g)) {
+    if (Object.keys(out).length >= 8) break;
+    out[short(m[1], 30)] = short(m[2], MAX_ATTR_VALUE);
+  }
+  return out;
+}
+
+/**
+ * 最大風速が読めなかった電文の調査：実況の部分にある「風」に関係する要素（WindSpeed など）の名前・属性・値と、
+ * 実況の部分にある項目の種類（Kind/Property/Type。例：呼称・階級・中心・風）だけを出す。電文の全文は出さない。
+ */
+export function windDiagnostics(xml: string): Record<string, unknown> {
+  const { infos, observed } = observedBlock(xml);
+  if (!observed) return { meteorologicalInfos: infos, observed: false };
+  const types = [...new Set([...observed.matchAll(/<(?:[\w-]+:)?Type>([^<]*)<\/(?:[\w-]+:)?Type>/g)].map((m) => short(m[1], 20)))].slice(0, MAX_DIAG_ELEMENTS);
+  const windElements = [...observed.matchAll(/<((?:[\w-]+:)?\w*Wind\w*)(\s[^>]*)?>([^<]*)<\/\1>/g)].slice(0, MAX_DIAG_ELEMENTS).map((m) => ({
+    element: short(m[1], 40),
+    attrs: attrsOf(m[2] ?? ""),
+    value: short(m[3], MAX_ELEMENT_VALUE),
+  }));
+  // 風の部分（WindPart）があるか・中に何もないか（空の要素 <WindSpeed .../> も数える）
+  const windPart = /<(?:[\w-]+:)?WindPart[\s>/]/.test(observed);
+  const emptyWindElements = [...observed.matchAll(/<((?:[\w-]+:)?\w*Wind\w*)(\s[^>]*)?\/>/g)].slice(0, MAX_DIAG_ELEMENTS).map((m) => ({ element: short(m[1], 40), attrs: attrsOf(m[2] ?? ""), value: null }));
+  return { meteorologicalInfos: infos, observed: true, propertyTypes: types, windPart, windElements: [...windElements, ...emptyWindElements].slice(0, MAX_DIAG_ELEMENTS) };
+}
+
+/** 電文ごとの解析結果（番号・名前・位置・気圧・風速） */
+function typhoonDetail(code: string, item: IntelItem): Record<string, unknown> {
+  return {
+    code,
+    report: item.facts.report ?? null,
+    id: short(item.id, 60),
+    typhoon: item.facts.typhoon ?? null,
+    name: item.facts.name ?? null,
+    typhoonClass: item.facts.typhoonClass ?? null,
+    place: item.place ? { name: short(item.place.name, 40), lat: round1(item.place.lat), lon: round1(item.place.lon) } : null,
+    pressureHpa: item.facts.pressureHpa ?? null,
+    windMs: item.facts.windMs ?? null,
+    windKt: item.facts.windKt ?? null,
+    updatedAt: item.updatedAt,
+  };
+}
+
 export async function checkJmaTyphoon(fetchImpl: FetchLike): Promise<CheckReport> {
   const r = base("気象庁 台風");
   const f = recordingFetch(fetchImpl, r.http);
@@ -230,13 +292,17 @@ export async function checkJmaTyphoon(fetchImpl: FetchLike): Promise<CheckReport
         const missingFacts: string[] = ["typhoon", "pressureHpa", "windMs"].filter((k) => item.facts[k] === null || item.facts[k] === undefined);
         if (item.place === null) missingFacts.push("place");
         if (missingFacts.length) r.mismatches.push(`${d.code}：読めなかった項目 ${missingFacts.join("・")}`);
+        const detail = typhoonDetail(d.code, item);
+        // 最大風速が読めなかったときは、値が無いのか・あるが読めていないのかを見分けるための材料を付ける
+        if (item.facts.windMs === null || item.facts.windMs === undefined) detail.windDiagnostics = windDiagnostics(xml);
+        (r.details ??= []).push(detail);
       } catch (err) {
         r.mismatches.push(`${d.code}：電文の取得に失敗：${errText(err)}`);
       }
     }
     r.parsed = items.length;
     if (typhoon.length === 0) r.mismatches.push("（参考）随時の長期フィードに台風の情報がありません（台風が無ければ正常）");
-    r.samples = sample(items);
+    r.samples = sample(items, TYPHOON_SAMPLES);
     r.ok = true;
   } catch (err) {
     r.error = errText(err);

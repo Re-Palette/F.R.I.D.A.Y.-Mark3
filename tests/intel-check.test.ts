@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-const { runChecks, render, checkUsgs } = await import("../scripts/intel-check");
+const { runChecks, render, checkUsgs, checkJmaTyphoon, windDiagnostics } = await import("../scripts/intel-check");
 const { USGS_URL } = await import("../src/integrations/intel/sources/usgs");
 const { NHC_URL } = await import("../src/integrations/intel/sources/nhc");
 const { JMA_EQVOL_URL, JMA_EQVOL_LONG_URL, JMA_EXTRA_LONG_URL } = await import("../src/integrations/intel/sources/jma");
@@ -174,6 +174,87 @@ describe("実データ確認の結果", () => {
     // 命令の形（行頭の ::）は、最初と最後の 2 行だけ
     assert.equal(lines.join("\n").split("\n").filter((l) => l.startsWith("::")).length, 2);
     assert.ok(!lines.join("\n").includes("長".repeat(100)));
+  });
+});
+
+/* ---------- 台風：電文ごとの結果と、最大風速が読めないときの調査 ---------- */
+
+/** 実況の「風」の部分を差し替えた台風の電文（ほかは typhoonXml と同じ） */
+const typhoonWith = (opts: { number: string; wind: string; headline?: string }) =>
+  typhoonXml
+    .replace("<Number>2621</Number>", `<Number>${opts.number}</Number>`)
+    .replace(/<Kind><Property><Type>風<\/Type>[\s\S]*?<\/Kind>/, opts.wind)
+    .replace("<Headline><Text></Text></Headline>", `<Headline><Text>${opts.headline ?? ""}</Text></Headline>`);
+
+const KT_ONLY = `<Kind><Property><Type>風</Type><WindPart><jmx_eb:WindSpeed type="最大風速" unit="ノット" condition="中心付近">35</jmx_eb:WindSpeed></WindPart></Property></Kind>`;
+const NO_WIND = "";
+const EMPTY_WIND = `<Kind><Property><Type>風</Type><WindPart><jmx_eb:WindSpeed type="最大風速" unit="m/s" condition="中心付近"/></WindPart></Property></Kind>`;
+
+const typhoonFeed = atom([
+  { title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "t0_VPTW60_010000" },
+  { title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "t1_VPTW61_010000" },
+  { title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "t2_VPTW62_010000" },
+  { title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "t3_VPTW63_010000" },
+]);
+
+describe("台風の調査（電文ごとの結果・最大風速が読めないとき）", () => {
+  it("見本は最大 6 件。電文ごとに番号・名前・位置・気圧・風速を出す", async () => {
+    const f = fakeFetch({
+      [JMA_EXTRA_LONG_URL]: ok(typhoonFeed, "application/atom+xml"),
+      [`${DATA}/t0_VPTW60_010000.xml`]: ok(typhoonWith({ number: "2620", wind: KT_ONLY })),
+      [`${DATA}/t1_VPTW61_010000.xml`]: ok(typhoonXml),
+      [`${DATA}/t2_VPTW62_010000.xml`]: ok(typhoonWith({ number: "2622", wind: NO_WIND })),
+      [`${DATA}/t3_VPTW63_010000.xml`]: ok(typhoonWith({ number: "2623", wind: EMPTY_WIND })),
+    });
+    const r = await checkJmaTyphoon(f.fn);
+    assert.equal(r.parsed, 4);
+    assert.equal(r.samples.length, 4); // 以前の上限（2 件）を超えて出る
+    assert.equal(r.details?.length, 4);
+    const byCode = Object.fromEntries((r.details ?? []).map((d) => [d.code as string, d]));
+    assert.equal(byCode.VPTW61.windMs, 23);
+    assert.equal(byCode.VPTW61.windDiagnostics, undefined); // 読めたときは調査を付けない
+    assert.equal(byCode.VPTW61.typhoon, 21);
+    assert.equal(byCode.VPTW61.name, "NAME");
+    assert.deepEqual(byCode.VPTW61.place, { name: "フィリピンの東", lat: 20.1, lon: 131 });
+    assert.equal(byCode.VPTW61.pressureHpa, 990);
+  });
+
+  it("ノットだけで m/s が無い：値はあるが m/s では読めていない、と分かる", () => {
+    const d = windDiagnostics(typhoonWith({ number: "2620", wind: KT_ONLY }));
+    assert.equal(d.observed, true);
+    assert.equal(d.windPart, true);
+    assert.deepEqual(d.windElements, [{ element: "jmx_eb:WindSpeed", attrs: { type: "最大風速", unit: "ノット", condition: "中心付近" }, value: "35" }]);
+    assert.ok((d.propertyTypes as string[]).includes("風"));
+  });
+
+  it("風の部分が無い：値そのものが無い、と分かる", () => {
+    const d = windDiagnostics(typhoonWith({ number: "2622", wind: NO_WIND }));
+    assert.equal(d.windPart, false);
+    assert.deepEqual(d.windElements, []);
+    assert.ok(!(d.propertyTypes as string[]).includes("風"));
+  });
+
+  it("要素はあるが中身が空：空の要素として分かる", () => {
+    const d = windDiagnostics(typhoonWith({ number: "2623", wind: EMPTY_WIND }));
+    assert.deepEqual(d.windElements, [{ element: "jmx_eb:WindSpeed", attrs: { type: "最大風速", unit: "m/s", condition: "中心付近" }, value: null }]);
+  });
+
+  it("実況の部分が無い電文も、止まらずにそう伝える", () => {
+    assert.deepEqual(windDiagnostics("<Report><Body></Body></Report>"), { meteorologicalInfos: 0, observed: false });
+  });
+
+  it("電文の全文や関係のない本文は出さない。属性・値は短く切る", async () => {
+    const secret = "関係のない長い本文".repeat(200);
+    const longAttr = `<Kind><Property><Type>風</Type><WindPart><jmx_eb:WindSpeed type="最大風速" unit="ノット" condition="${"長".repeat(300)}">${"9".repeat(300)}</jmx_eb:WindSpeed></WindPart></Property></Kind>`;
+    const f = fakeFetch({
+      [JMA_EXTRA_LONG_URL]: ok(atom([{ title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "t0_VPTW60_010000" }]), "application/atom+xml"),
+      [`${DATA}/t0_VPTW60_010000.xml`]: ok(typhoonWith({ number: "2620", wind: longAttr, headline: secret })),
+    });
+    const out = render([await checkJmaTyphoon(f.fn)], "TOK").join("\n");
+    assert.ok(!out.includes("関係のない長い本文関係のない長い本文"));
+    assert.ok(!out.includes("長".repeat(41)));
+    assert.ok(!out.includes("9".repeat(21)));
+    assert.ok(!out.includes("<Report"));
   });
 });
 
