@@ -16,6 +16,7 @@ import type { HoloModel } from "@/lib/hologram-schema";
 import { buildAsset, buildModel, dotTexture, holoMaterial } from "./hologram-visuals";
 import { toggleHand, useHandStatus, warmHands } from "./HandControl";
 import { settled } from "@/lib/settle";
+import { isScreenCovered } from "@/lib/screen-cover";
 
 const ORANGE = 0xff8a1f;
 const AMBER = 0xffb45a;
@@ -388,7 +389,7 @@ export const Hologram = memo(function Hologram({
           return;
         }
         blank = false;
-        if (!on || !onScreen || document.hidden) {
+        if (!on || !onScreen || document.hidden || isScreenCovered()) {
           last = now;
           return;
         }

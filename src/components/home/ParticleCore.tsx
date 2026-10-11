@@ -12,6 +12,7 @@
 import { memo, useEffect, useRef } from "react";
 import { voiceLevel } from "@/lib/voice-level";
 import { settled } from "@/lib/settle";
+import { isScreenCovered } from "@/lib/screen-cover";
 
 export type CoreMode = "idle" | "listening" | "connect" | "think" | "search" | "create" | "speaking";
 
@@ -378,7 +379,8 @@ export const ParticleCore = memo(function ParticleCore({
     let eased = false;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      if (document.hidden) {
+      // 裏にある間・切り替えの演出が覆っている間は描かない（重さの見張りも数えない）
+      if (document.hidden || isScreenCovered()) {
         prev = 0;
         return;
       }

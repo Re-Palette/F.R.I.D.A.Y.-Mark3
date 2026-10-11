@@ -11,9 +11,10 @@
  * 拍手 2 回の起動（playBoot）でも、同じ幕で「ALL SYSTEMS ONLINE」を見せる（起動の一言に合わせて少し長め。画面は切り替えない）。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import type { AiMode } from "@/lib/ai-mode";
 import { bootGreeting } from "@/lib/boot-line";
+import { setScreenCovered } from "@/lib/screen-cover";
 
 const META: Record<AiMode, { name: string; sub: string; caption: string }> = {
   friday: { name: "F.R.I.D.A.Y.", sub: "STANDARD PROTOCOL", caption: "通常モードに復帰" },
@@ -77,24 +78,40 @@ export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: React
     setRun({ kind: "switch", from, to: mode, key: Date.now(), phase: "cover", held: false });
   }, [mode]);
 
-  /** 拍手 2 回の起動の演出（いまの画面のまま。切り替えの途中なら、そちらを優先する） */
+  /**
+   * 拍手 2 回の起動の演出（いまの画面のまま。切り替えの途中なら、そちらを優先する）。
+   * 画面が裏から前に出てくる途中で呼ばれるので、幕は最初から不透明で出し、下の画面もすぐ隠す
+   * （前に出た瞬間に F.R.I.D.A.Y. の画面が一瞬見えないように。React の描画を待たずに隠す）。
+   */
   const playBoot = useCallback(() => {
     const m = prev.current;
-    setRun((r) => (r && r.kind === "switch" ? r : { kind: "boot", from: m, to: m, key: Date.now(), phase: reducedMotion() ? "reduced" : "cover", held: reducedMotion() }));
+    const reduced = reducedMotion();
+    if (!reduced) setScreenCovered(true);
+    flushSync(() =>
+      setRun((r) => (r && r.kind === "switch" ? r : { kind: "boot", from: m, to: m, key: Date.now(), phase: reduced ? "reduced" : "cover", held: reduced })),
+    );
   }, []);
 
-  // 新しい画面が描き終わって（2 フレーム待つ）、名前を見せる時間も過ぎたら、幕を開ける
+  // 新しい画面ができて、名前を見せる時間も過ぎたら：下の画面を描き始め（幕の裏で 2 フレーム描かせてから）、幕を開ける
   useEffect(() => {
     if (!run || run.phase !== "cover" || !run.held || shown !== run.to) return;
-    let r2 = 0;
-    const r1 = requestAnimationFrame(() => {
-      r2 = requestAnimationFrame(() => setRun((r) => (r && r.key === run.key ? { ...r, phase: "reveal" } : r)));
-    });
-    return () => {
-      cancelAnimationFrame(r1);
-      cancelAnimationFrame(r2);
+    const ids: number[] = [];
+    const after = (n: number, f: () => void) => {
+      if (n <= 0) return f();
+      ids.push(requestAnimationFrame(() => after(n - 1, f)));
     };
+    after(2, () => {
+      setScreenCovered(false);
+      after(2, () => setRun((r) => (r && r.key === run.key ? { ...r, phase: "reveal" } : r)));
+    });
+    return () => ids.forEach(cancelAnimationFrame);
   }, [run, shown]);
+
+  // 演出が終わったら（どんな終わり方でも）、下の画面を必ず描くように戻す
+  useEffect(() => {
+    if (!run || run.phase === "reduced") setScreenCovered(false);
+  }, [run]);
+  useEffect(() => () => setScreenCovered(false), []);
 
   // 念のための上限
   const runKey = run?.key;
@@ -111,6 +128,8 @@ export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: React
     ? createPortal(
         <Overlay
           run={run}
+          // 幕が不透明になったら、下の画面を描くのを止める（処理を演出に譲る）
+          onOpaque={() => setScreenCovered(true)}
           // 幕が閉じきったら、裏で画面を切り替える
           onCovered={() => setShown(run.to)}
           onHeld={() => setRun((r) => (r && r.key === run.key ? { ...r, held: true } : r))}
@@ -122,7 +141,7 @@ export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: React
   return { shown, overlay, playBoot };
 }
 
-function Overlay({ run, onCovered, onHeld, onDone }: { run: Run; onCovered: () => void; onHeld: () => void; onDone: () => void }) {
+function Overlay({ run, onOpaque, onCovered, onHeld, onDone }: { run: Run; onOpaque: () => void; onCovered: () => void; onHeld: () => void; onDone: () => void }) {
   const m = META[run.to];
   const boot = run.kind === "boot";
   return (
@@ -136,6 +155,7 @@ function Overlay({ run, onCovered, onHeld, onDone }: { run: Run; onCovered: () =
       aria-hidden="true"
       onAnimationEnd={(e) => {
         if (e.animationName === "ms-cover-mark") onCovered();
+        else if (e.target === e.currentTarget && e.animationName === "ms-in" && run.phase === "cover") onOpaque();
         else if (e.animationName === "ms-hold-mark") onHeld();
         else if (e.target === e.currentTarget && e.animationName === "ms-out") onDone();
       }}

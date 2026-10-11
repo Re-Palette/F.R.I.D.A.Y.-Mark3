@@ -12,6 +12,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type * as T from "three";
 import { domeY, fromPlane, landDots, landRings, MAP_H, MAP_W, toPlane, type LonLat } from "@/lib/edith-globe-data";
+import { isScreenCovered } from "@/lib/screen-cover";
 
 export interface GlobePoint {
   id: string;
@@ -418,7 +419,11 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
       let sway = 0;
       const tick = (now: number) => {
         raf = requestAnimationFrame(tick);
-        if (document.hidden) return;
+        // 裏にある間・切り替えの演出が覆っている間は描かない
+        if (document.hidden || isScreenCovered()) {
+          last = now;
+          return;
+        }
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
         if (flight) {
