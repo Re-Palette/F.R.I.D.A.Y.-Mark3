@@ -51,6 +51,7 @@ import { EDITH_TOOL, FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-vo
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
 import { EdithHud } from "./edith/EdithHud";
+import { ModeTransition } from "./ModeTransition";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -811,6 +812,8 @@ export function Dashboard() {
       <div className="activation-spot" data-activation-spot aria-hidden="true" />
 
       <Header />
+      {/* モードが切り替わるときの演出（F.R.I.D.A.Y. / K.A.R.E.N. / E.D.I.T.H.） */}
+      <ModeTransition mode={aiMode} />
       {/* K.A.R.E.N.（クリエイティブ AI）の画面。F.R.I.D.A.Y. の画面は裏でそのまま（戻ったら続きから） */}
       {aiMode === "edith" && view === "home" && (
         <EdithHud

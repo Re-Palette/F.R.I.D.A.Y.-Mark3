@@ -1,0 +1,402 @@
+/*
+ * AI のモードが切り替わるときの演出（ModeTransition）。色は切り替え先のモードに合わせる。
+ *   F.R.I.D.A.Y.：アンバー ／ K.A.R.E.N.：シアン ／ E.D.I.T.H.：ネオンパープル
+ * 0.00s 閃光と前のモードの色の残像 → 0.15s 走査線 → 0.25s 輪と名前 → 1.25s 中心から円が広がって新しい画面へ（1.9s で終わり）
+ */
+@property --ms-hole {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+
+.mswitch {
+  --ms-c: #ff8a1f;
+  --ms-c2: #ffb458;
+  --ms-from: #ff8a1f;
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  pointer-events: none;
+  overflow: hidden;
+  font-family: var(--font-display, var(--font-mono));
+  color: #fff;
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent var(--ms-hole), #000 calc(var(--ms-hole) + 0.5%));
+  mask-image: radial-gradient(circle at 50% 50%, transparent var(--ms-hole), #000 calc(var(--ms-hole) + 0.5%));
+  animation:
+    ms-in 0.12s ease-out both,
+    ms-open 0.62s cubic-bezier(0.7, 0, 0.3, 1) 1.25s forwards,
+    ms-out 0.2s linear 1.7s forwards;
+}
+.mswitch[data-to="karen"] {
+  --ms-c: #2ee6ff;
+  --ms-c2: #9ff3ff;
+}
+.mswitch[data-to="edith"] {
+  --ms-c: #b56cff;
+  --ms-c2: #e2c8ff;
+}
+.mswitch[data-from="karen"] {
+  --ms-from: #2ee6ff;
+}
+.mswitch[data-from="edith"] {
+  --ms-from: #b56cff;
+}
+
+.mswitch__bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ms-c) 28%, transparent), transparent 55%),
+    radial-gradient(ellipse 120% 80% at 50% 50%, #07050f 30%, #020104 100%);
+}
+.mswitch__grid {
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: -10%;
+  height: 70%;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ms-c) 35%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ms-c) 35%, transparent) 1px, transparent 1px);
+  background-size: 60px 60px;
+  transform: perspective(500px) rotateX(62deg);
+  transform-origin: 50% 0;
+  mask-image: linear-gradient(180deg, transparent, #000 40%, transparent);
+  animation: ms-grid 1.9s linear both;
+}
+/* 前のモードの色の残像（横に裂けて消える） */
+.mswitch__ghost {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--ms-from) 40%, transparent) 0 2px, transparent 2px 7px);
+  mix-blend-mode: screen;
+  animation: ms-ghost 0.5s steps(5) both;
+}
+.mswitch__scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22vh;
+  top: -22vh;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ms-c) 22%, transparent) 70%, var(--ms-c2) 98%, transparent);
+  box-shadow: 0 0 40px var(--ms-c);
+  animation: ms-scan 0.75s cubic-bezier(0.5, 0, 0.3, 1) 0.1s both;
+}
+.mswitch__flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, #fff, var(--ms-c2) 30%, transparent 70%);
+  animation: ms-flash 0.45s ease-out both;
+}
+
+/* 左右から閉じる角かっこ */
+.mswitch__bracket {
+  position: absolute;
+  top: 50%;
+  width: 70px;
+  height: 46vh;
+  max-height: 420px;
+  border: 2px solid var(--ms-c);
+  filter: drop-shadow(0 0 8px var(--ms-c));
+  transform: translateY(-50%);
+}
+.mswitch__bracket--l {
+  left: calc(50% - min(44vw, 440px));
+  border-right: none;
+  animation: ms-bracket-l 0.6s cubic-bezier(0.2, 0.9, 0.2, 1) 0.15s both;
+}
+.mswitch__bracket--r {
+  right: calc(50% - min(44vw, 440px));
+  border-left: none;
+  animation: ms-bracket-r 0.6s cubic-bezier(0.2, 0.9, 0.2, 1) 0.15s both;
+}
+
+.mswitch__core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(78vw, 520px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+}
+.mswitch__rings {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  overflow: visible;
+  filter: drop-shadow(0 0 6px var(--ms-c));
+}
+.mswitch__rings * {
+  transform-origin: 100px 100px;
+}
+.ms-r1 {
+  stroke: var(--ms-c);
+  stroke-width: 0.8;
+  stroke-dasharray: 60 14 6 14;
+  animation: ms-ring-in 0.7s cubic-bezier(0.2, 0.9, 0.2, 1) 0.2s both, ms-spin 6s linear infinite;
+}
+.ms-r2 {
+  stroke: var(--ms-c2);
+  stroke-width: 2.4;
+  stroke-dasharray: 18 36;
+  opacity: 0.85;
+  animation: ms-ring-in 0.7s cubic-bezier(0.2, 0.9, 0.2, 1) 0.28s both, ms-spin-rev 3.2s linear infinite;
+}
+.ms-ticks line {
+  stroke: var(--ms-c);
+  stroke-width: 0.6;
+}
+.ms-ticks {
+  animation: ms-ring-in 0.6s ease-out 0.34s both, ms-spin 12s linear infinite;
+}
+.ms-r3 {
+  stroke: var(--ms-c);
+  stroke-width: 0.5;
+  stroke-dasharray: 402;
+  animation: ms-draw 0.8s ease-out 0.35s both;
+}
+.ms-hex {
+  stroke: var(--ms-c2);
+  stroke-width: 0.7;
+  stroke-dasharray: 250;
+  animation: ms-draw 0.7s ease-out 0.45s both, ms-pulse 0.9s ease-in-out 1s infinite alternate;
+}
+
+.mswitch__text {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.mswitch__text small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.5em;
+  color: var(--ms-c2);
+  animation: ms-fade 0.4s ease-out 0.3s both;
+}
+.mswitch__text b {
+  display: flex;
+  font-weight: 500;
+  font-size: clamp(26px, 6.2vw, 54px);
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.mswitch__text b span {
+  display: inline-block;
+  text-shadow: 0 0 18px var(--ms-c), 0 0 2px #fff;
+  animation: ms-letter 0.5s cubic-bezier(0.2, 0.9, 0.2, 1) calc(0.38s + var(--i) * 0.045s) both;
+}
+.mswitch__sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.34em;
+  color: var(--ms-c2);
+  animation: ms-fade 0.4s ease-out 0.75s both;
+}
+.mswitch__bar {
+  display: block;
+  width: min(60vw, 260px);
+  height: 3px;
+  background: color-mix(in srgb, var(--ms-c) 22%, transparent);
+  animation: ms-fade 0.3s ease-out 0.7s both;
+}
+.mswitch__bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--ms-c), var(--ms-c2));
+  box-shadow: 0 0 10px var(--ms-c);
+  transform-origin: 0 50%;
+  animation: ms-bar 0.5s cubic-bezier(0.6, 0, 0.3, 1) 0.75s both;
+}
+.mswitch__text em {
+  font-style: normal;
+  font-family: var(--font-jp, sans-serif);
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: #fff;
+  opacity: 0.9;
+  animation: ms-fade 0.4s ease-out 0.9s both;
+}
+
+/* 中心から広がる光の輪（新しい画面が現れるふち） */
+.mswitch__iris {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20vmax;
+  height: 20vmax;
+  margin: -10vmax 0 0 -10vmax;
+  border-radius: 50%;
+  border: 3px solid var(--ms-c2);
+  box-shadow: 0 0 40px var(--ms-c), inset 0 0 40px var(--ms-c);
+  opacity: 0;
+  animation: ms-iris 0.62s cubic-bezier(0.7, 0, 0.3, 1) 1.25s both;
+}
+
+@keyframes ms-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ms-open {
+  to {
+    --ms-hole: 160%;
+  }
+}
+@keyframes ms-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes ms-flash {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ms-ghost {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  40% {
+    opacity: 0.8;
+    transform: translateX(-12px) skewX(-8deg);
+  }
+  70% {
+    opacity: 0.5;
+    transform: translateX(18px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}
+@keyframes ms-scan {
+  to {
+    top: 110vh;
+  }
+}
+@keyframes ms-grid {
+  from {
+    background-position: 0 0;
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.7;
+  }
+  to {
+    background-position: 0 120px;
+    opacity: 0.5;
+  }
+}
+@keyframes ms-bracket-l {
+  from {
+    opacity: 0;
+    transform: translate(-60px, -50%) scaleY(0.4);
+  }
+}
+@keyframes ms-bracket-r {
+  from {
+    opacity: 0;
+    transform: translate(60px, -50%) scaleY(0.4);
+  }
+}
+@keyframes ms-ring-in {
+  from {
+    opacity: 0;
+    scale: 1.6;
+  }
+}
+@keyframes ms-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes ms-spin-rev {
+  to {
+    rotate: -360deg;
+  }
+}
+@keyframes ms-draw {
+  from {
+    stroke-dashoffset: 402;
+    opacity: 0.2;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ms-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+@keyframes ms-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes ms-letter {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(1.4);
+    filter: blur(8px);
+    color: var(--ms-c2);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+    text-shadow: -3px 0 var(--ms-from), 3px 0 var(--ms-c), 0 0 18px var(--ms-c);
+  }
+}
+@keyframes ms-bar {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes ms-iris {
+  0% {
+    opacity: 1;
+    transform: scale(0.1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(8);
+  }
+}
+
+/* 「視差効果を減らす」設定：動きは出さず、短く色をかぶせて消すだけ */
+@media (prefers-reduced-motion: reduce) {
+  .mswitch {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: ms-in 0.1s ease-out both, ms-out 0.4s linear 0.6s forwards;
+  }
+  .mswitch *,
+  .mswitch *::before,
+  .mswitch *::after {
+    animation: none !important;
+  }
+  .mswitch__scan,
+  .mswitch__ghost,
+  .mswitch__flash,
+  .mswitch__iris,
+  .mswitch__grid {
+    display: none;
+  }
+}

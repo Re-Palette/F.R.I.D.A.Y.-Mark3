@@ -13,6 +13,7 @@ import "./globals.css";
 import "./home.css";
 import "./karen.css";
 import "./edith.css";
+import "./mode-transition.css";
 
 export const metadata: Metadata = {
   title: "F.R.I.D.A.Y. Mark3",
