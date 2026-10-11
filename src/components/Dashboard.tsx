@@ -51,7 +51,7 @@ import { EDITH_TOOL, FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-vo
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
 import { EdithHud } from "./edith/EdithHud";
-import { ModeTransition } from "./ModeTransition";
+import { useModeTransition } from "./ModeTransition";
 
 const CALENDAR_NOTICE: Record<string, string> = {
   connected: "Google カレンダーに接続しました。「フライデー、明日の予定は？」「明日 15 時に打ち合わせを入れて」のように話しかけてみてください。",
@@ -243,6 +243,8 @@ export function Dashboard() {
 
   /* ---- F.R.I.D.A.Y. と K.A.R.E.N.（クリエイティブ AI）の切り替え ---- */
   const aiMode = useAiMode();
+  // 見せる画面のモード：切り替えの演出で画面が覆われてから変わる（会話・声の行き先は aiMode ですぐ変わる）
+  const { shown: shownMode, overlay: modeOverlay } = useModeTransition(aiMode);
   /** 会話とは別に一言話す（音声会話の間だけ。下で定義する sayAloud を使う） */
   const sayRef = useRef<(text: string) => void>(() => {});
   const karenIo = useMemo<KarenIo>(
@@ -771,7 +773,7 @@ export function Dashboard() {
 
   return (
     // E.D.I.T.H. の間に設定などを開いたら、その画面を見せる（ホームに戻ると E.D.I.T.H. に戻る）
-    <div className="app" data-view={view} data-ai={aiMode === "edith" && view !== "home" ? "friday" : aiMode}>
+    <div className="app" data-view={view} data-ai={shownMode === "edith" && view !== "home" ? "friday" : shownMode}>
       {dropping && (
         <div className="drop-overlay" aria-hidden="true">
           <span>ここにドロップして添付（写真・PDF・Word / Excel / PowerPoint・テキスト）</span>
@@ -813,9 +815,9 @@ export function Dashboard() {
 
       <Header />
       {/* モードが切り替わるときの演出（F.R.I.D.A.Y. / K.A.R.E.N. / E.D.I.T.H.） */}
-      <ModeTransition mode={aiMode} />
+      {modeOverlay}
       {/* K.A.R.E.N.（クリエイティブ AI）の画面。F.R.I.D.A.Y. の画面は裏でそのまま（戻ったら続きから） */}
-      {aiMode === "edith" && view === "home" && (
+      {shownMode === "edith" && view === "home" && (
         <EdithHud
           messages={chat.messages}
           voiceState={voice.state}
@@ -834,7 +836,7 @@ export function Dashboard() {
           maxContext={agent.maxContext}
         />
       )}
-      {aiMode === "karen" && (
+      {shownMode === "karen" && (
         <KarenHud
           active
           messages={chat.messages}
@@ -868,7 +870,7 @@ export function Dashboard() {
             chatStatus={agent.status}
             onOpenChat={openChat}
             onNavigate={navigate}
-            hidden={view !== "home" || aiMode === "karen"}
+            hidden={view !== "home" || shownMode === "karen"}
             brain={agent.brain}
             calendar={agent.calendar}
             automation={agent.automation}
@@ -1058,7 +1060,7 @@ export function Dashboard() {
         )}
 
         {/* 文字起こし：聞こえた言葉と、聞き取りの様子（結果が返らないときにどこで止まっているか） */}
-        {voice.state !== "off" && aiMode === "friday" && (voice.diag || voice.interim || voice.state === "listening") && (
+        {voice.state !== "off" && shownMode === "friday" && (voice.diag || voice.interim || voice.state === "listening") && (
           <p className="vcap" aria-live="polite" data-diag={voice.diag ? "" : undefined}>
             {voice.diag || (voice.interim === "…" ? "呼びかけを聞き取りました…" : voice.interim) || "聞いています…"}
           </p>

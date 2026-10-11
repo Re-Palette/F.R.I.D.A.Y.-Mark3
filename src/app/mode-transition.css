@@ -1,18 +1,15 @@
 /*
  * AI のモードが切り替わるときの演出（ModeTransition）。色は切り替え先のモードに合わせる。
  *   F.R.I.D.A.Y.：アンバー ／ K.A.R.E.N.：シアン ／ E.D.I.T.H.：ネオンパープル
- * 0.00s 閃光と前のモードの色の残像 → 0.15s 走査線 → 0.25s 輪と名前 → 1.25s 中心から円が広がって新しい画面へ（1.9s で終わり）
+ * cover（幕を閉じる）：0〜0.25s 幕が降りる・閃光・前の色の残像 → 走査線 → 輪と名前（裏で画面を切り替える）
+ * reveal（幕を開く）：輪と名前が手前に飛び抜け、光の輪が広がって新しい画面が現れる（約 1 秒）
+ * カクつかないように、動かすのは transform と opacity だけ（ぼかし・影の動き・位置の動きは使わない）。
  */
-@property --ms-hole {
-  syntax: "<percentage>";
-  inherits: false;
-  initial-value: 0%;
-}
-
 .mswitch {
   --ms-c: #ff8a1f;
-  --ms-c2: #ffb458;
+  --ms-c2: #ffc27a;
   --ms-from: #ff8a1f;
+  --ms-ease: cubic-bezier(0.2, 0.9, 0.2, 1);
   position: fixed;
   inset: 0;
   z-index: 300;
@@ -20,16 +17,12 @@
   overflow: hidden;
   font-family: var(--font-display, var(--font-mono));
   color: #fff;
-  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent var(--ms-hole), #000 calc(var(--ms-hole) + 0.5%));
-  mask-image: radial-gradient(circle at 50% 50%, transparent var(--ms-hole), #000 calc(var(--ms-hole) + 0.5%));
-  animation:
-    ms-in 0.12s ease-out both,
-    ms-open 0.62s cubic-bezier(0.7, 0, 0.3, 1) 1.25s forwards,
-    ms-out 0.2s linear 1.7s forwards;
+  contain: strict;
+  animation: ms-in 0.25s ease-out both;
 }
 .mswitch[data-to="karen"] {
   --ms-c: #2ee6ff;
-  --ms-c2: #9ff3ff;
+  --ms-c2: #a6f4ff;
 }
 .mswitch[data-to="edith"] {
   --ms-c: #b56cff;
@@ -41,54 +34,69 @@
 .mswitch[data-from="edith"] {
   --ms-from: #b56cff;
 }
+.mswitch > *,
+.mswitch__fx > *,
+.ms-ring {
+  will-change: transform, opacity;
+}
 
-.mswitch__bg {
+/* 幕（画面を覆う暗い地）と、切り替え先の色の光 */
+.mswitch__shutter {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ms-c) 28%, transparent), transparent 55%),
-    radial-gradient(ellipse 120% 80% at 50% 50%, #07050f 30%, #020104 100%);
+  background: radial-gradient(ellipse 120% 90% at 50% 50%, #0a0716 25%, #020104 100%);
+}
+.mswitch__tint {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ms-c) 30%, transparent), transparent 52%);
+  animation: ms-tint 2.4s ease-in-out 0.2s infinite alternate;
 }
 .mswitch__grid {
   position: absolute;
   left: -50%;
   right: -50%;
-  bottom: -10%;
-  height: 70%;
+  top: 46%;
+  height: 120%;
   background-image:
-    linear-gradient(color-mix(in srgb, var(--ms-c) 35%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--ms-c) 35%, transparent) 1px, transparent 1px);
-  background-size: 60px 60px;
-  transform: perspective(500px) rotateX(62deg);
+    linear-gradient(color-mix(in srgb, var(--ms-c) 32%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ms-c) 32%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
   transform-origin: 50% 0;
-  mask-image: linear-gradient(180deg, transparent, #000 40%, transparent);
-  animation: ms-grid 1.9s linear both;
+  mask-image: linear-gradient(180deg, transparent, #000 25%, transparent 75%);
+  opacity: 0.55;
+  animation: ms-grid 1.6s linear infinite;
 }
 /* 前のモードの色の残像（横に裂けて消える） */
 .mswitch__ghost {
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--ms-from) 40%, transparent) 0 2px, transparent 2px 7px);
-  mix-blend-mode: screen;
-  animation: ms-ghost 0.5s steps(5) both;
+  background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--ms-from) 45%, transparent) 0 2px, transparent 2px 7px);
+  opacity: 0;
+  animation: ms-ghost 0.6s steps(6) both;
 }
 .mswitch__scan {
   position: absolute;
   left: 0;
   right: 0;
-  height: 22vh;
-  top: -22vh;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ms-c) 22%, transparent) 70%, var(--ms-c2) 98%, transparent);
-  box-shadow: 0 0 40px var(--ms-c);
-  animation: ms-scan 0.75s cubic-bezier(0.5, 0, 0.3, 1) 0.1s both;
+  top: 0;
+  height: 26vh;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ms-c) 25%, transparent) 70%, var(--ms-c2) 97%, transparent);
+  transform: translateY(-30vh);
+  animation: ms-scan 0.85s cubic-bezier(0.5, 0, 0.3, 1) 0.12s both;
 }
 .mswitch__flash {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle, #fff, var(--ms-c2) 30%, transparent 70%);
-  animation: ms-flash 0.45s ease-out both;
+  background: radial-gradient(circle, #fff, var(--ms-c2) 28%, transparent 68%);
+  opacity: 0;
+  animation: ms-flash 0.5s ease-out both;
 }
 
+.mswitch__fx {
+  position: absolute;
+  inset: 0;
+}
 /* 左右から閉じる角かっこ */
 .mswitch__bracket {
   position: absolute;
@@ -96,74 +104,83 @@
   width: 70px;
   height: 46vh;
   max-height: 420px;
+  margin-top: max(-23vh, -210px);
   border: 2px solid var(--ms-c);
-  filter: drop-shadow(0 0 8px var(--ms-c));
-  transform: translateY(-50%);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--ms-c) 60%, transparent);
 }
 .mswitch__bracket--l {
   left: calc(50% - min(44vw, 440px));
   border-right: none;
-  animation: ms-bracket-l 0.6s cubic-bezier(0.2, 0.9, 0.2, 1) 0.15s both;
+  animation: ms-bracket-l 0.7s var(--ms-ease) 0.2s both;
 }
 .mswitch__bracket--r {
   right: calc(50% - min(44vw, 440px));
   border-left: none;
-  animation: ms-bracket-r 0.6s cubic-bezier(0.2, 0.9, 0.2, 1) 0.15s both;
+  animation: ms-bracket-r 0.7s var(--ms-ease) 0.2s both;
 }
 
 .mswitch__core {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: min(78vw, 520px);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
+  width: min(80vw, 540px);
+  height: min(80vw, 540px);
+  margin: calc(min(80vw, 540px) / -2) 0 0 calc(min(80vw, 540px) / -2);
   display: grid;
   place-items: center;
 }
-.mswitch__rings {
+/* 輪のうしろの光（動かさない） */
+.mswitch__core::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ms-c) 22%, transparent), transparent 70%);
+  animation: ms-fade 0.6s ease-out 0.25s both;
+}
+.ms-ring {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   fill: none;
   overflow: visible;
-  filter: drop-shadow(0 0 6px var(--ms-c));
 }
-.mswitch__rings * {
-  transform-origin: 100px 100px;
-}
-.ms-r1 {
+.ms-ring--1 circle {
   stroke: var(--ms-c);
-  stroke-width: 0.8;
+  stroke-width: 1;
   stroke-dasharray: 60 14 6 14;
-  animation: ms-ring-in 0.7s cubic-bezier(0.2, 0.9, 0.2, 1) 0.2s both, ms-spin 6s linear infinite;
 }
-.ms-r2 {
+.ms-ring--1 {
+  animation: ms-ring-in 0.8s var(--ms-ease) 0.22s both, ms-spin 7s linear infinite;
+}
+.ms-ring--2 circle {
   stroke: var(--ms-c2);
-  stroke-width: 2.4;
+  stroke-width: 3;
   stroke-dasharray: 18 36;
-  opacity: 0.85;
-  animation: ms-ring-in 0.7s cubic-bezier(0.2, 0.9, 0.2, 1) 0.28s both, ms-spin-rev 3.2s linear infinite;
+  opacity: 0.9;
 }
-.ms-ticks line {
+.ms-ring--2 {
+  animation: ms-ring-in 0.8s var(--ms-ease) 0.3s both, ms-spin-rev 4s linear infinite;
+}
+.ms-ring--ticks line {
   stroke: var(--ms-c);
-  stroke-width: 0.6;
+  stroke-width: 0.7;
 }
-.ms-ticks {
-  animation: ms-ring-in 0.6s ease-out 0.34s both, ms-spin 12s linear infinite;
+.ms-ring--ticks {
+  animation: ms-ring-in 0.7s ease-out 0.38s both, ms-spin 14s linear infinite;
+}
+.ms-ring--core {
+  animation: ms-ring-in 0.7s var(--ms-ease) 0.42s both;
 }
 .ms-r3 {
   stroke: var(--ms-c);
-  stroke-width: 0.5;
-  stroke-dasharray: 402;
-  animation: ms-draw 0.8s ease-out 0.35s both;
+  stroke-width: 0.6;
 }
 .ms-hex {
   stroke: var(--ms-c2);
-  stroke-width: 0.7;
-  stroke-dasharray: 250;
-  animation: ms-draw 0.7s ease-out 0.45s both, ms-pulse 0.9s ease-in-out 1s infinite alternate;
+  stroke-width: 0.8;
+  animation: ms-pulse 0.9s ease-in-out 1.1s infinite alternate;
 }
 
 .mswitch__text {
@@ -178,12 +195,12 @@
   font-size: 11px;
   letter-spacing: 0.5em;
   color: var(--ms-c2);
-  animation: ms-fade 0.4s ease-out 0.3s both;
+  animation: ms-fade 0.45s ease-out 0.35s both;
 }
 .mswitch__text b {
   display: flex;
   font-weight: 500;
-  font-size: clamp(26px, 6.2vw, 54px);
+  font-size: clamp(26px, 6.2vw, 56px);
   letter-spacing: 0.08em;
   line-height: 1;
   white-space: nowrap;
@@ -191,21 +208,21 @@
 .mswitch__text b span {
   display: inline-block;
   text-shadow: 0 0 18px var(--ms-c), 0 0 2px #fff;
-  animation: ms-letter 0.5s cubic-bezier(0.2, 0.9, 0.2, 1) calc(0.38s + var(--i) * 0.045s) both;
+  animation: ms-letter 0.55s var(--ms-ease) calc(0.42s + var(--i) * 0.05s) both;
 }
 .mswitch__sub {
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.34em;
   color: var(--ms-c2);
-  animation: ms-fade 0.4s ease-out 0.75s both;
+  animation: ms-fade 0.45s ease-out 0.85s both;
 }
 .mswitch__bar {
   display: block;
   width: min(60vw, 260px);
   height: 3px;
   background: color-mix(in srgb, var(--ms-c) 22%, transparent);
-  animation: ms-fade 0.3s ease-out 0.7s both;
+  animation: ms-fade 0.3s ease-out 0.8s both;
 }
 .mswitch__bar i {
   display: block;
@@ -213,41 +230,59 @@
   background: linear-gradient(90deg, var(--ms-c), var(--ms-c2));
   box-shadow: 0 0 10px var(--ms-c);
   transform-origin: 0 50%;
-  animation: ms-bar 0.5s cubic-bezier(0.6, 0, 0.3, 1) 0.75s both;
+  animation: ms-bar 0.8s cubic-bezier(0.6, 0, 0.3, 1) 0.85s both;
 }
 .mswitch__text em {
   font-style: normal;
   font-family: var(--font-jp, sans-serif);
   font-size: 13px;
   letter-spacing: 0.2em;
-  color: #fff;
-  opacity: 0.9;
-  animation: ms-fade 0.4s ease-out 0.9s both;
+  opacity: 0.92;
+  animation: ms-fade 0.45s ease-out 1s both;
 }
 
-/* 中心から広がる光の輪（新しい画面が現れるふち） */
+/* 幕を開くときに広がる光の輪 */
 .mswitch__iris {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 20vmax;
-  height: 20vmax;
-  margin: -10vmax 0 0 -10vmax;
+  width: 30vmax;
+  height: 30vmax;
+  margin: -15vmax 0 0 -15vmax;
   border-radius: 50%;
   border: 3px solid var(--ms-c2);
   box-shadow: 0 0 40px var(--ms-c), inset 0 0 40px var(--ms-c);
   opacity: 0;
-  animation: ms-iris 0.62s cubic-bezier(0.7, 0, 0.3, 1) 1.25s both;
+}
+
+/* ---------- 幕を開く ---------- */
+.mswitch[data-phase="reveal"] {
+  animation: ms-out 0.2s linear 0.95s forwards;
+}
+.mswitch[data-phase="reveal"] .mswitch__fx {
+  animation: ms-zoom 0.85s cubic-bezier(0.55, 0, 0.75, 0.2) both;
+}
+.mswitch[data-phase="reveal"] .mswitch__shutter,
+.mswitch[data-phase="reveal"] .mswitch__grid {
+  animation: ms-clear 0.75s cubic-bezier(0.4, 0, 0.6, 1) 0.15s both;
+}
+.mswitch[data-phase="reveal"] .mswitch__tint {
+  animation: ms-clear 0.6s ease-in 0.1s both;
+}
+.mswitch[data-phase="reveal"] .mswitch__flash {
+  animation: ms-flash2 0.6s ease-out both;
+}
+.mswitch[data-phase="reveal"] .mswitch__iris {
+  animation: ms-iris 0.9s cubic-bezier(0.3, 0, 0.2, 1) 0.05s both;
+}
+.mswitch[data-phase="reveal"] .mswitch__ghost,
+.mswitch[data-phase="reveal"] .mswitch__scan {
+  display: none;
 }
 
 @keyframes ms-in {
   from {
     opacity: 0;
-  }
-}
-@keyframes ms-open {
-  to {
-    --ms-hole: 160%;
   }
 }
 @keyframes ms-out {
@@ -264,18 +299,34 @@
     opacity: 0;
   }
 }
+@keyframes ms-flash2 {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ms-tint {
+  to {
+    opacity: 0.6;
+  }
+}
 @keyframes ms-ghost {
   0% {
     opacity: 1;
     transform: translateX(0);
   }
-  40% {
-    opacity: 0.8;
-    transform: translateX(-12px) skewX(-8deg);
+  35% {
+    opacity: 0.85;
+    transform: translateX(-14px) skewX(-8deg);
   }
   70% {
-    opacity: 0.5;
-    transform: translateX(18px);
+    opacity: 0.45;
+    transform: translateX(20px);
   }
   100% {
     opacity: 0;
@@ -283,39 +334,37 @@
   }
 }
 @keyframes ms-scan {
+  from {
+    transform: translateY(-30vh);
+  }
   to {
-    top: 110vh;
+    transform: translateY(130vh);
   }
 }
 @keyframes ms-grid {
   from {
-    background-position: 0 0;
-    opacity: 0;
-  }
-  20% {
-    opacity: 0.7;
+    transform: perspective(500px) rotateX(62deg) translateY(0);
   }
   to {
-    background-position: 0 120px;
-    opacity: 0.5;
+    transform: perspective(500px) rotateX(62deg) translateY(64px);
   }
 }
 @keyframes ms-bracket-l {
   from {
     opacity: 0;
-    transform: translate(-60px, -50%) scaleY(0.4);
+    transform: translateX(-70px) scaleY(0.4);
   }
 }
 @keyframes ms-bracket-r {
   from {
     opacity: 0;
-    transform: translate(60px, -50%) scaleY(0.4);
+    transform: translateX(70px) scaleY(0.4);
   }
 }
 @keyframes ms-ring-in {
   from {
     opacity: 0;
-    scale: 1.6;
+    scale: 1.7;
   }
 }
 @keyframes ms-spin {
@@ -328,15 +377,6 @@
     rotate: -360deg;
   }
 }
-@keyframes ms-draw {
-  from {
-    stroke-dashoffset: 402;
-    opacity: 0.2;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
 @keyframes ms-pulse {
   to {
     opacity: 0.45;
@@ -345,20 +385,13 @@
 @keyframes ms-fade {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
 }
 @keyframes ms-letter {
-  0% {
+  from {
     opacity: 0;
-    transform: translateY(14px) scale(1.4);
-    filter: blur(8px);
-    color: var(--ms-c2);
-  }
-  60% {
-    opacity: 1;
-    filter: blur(0);
-    text-shadow: -3px 0 var(--ms-from), 3px 0 var(--ms-c), 0 0 18px var(--ms-c);
+    transform: translateY(16px) scale(1.5);
   }
 }
 @keyframes ms-bar {
@@ -366,37 +399,73 @@
     transform: scaleX(0);
   }
 }
+@keyframes ms-zoom {
+  to {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+@keyframes ms-clear {
+  to {
+    opacity: 0;
+  }
+}
 @keyframes ms-iris {
   0% {
     opacity: 1;
-    transform: scale(0.1);
+    transform: scale(0.15);
   }
-  80% {
-    opacity: 1;
+  70% {
+    opacity: 0.9;
   }
   100% {
     opacity: 0;
-    transform: scale(8);
+    transform: scale(5);
   }
 }
 
 /* 「視差効果を減らす」設定：動きは出さず、短く色をかぶせて消すだけ */
+.mswitch[data-phase="reduced"] {
+  animation: ms-in 0.1s ease-out both, ms-out 0.35s linear 0.55s forwards;
+}
+.mswitch[data-phase="reduced"] *,
+.mswitch[data-phase="reduced"] *::before {
+  animation: none !important;
+}
+.mswitch[data-phase="reduced"] .mswitch__scan,
+.mswitch[data-phase="reduced"] .mswitch__ghost,
+.mswitch[data-phase="reduced"] .mswitch__flash,
+.mswitch[data-phase="reduced"] .mswitch__iris,
+.mswitch[data-phase="reduced"] .mswitch__grid {
+  display: none;
+}
 @media (prefers-reduced-motion: reduce) {
-  .mswitch {
-    -webkit-mask-image: none;
-    mask-image: none;
-    animation: ms-in 0.1s ease-out both, ms-out 0.4s linear 0.6s forwards;
+  .mswitch * {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
   }
-  .mswitch *,
-  .mswitch *::before,
-  .mswitch *::after {
-    animation: none !important;
+}
+
+/* 時間の目印（見えない）：終わったときに、画面の切り替え・幕を開けてよいことを知らせる */
+.mswitch__mark {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.mswitch__mark--cover {
+  animation: ms-cover-mark 0.95s linear both;
+}
+.mswitch__mark--hold {
+  animation: ms-hold-mark 1.65s linear both;
+}
+@keyframes ms-cover-mark {
+  to {
+    opacity: 0;
   }
-  .mswitch__scan,
-  .mswitch__ghost,
-  .mswitch__flash,
-  .mswitch__iris,
-  .mswitch__grid {
-    display: none;
+}
+@keyframes ms-hold-mark {
+  to {
+    opacity: 0;
   }
 }
