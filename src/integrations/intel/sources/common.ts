@@ -2,7 +2,7 @@
  * 情報源の取り込みで共通に使うもの。
  * 取り込んだ 1 件は必ず normalizeItem を通す（文字の消毒・リンクの確認・座標の範囲）。
  */
-import { normalizeItem } from "../store";
+import { normalizeItem } from "../normalize";
 import type { FetchLike } from "../http";
 import type { IntelItem } from "../types";
 

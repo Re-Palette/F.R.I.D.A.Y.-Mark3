@@ -5,7 +5,7 @@
  * 同じ嵐は 1 件にまとめ、発表のたびに中身を新しくする（ID は嵐の ID）。
  */
 import { getJson } from "../http";
-import { cleanText } from "../store";
+import { cleanText } from "../normalize";
 import type { IntelItem } from "../types";
 import { makeItem, type SourceContext } from "./common";
 

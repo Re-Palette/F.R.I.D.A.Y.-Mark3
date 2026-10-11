@@ -6,7 +6,7 @@
  * USGS の「tsunami」は「海域の大きな地震」という印で、津波警報ではない（警報は気象庁などの公式発表を見る）。
  */
 import { getJson } from "../http";
-import { cleanText } from "../store";
+import { cleanText } from "../normalize";
 import type { IntelItem } from "../types";
 import { makeItem, type SourceContext } from "./common";
 
