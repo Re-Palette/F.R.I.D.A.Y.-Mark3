@@ -7,7 +7,7 @@
  * 取り込む電文：
  *   地震 … 「震源・震度に関する情報」（VXSE53）。同じ地震（EventID）は 1 件にまとめ、続報・訂正で中身を新しくする
  *   津波 … 「津波警報・注意報・予報」（VTSE41）
- *   台風 … 「台風解析・予報情報」（VPTW6x）。この段階ではフィードの見出しと本文の要約だけ
+ *   台風 … 「台風解析・予報情報」（VPTW60〜65）。電文コードごとに最新の電文を読み、同じ台風は番号（無ければ EventID）で 1 件にまとめる
  * 電文の Control/Status が「通常」以外（訓練・試験）は取り込まない。InfoType が「取消」なら取消として残す。
  * 出典は気象庁（加工して表示するので、画面では「気象庁の情報をもとに作成」と示す）。
  */
@@ -202,23 +202,114 @@ export function parseTsunamiDoc(xml: string, docUrl: string, now: number): Intel
   );
 }
 
-/** 台風（フィードの見出しと要約から。座標は次の段階で電文から読む） */
-export function typhoonFromEntry(e: AtomEntry, now: number): IntelItem | null {
-  const url = jmaDocUrl(e.link);
-  if (!url || !/台風解析・予報情報/.test(e.title)) return null;
-  const num = /台風第\s*([0-9０-９]+)\s*号/.exec(e.content)?.[1]?.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+/** 台風の電文コード（VPTW60〜65。末尾の番号は台風ごとに割り当てられ、消滅するまで変わらない） */
+export function typhoonCode(url: string | null): string | null {
+  return url ? (/_(VPTW6[0-5])_/.exec(url)?.[1] ?? null) : null;
+}
+
+/** フィードから、電文コードごとに最新の台風の電文を選ぶ（同じ台風の古い発表は読まない） */
+export function latestTyphoonDocs(entries: AtomEntry[]): { code: string; url: string; updated: string }[] {
+  const latest = new Map<string, { code: string; url: string; updated: string }>();
+  for (const e of entries) {
+    const url = jmaDocUrl(e.link);
+    const code = typhoonCode(url);
+    if (!url || !code || !/台風解析・予報情報/.test(e.title)) continue;
+    const updated = e.updated ?? "";
+    const prev = latest.get(code);
+    // 時刻は文字ではなく時刻として比べる（「Z」と「+09:00」の書き方が混ざっても新旧を取り違えない）
+    const t = Date.parse(updated);
+    const pt = prev ? Date.parse(prev.updated) : NaN;
+    if (!prev || (Number.isFinite(t) && (!Number.isFinite(pt) || t > pt))) latest.set(code, { code, url, updated });
+  }
+  return [...latest.values()].sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/** 属性が条件に合う最初のタグの中身（例：type="最大風速" かつ unit="m/s" の WindSpeed） */
+function tagWhere(xml: string, name: string, attrs: RegExp[]): string | null {
+  const re = new RegExp(`<(?:[\\w-]+:)?${name}(\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${name}>`, "g");
+  for (const m of xml.matchAll(re)) {
+    const a = m[1] ?? "";
+    if (attrs.every((r) => r.test(a))) return decodeXml(m[2]).trim();
+  }
+  return null;
+}
+
+const toHalfDigits = (s: string) => s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+const numOrNull = (v: string | null): number | null => (v !== null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+
+/**
+ * 台風の電文（台風解析・予報情報 5 日進路・強度予報、VPTW60〜65）を読む。
+ * 実況（いまの解析）の部分から、番号・名前・階級・中心位置・中心気圧・最大風速を取る。
+ * 同じ台風は 1 件にまとめる：台風番号（年＋番号）があればそれ、無ければ（台風になる前の熱帯低気圧）EventID で区別する。
+ * どちらも無いときは、別の台風と取り違えないよう取り込まない（null）。
+ */
+export function parseTyphoonDoc(xml: string, docUrl: string, now: number): IntelItem | null {
+  const h = readHead(xml);
+  if (!h) return null;
+  const body = block(xml, "Body") ?? "";
+  const infos = [...body.matchAll(/<(?:[\w-]+:)?MeteorologicalInfo[\s>][\s\S]*?<\/(?:[\w-]+:)?MeteorologicalInfo>/g)].map((m) => m[0]);
+  // 実況（いまの解析）だけを使う。無ければ予報の位置を「いまの位置」と取り違えないよう取り込まない
+  const info = infos.find((i) => /<(?:[\w-]+:)?DateTime\b[^>]*type="[^"]*実況/.test(i));
+  if (!info) return null;
+  const at = tagWhere(info, "DateTime", [/type="[^"]*実況/]);
+
+  const namePart = block(info, "TyphoonNamePart") ?? "";
+  const name = tag(namePart, "Name");
+  const kana = tag(namePart, "NameKana");
+  const numberRaw = toHalfDigits(tag(namePart, "Number") ?? "").replace(/\D/g, "");
+  const reportYear = (h.reportAt ?? "").slice(2, 4);
+  // 番号は「年 2 桁＋番号 2 桁」（例 2619）でも、番号だけでも受け付ける。年をまたいで別の台風と混ざらないよう年を付けて持つ
+  const key = numberRaw.length === 4 ? numberRaw : numberRaw.length > 0 && numberRaw.length <= 2 && reportYear ? `${reportYear}${numberRaw.padStart(2, "0")}` : null;
+  const number = key ? Number(key.slice(2)) : null;
+
+  const typhoonClass = tag(info, "TyphoonClass");
+  const areaClass = tag(info, "AreaClass");
+  const intensity = tag(info, "IntensityClass");
+  const center = block(info, "CenterPart") ?? info;
+  const coord = parseCoordinate(tagWhere(center, "Coordinate", [/type="[^"]*中心位置（度）/]) ?? tag(center, "Coordinate"));
+  const pressure = numOrNull(tagWhere(center, "Pressure", [/type="[^"]*中心気圧/]) ?? tag(center, "Pressure"));
+  const location = tag(center, "Location");
+  const windMs = numOrNull(tagWhere(info, "WindSpeed", [/type="[^"]*最大風速/, /unit="m\/s"/]));
+  const windKt = numOrNull(tagWhere(info, "WindSpeed", [/type="[^"]*最大風速/, /unit="ノット"/]));
+
+  const id = key ? `jma:typhoon:${key}` : h.eventId ? `jma:typhoon:ev:${h.eventId}` : null;
+  if (!id) return null;
+  const cancelled = h.infoType === "取消";
+  const label = number !== null ? `台風第${number}号${kana || name ? `（${kana || name}）` : ""}` : "熱帯低気圧（台風になる見込み）";
+  const strength = [areaClass && !/^\s*$/.test(areaClass) ? areaClass : null, intensity && !/^\s*$/.test(intensity) ? intensity : null].filter(Boolean).join("・");
   return makeItem(
     {
-      id: `jma:typhoon:${num ?? reportName(url)}`,
+      id,
       source: "jmatyphoon",
       kind: "official",
       category: "weather",
-      title: num ? `台風第${num}号の情報（気象庁）` : "台風の情報（気象庁）",
-      summary: e.content.slice(0, 380),
-      url,
-      publishedAt: e.updated,
-      updatedAt: e.updated,
-      facts: { report: reportName(url), typhoon: num ? Number(num) : null },
+      title: `${cancelled ? "（取消）" : ""}${label}${strength ? `［${strength}］` : ""}`,
+      summary: [
+        h.headline,
+        [location ? `中心は${location}` : null, pressure !== null ? `中心気圧 ${pressure}hPa` : null, windMs !== null ? `最大風速 ${windMs}m/s` : null].filter(Boolean).join("・"),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 380),
+      url: docUrl,
+      publishedAt: at ?? h.reportAt,
+      updatedAt: h.reportAt,
+      place: coord ? { name: location ?? label, lat: coord.lat, lon: coord.lon } : null,
+      facts: {
+        report: reportName(docUrl),
+        code: typhoonCode(docUrl),
+        typhoon: number,
+        typhoonKey: key,
+        name: name ?? null,
+        typhoonClass: typhoonClass ?? null,
+        areaClass: areaClass || null,
+        intensity: intensity || null,
+        pressureHpa: pressure,
+        windMs,
+        windKt,
+        infoType: h.infoType,
+        cancelled,
+      },
     },
     now,
   );
@@ -260,11 +351,19 @@ export async function fetchJmaQuake(ctx: SourceContext): Promise<IntelItem[]> {
   return items.sort((a, b) => (a.updatedAt ?? "").localeCompare(b.updatedAt ?? ""));
 }
 
-/** 台風 */
+/** 台風（電文コードごとに最新の電文だけを読む。1 通読めなくても、ほかの台風は取り込む） */
 export async function fetchJmaTyphoon(ctx: SourceContext): Promise<IntelItem[]> {
   const entries = await feed(JMA_EXTRA_LONG_URL, ctx, 8_000_000);
-  return entries
-    .map((e) => typhoonFromEntry(e, ctx.now))
-    .filter((i): i is IntelItem => i !== null)
-    .sort((a, b) => (a.updatedAt ?? "").localeCompare(b.updatedAt ?? ""));
+  const picked = latestTyphoonDocs(entries).filter((d) => !ctx.knownReports.has(reportName(d.url)));
+  const docs = await Promise.all(
+    picked.map(async (d) => {
+      try {
+        const xml = await getText(d.url, { hosts: HOSTS, fetchImpl: ctx.fetchImpl, accept: "application/xml", maxBytes: 1_000_000 });
+        return parseTyphoonDoc(xml, d.url, ctx.now);
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return docs.filter((d): d is IntelItem => d !== null).sort((a, b) => (a.updatedAt ?? "").localeCompare(b.updatedAt ?? ""));
 }

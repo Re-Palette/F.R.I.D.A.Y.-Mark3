@@ -13,16 +13,28 @@ export const NHC_URL = "https://www.nhc.noaa.gov/CurrentStorms.json";
 const HOSTS = ["www.nhc.noaa.gov"];
 const MAX_STORMS = 32;
 
-/** NHC の分類（略号）を日本語に */
-const CLASS_JA: Record<string, string> = {
+/**
+ * NHC の分類（略号）を日本語に。定義は NHC Tropical Cyclone Status JSON File Reference による：
+ *   TD Tropical Depression / STD Subtropical Depression / TS Tropical Storm / STS Subtropical Storm / HU Hurricane
+ *   PTC Post-tropical Cyclone / Remnants（熱帯の性質を失った低気圧・その残骸）
+ *   PC Potential Tropical Cyclone（熱帯低気圧になる可能性のある擾乱）
+ *   TY Typhoon（NHC は現在使っていない）
+ */
+export const NHC_CLASS_JA: Record<string, string> = {
   TD: "熱帯低気圧",
   STD: "亜熱帯低気圧",
   TS: "熱帯暴風雨",
   STS: "亜熱帯暴風雨",
   HU: "ハリケーン",
-  PTC: "熱帯低気圧になる可能性のある擾乱",
-  PC: "温帯低気圧化",
+  PTC: "熱帯の性質を失った低気圧",
+  PC: "熱帯低気圧になる可能性のある擾乱",
+  TY: "台風",
 };
+
+/** 分類の日本語（知らない略号は「熱帯低気圧など（略号）」として、勝手に意味を付けない） */
+export function nhcClassJa(code: string): string {
+  return NHC_CLASS_JA[code] ?? (code ? `熱帯低気圧など（${code}）` : "熱帯低気圧など");
+}
 
 const BASIN_JA: Record<string, string> = { al: "大西洋", ep: "東太平洋", cp: "中部太平洋" };
 
@@ -64,7 +76,7 @@ export function parseNhc(json: unknown, now: number): IntelItem[] {
     const lat = toNum(s.latitudeNumeric);
     const lon = toNum(s.longitudeNumeric);
     const cls = toStr(s.classification)?.toUpperCase() ?? "";
-    const clsJa = CLASS_JA[cls] ?? (cls || "熱帯低気圧");
+    const clsJa = nhcClassJa(cls);
     const name = toStr(s.name) ?? id.toUpperCase();
     const windKt = toNum(s.intensity);
     const pressure = toNum(s.pressure);

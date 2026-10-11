@@ -17,7 +17,7 @@ import { getText, type FetchLike } from "../src/integrations/intel/http";
 import { cleanText } from "../src/integrations/intel/normalize";
 import { parseUsgs, USGS_URL } from "../src/integrations/intel/sources/usgs";
 import { parseNhc, NHC_URL } from "../src/integrations/intel/sources/nhc";
-import { JMA_EQVOL_LONG_URL, JMA_EQVOL_URL, JMA_EXTRA_LONG_URL, parseAtom, parseQuakeDoc, parseTsunamiDoc, tag, typhoonFromEntry, type AtomEntry } from "../src/integrations/intel/sources/jma";
+import { JMA_EQVOL_LONG_URL, JMA_EQVOL_URL, JMA_EXTRA_LONG_URL, latestTyphoonDocs, parseAtom, parseQuakeDoc, parseTsunamiDoc, parseTyphoonDoc, tag, type AtomEntry } from "../src/integrations/intel/sources/jma";
 import type { IntelItem } from "../src/integrations/intel/types";
 
 const TIMEOUT_MS = 15_000;
@@ -212,14 +212,30 @@ export async function checkJmaTyphoon(fetchImpl: FetchLike): Promise<CheckReport
   try {
     const entries = parseAtom(await getText(JMA_EXTRA_LONG_URL, { hosts: JMA_HOSTS, fetchImpl: f, timeoutMs: TIMEOUT_MS, maxBytes: 8_000_000 }));
     const typhoon = entries.filter((e) => /台風解析・予報情報/.test(e.title));
-    const items = typhoon.map((e) => typhoonFromEntry(e, Date.now())).filter((i): i is IntelItem => i !== null);
-    r.raw = typhoon.length;
-    r.parsed = items.length;
+    // 本番と同じく、電文コード（VPTW60〜65）ごとに最新の電文だけを読む
+    const latest = latestTyphoonDocs(entries);
     r.times = { newestEntry: newest(entries), newestTyphoonEntry: newest(typhoon) };
-    r.format = { entries: entries.length, titles: titleCounts(entries) };
-    if (r.parsed < r.raw) r.mismatches.push(`${r.raw - r.parsed} 件を解析できませんでした`);
-    if (r.raw === 0) r.mismatches.push("（参考）随時の長期フィードに台風の情報がありません（台風が無ければ正常）");
-    if (items.some((i) => !/台風第\d+号/.test(i.title))) r.mismatches.push("台風の番号を本文から読めない項目があります");
+    r.format = { entries: entries.length, typhoonEntries: typhoon.length, codes: latest.map((d) => d.code), titles: titleCounts(entries) };
+    const items: IntelItem[] = [];
+    for (const d of latest) {
+      r.raw++;
+      try {
+        const xml = await getText(d.url, { hosts: JMA_HOSTS, fetchImpl: f, timeoutMs: TIMEOUT_MS, maxBytes: 1_000_000 });
+        const item = parseTyphoonDoc(xml, d.url, Date.now());
+        if (!item) {
+          r.mismatches.push(`${d.code}：解析できませんでした（Status=${short(tag(xml, "Status"), 10)}、番号 ${tag(xml, "Number") ? "あり" : "なし"}、EventID ${tag(xml, "EventID") ? "あり" : "なし"}）`);
+          continue;
+        }
+        items.push(item);
+        const missingFacts: string[] = ["typhoon", "pressureHpa", "windMs"].filter((k) => item.facts[k] === null || item.facts[k] === undefined);
+        if (item.place === null) missingFacts.push("place");
+        if (missingFacts.length) r.mismatches.push(`${d.code}：読めなかった項目 ${missingFacts.join("・")}`);
+      } catch (err) {
+        r.mismatches.push(`${d.code}：電文の取得に失敗：${errText(err)}`);
+      }
+    }
+    r.parsed = items.length;
+    if (typhoon.length === 0) r.mismatches.push("（参考）随時の長期フィードに台風の情報がありません（台風が無ければ正常）");
     r.samples = sample(items);
     r.ok = true;
   } catch (err) {

@@ -94,6 +94,8 @@ const atom = (entries: { title: string; file: string; content?: string }[]) =>
     .join("")}</feed>`;
 const quakeXml = `<Report><Control><Title>震源・震度に関する情報</Title><Status>通常</Status></Control><Head><Title>震源・震度情報</Title><ReportDateTime>2026-10-11T09:02:00+09:00</ReportDateTime><EventID>20261011085800</EventID><InfoType>発表</InfoType><Headline><Text>地震がありました。</Text></Headline></Head><Body><Earthquake><OriginTime>2026-10-11T08:58:00+09:00</OriginTime><Hypocenter><Area><Name>茨城県南部</Name><jmx_eb:Coordinate>+36.12+140.07-50000/</jmx_eb:Coordinate></Area></Hypocenter><jmx_eb:Magnitude>4.6</jmx_eb:Magnitude></Earthquake><Intensity><Observation><MaxInt>4</MaxInt></Observation></Intensity><Comments><ForecastComment><Text>この地震による津波の心配はありません。</Text></ForecastComment></Comments></Body></Report>`;
 
+const typhoonXml = `<Report><Control><Title>台風解析・予報情報（５日予報）（Ｈ３０）</Title><Status>通常</Status></Control><Head><Title>台風解析・予報情報</Title><ReportDateTime>2026-10-11T16:00:00+09:00</ReportDateTime><EventID>TC2621</EventID><InfoType>発表</InfoType><Headline><Text></Text></Headline></Head><Body><MeteorologicalInfos type="台風情報"><MeteorologicalInfo><DateTime type="実況">2026-10-11T15:00:00+09:00</DateTime><Item><Kind><Property><Type>呼称</Type><TyphoonNamePart><Name>NAME</Name><NameKana>ネーム</NameKana><Number>2621</Number></TyphoonNamePart></Property></Kind><Kind><Property><Type>階級</Type><ClassPart><jmx_eb:TyphoonClass type="熱帯擾乱種類">台風（TS）</jmx_eb:TyphoonClass><jmx_eb:AreaClass type="大きさ階級"></jmx_eb:AreaClass><jmx_eb:IntensityClass type="強さ階級"></jmx_eb:IntensityClass></ClassPart></Property></Kind><Kind><Property><Type>中心</Type><CenterPart><jmx_eb:Coordinate type="中心位置（度）">+20.12+130.98/</jmx_eb:Coordinate><Location>フィリピンの東</Location><jmx_eb:Pressure type="中心気圧" unit="hPa">990</jmx_eb:Pressure></CenterPart></Property></Kind><Kind><Property><Type>風</Type><WindPart><jmx_eb:WindSpeed type="最大風速" unit="ノット" condition="中心付近">45</jmx_eb:WindSpeed><jmx_eb:WindSpeed type="最大風速" unit="m/s" condition="中心付近">23</jmx_eb:WindSpeed></WindPart></Property></Kind></Item></MeteorologicalInfo></MeteorologicalInfos></Body></Report>`;
+
 function fakeFetch(routes: Record<string, () => Response>) {
   const calls: string[] = [];
   const fn = async (url: string) => {
@@ -111,7 +113,8 @@ const allRoutes = () => ({
   [JMA_EQVOL_URL]: ok(atom([]), "application/atom+xml"),
   [JMA_EQVOL_LONG_URL]: ok(atom([{ title: "震源・震度に関する情報", file: "q1_VXSE53" }]), "application/atom+xml"),
   [`${DATA}/q1_VXSE53.xml`]: ok(quakeXml, "application/xml"),
-  [JMA_EXTRA_LONG_URL]: ok(atom([{ title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "ty_VPTW60", content: "台風第２１号" }]), "application/atom+xml"),
+  [JMA_EXTRA_LONG_URL]: ok(atom([{ title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "20261011070122_0_VPTW61_010000" }]), "application/atom+xml"),
+  [`${DATA}/20261011070122_0_VPTW61_010000.xml`]: ok(typhoonXml, "application/xml"),
 });
 
 describe("実データ確認の結果", () => {
@@ -137,8 +140,10 @@ describe("実データ確認の結果", () => {
     assert.equal(q.parsed, 1);
     assert.equal((q.samples[0] as { title: string }).title, "最大震度4（茨城県南部・M4.6）");
     assert.equal(t.parsed, 1);
+    assert.equal((t.samples[0] as { title: string }).title, "台風第21号（ネーム）");
+    assert.deepEqual(t.mismatches, []);
     // 取りに行った先は決まった場所だけ（電文は 1 通だけ）
-    assert.equal(f.calls.length, 6);
+    assert.equal(f.calls.length, 7);
   });
 
   it("形式が違えば「項目がありません」と知らせる", async () => {

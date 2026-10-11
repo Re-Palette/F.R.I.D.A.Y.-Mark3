@@ -12,7 +12,7 @@ import { fakeBrain, untouchableBrain } from "./intel-fake";
 
 const { parseUsgs, USGS_URL } = await import("../src/integrations/intel/sources/usgs");
 const { parseNhc } = await import("../src/integrations/intel/sources/nhc");
-const { parseAtom, parseQuakeDoc, parseTsunamiDoc, typhoonFromEntry, parseCoordinate, fetchJmaQuake, fetchJmaTyphoon, JMA_EQVOL_URL, JMA_EQVOL_LONG_URL, JMA_EXTRA_LONG_URL } = await import(
+const { parseAtom, parseQuakeDoc, parseTsunamiDoc, parseCoordinate, fetchJmaQuake, fetchJmaTyphoon, JMA_EQVOL_URL, JMA_EQVOL_LONG_URL, JMA_EXTRA_LONG_URL } = await import(
   "../src/integrations/intel/sources/jma"
 );
 const { getText, SourceError, parseRetryAfter } = await import("../src/integrations/intel/http");
@@ -206,14 +206,6 @@ describe("気象庁 防災情報XML", () => {
     assert.equal(i.facts.level, "津波警報");
   });
 
-  it("台風：フィードの見出しから。気象庁の電文以外のリンクは使わない", () => {
-    const [e] = parseAtom(atom([{ title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "20261011030000_0_VPTW60_010000", updated: "2026-10-11T03:00:00Z", content: "台風第１９号に関する情報" }]));
-    const i = typhoonFromEntry(e, NOW)!;
-    assert.equal(i.id, "jma:typhoon:19");
-    assert.equal(i.source, "jmatyphoon");
-    assert.equal(typhoonFromEntry({ ...e, link: "https://evil.example/x.xml" }, NOW), null);
-  });
-
   const ctx = (over: Record<string, unknown> = {}) => ({ now: NOW, known: new Set<string>(), knownReports: new Set<string>(), lastSuccessAt: NOW - 5 * 60_000, ...over });
 
   it("前回から間がなければ高頻度フィードだけ。あいていれば長期フィードでも補う", async () => {
@@ -244,11 +236,6 @@ describe("気象庁 防災情報XML", () => {
     assert.deepEqual(items.map((i) => i.title), ["津波注意報"]);
   });
 
-  it("台風は随時の長期フィードから", async () => {
-    const f = fakeFetch({ [JMA_EXTRA_LONG_URL]: xml(atom([{ title: "台風解析・予報情報（５日予報）（Ｈ３０）", file: "ty_VPTW60", updated: "2026-10-11T03:00:00Z", content: "台風第２０号" }, { title: "気象警報・注意報", file: "w_VPWW54", updated: "2026-10-11T03:00:00Z" }])) });
-    const items = await fetchJmaTyphoon({ ...ctx(), fetchImpl: f.fn });
-    assert.deepEqual(items.map((i) => i.id), ["jma:typhoon:20"]);
-  });
 });
 
 /* ---------- 取得の共通部分 ---------- */
