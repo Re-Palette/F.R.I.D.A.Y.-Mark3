@@ -2,7 +2,7 @@
  * 無料枠を守るモデルの使い方のテスト。
  *   - 1 日の上限（RPD）で断られたモデルは、枠が戻る西海岸の 0 時まで使わず次のモデルで答える
  *   - 1 分あたりの上限なら少し休ませるだけ
- *   - 既定のモデルは無料枠の多い Flash-Lite から使い、Flash は最後
+ *   - 既定のモデルは無料枠の多い Flash-Lite だけ
  *   npm test
  */
 import { describe, it } from "node:test";
@@ -68,14 +68,13 @@ describe("無料枠の上限", () => {
 });
 
 describe("既定のモデル", () => {
-  it("Flash-Lite を先に使い、1 日の回数が少ない Flash は最後", () => {
+  it("Flash-Lite だけを使う（回数の少ない Flash は使わない）", () => {
     const prev = process.env.GEMINI_MODEL;
     delete process.env.GEMINI_MODEL;
     try {
       const { models } = getGeminiConfig();
       assert.ok(models.length >= 3);
-      assert.ok(models.slice(0, -1).every((m) => /lite/.test(m)), models.join(","));
-      assert.match(models[models.length - 1], /flash/);
+      assert.ok(models.every((m) => /flash-lite/.test(m)), models.join(","));
     } finally {
       if (prev !== undefined) process.env.GEMINI_MODEL = prev;
     }
