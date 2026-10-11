@@ -824,6 +824,11 @@ export function Dashboard() {
           onBack={() => void send("FRIDAYに戻して")}
           onOpenSettings={() => setView("settings")}
           onOpenUrl={(url) => openTabNow(url)}
+          aiStatus={agent.status}
+          model={agent.model}
+          brain={agent.brain}
+          calendar={agent.calendar}
+          maxContext={agent.maxContext}
         />
       )}
       {aiMode === "karen" && (

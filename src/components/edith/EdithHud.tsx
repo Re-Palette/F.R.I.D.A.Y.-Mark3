@@ -1,21 +1,25 @@
 "use client";
 
 /**
- * E.D.I.T.H.（Enhanced Data Integration & Tactical Horizon）の画面。F.R.I.D.A.Y. と同じ HUD の作りを、ネオンパープルで。
- *   上：ロゴ・ナビ（ホーム／情報検索／グローバル情報／分析／メッセージ／設定／F.R.I.D.A.Y. に戻る）・日時・接続・通信・電池
- *   左：GLOBAL INFORMATION（分野を選ぶと、中央の地図と右のニュースが切り替わる）
- *   中央：立体ホログラムの世界地図（ニュースの地域に印。AI の答えに出てきた国も光る）
- *   右：REAL-TIME NEWS（Google 検索で調べた実際の話題と出典）・GLOBAL TREND（取得した話題から数えた件数）・QUICK ACCESS
- *   下：GLOBAL COMMAND BAR（E.D.I.T.H. への指示。答えは情報ウィンドウに出る）
- * 測れないもの・取れなかったものは、取れたように見せない（「未取得」「取得不可」と出す）。
+ * E.D.I.T.H.（Enhanced Data Integration & Tactical Horizon）の画面。ネオンパープルの戦術 HUD。
+ *   左上：ロゴ（NO PLACE LEFT BEHIND）・ナビ（AGENTS / NOTES / TASKS / CONTEXT）
+ *   左：SYSTEM STATUS（この端末で実際に測れる値だけ）・CURRENT MODE（音声の状態）・AI（実際の接続状態）
+ *   左下：現在地（東京）のレーダー・描画の速さ（実測の FPS）
+ *   中央：大きな円のビューポート（God's Eye View の映像を入れる場所。今は空けておく）
+ *        下に LOCATION ／ 声（AI AGENT）／ VISUAL PRESETS と、指示の入力
+ *   右上：日時・接続・通信・電池／ACTIVE STYLE・視点の座標と太陽の高度（計算値）・時計
+ *   右：DISPLAY（映像の表示設定）・NEWS（Google 検索で調べた実際の話題と出典）・TREND・TASKS（クイックアクセス）
+ *   右下：メモリの推移・分野ごとの件数・映像の接続・ホログラムの地図
+ * 測れないもの・取れなかったものは、取れたように見せない（「—」「未接続」と出す）。
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { UiMessage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import { Markdown } from "../Markdown";
 import { EdithGlobe, type GlobePoint } from "./EdithGlobe";
 import { findPlaces } from "@/lib/edith-geo";
 import { splitTables } from "@/lib/edith-text";
+import { applyPreset, DEFAULT_DISPLAY, nextPreset, parseDisplay, PRESETS, solarElevation, type DisplaySettings, type PresetKey } from "@/lib/edith-display";
 import {
   ago,
   regionCounts,
@@ -31,11 +35,16 @@ import {
 /* ---------- アイコン（細い線） ---------- */
 const P: Record<string, ReactNode> = {
   logo: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></>,
-  home: <path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" />,
-  folder: <path d="M4 6h6l2 2h8v11H4z" />,
+  eye: <><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="3.2" /><circle cx="12" cy="12" r="0.9" /></>,
+  pin: <><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></>,
+  mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>,
+  link: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
+  cpu: <><rect x="7" y="7" width="10" height="10" /><rect x="10" y="10" width="4" height="4" /><path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4" /></>,
+  mem: <><rect x="3" y="8" width="18" height="8" /><path d="M7 8v8M11 8v8M15 8v8M5 16v3M19 16v3" /></>,
+  disk: <><rect x="3" y="5" width="18" height="14" rx="1" /><path d="M3 14h18M16 17h2" /></>,
+  net: <path d="M4 18h3v-4H4zM10.5 18h3V9h-3zM17 18h3V5h-3z" />,
   globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></>,
   search: <><circle cx="11" cy="11" r="6" /><path d="M16 16l5 5" /></>,
-  mail: <><rect x="3" y="6" width="18" height="12" rx="1" /><path d="M3 7l9 6 9-6" /></>,
   chip: <><rect x="7" y="7" width="10" height="10" /><path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4" /></>,
   gear: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></>,
   back: <path d="M10 6l-6 6 6 6M4 12h16" />,
@@ -45,13 +54,20 @@ const P: Record<string, ReactNode> = {
   image: <><rect x="3" y="5" width="18" height="14" /><path d="M3 16l5-5 4 4 3-3 6 6" /><circle cx="16" cy="9" r="1.5" /></>,
   cap: <path d="M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5" />,
   dots: <><circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" /></>,
-  arrow: <path d="M9 6l6 6-6 6" />,
+  play: <path d="M8 5l11 7-11 7z" />,
   reset: <path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4" />,
   rotate: <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4" />,
   translate: <path d="M3 5h10M8 3v2M5 5c1 4 4 7 7 8M11 5c-1 4-4 7-7 8M13 21l4-10 4 10M14.5 17h5" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   send: <path d="M5 6l6 6-6 6M12 6l6 6-6 6" />,
   wifi: <path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01" />,
+  sparse: <><rect x="4" y="4" width="16" height="16" /><path d="M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01" /></>,
+  moon: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />,
+  sparkle: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z" />,
+  cube: <><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></>,
+  frame: <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />,
+  layers: <path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5" />,
+  presets: <><rect x="3" y="5" width="18" height="14" /><path d="M3 15l5-4 4 3 3-2 6 4" /><circle cx="16" cy="9" r="1.4" /></>,
 };
 function I({ n, s = 18 }: { n: keyof typeof P; s?: number }) {
   return (
@@ -75,9 +91,23 @@ const CAT_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label])) as
 
 type QuickKind = "web" | "image" | "doc" | "translate";
 type Win = { id: string; kind: "answer"; msgId: string } | { id: string; kind: "analysis" } | { id: string; kind: "context" };
+/** 右のパネルのページ */
+type Page = "display" | "news" | "trend" | "tasks";
+const PAGES: { key: Page; label: string }[] = [
+  { key: "display", label: "DISPLAY" },
+  { key: "news", label: "NEWS" },
+  { key: "trend", label: "TREND" },
+  { key: "tasks", label: "TASKS" },
+];
 
 const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const two = (n: number) => String(n).padStart(2, "0");
+
+/** 起点（東京）。地図の「東京（起点）」と同じ場所 */
+const HOME = { name: "TOKYO", lat: 35.6812, lon: 139.7671 };
+
+const DISPLAY_KEY = "friday.edith-display.v1";
+const PAGE_KEY = "friday.edith-page.v1";
 
 /** 接続（オンラインか）・通信の種類・電池（取れるブラウザだけ） */
 function useSystemStatus() {
@@ -109,6 +139,126 @@ function useSystemStatus() {
   return { online, net, battery };
 }
 
+interface DeviceMetrics {
+  /** CPU のコア数（使用率はブラウザから測れない） */
+  cores: number | null;
+  /** この画面が使っているメモリ（JS ヒープ。Chrome 系だけ） */
+  memory: { usedMb: number; ratio: number } | null;
+  /** このアプリが端末に保存している量（ブラウザの見積もり） */
+  storage: { usedMb: number; ratio: number } | null;
+  /** 回線の速さの目安（Chrome 系だけ） */
+  downlink: number | null;
+  /** メモリの使用率の推移（5 秒ごと・新しいものが最後） */
+  memHistory: number[];
+}
+
+/** SYSTEM STATUS：この端末で実際に測れる値だけ（測れないものは null のまま「—」と出す） */
+function useDeviceMetrics(): DeviceMetrics {
+  const [m, setM] = useState<DeviceMetrics>({ cores: null, memory: null, storage: null, downlink: null, memHistory: [] });
+  useEffect(() => {
+    let alive = true;
+    const read = async () => {
+      const perf = performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } };
+      const conn = (navigator as Navigator & { connection?: { downlink?: number } }).connection;
+      let storage: DeviceMetrics["storage"] = null;
+      try {
+        const est = await navigator.storage?.estimate?.();
+        if (est && typeof est.usage === "number" && est.quota) storage = { usedMb: est.usage / 1048576, ratio: est.usage / est.quota };
+      } catch {
+        storage = null;
+      }
+      if (!alive) return;
+      const memory = perf.memory?.jsHeapSizeLimit ? { usedMb: perf.memory.usedJSHeapSize / 1048576, ratio: perf.memory.usedJSHeapSize / perf.memory.jsHeapSizeLimit } : null;
+      setM((prev) => ({
+        cores: typeof navigator.hardwareConcurrency === "number" && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : null,
+        memory,
+        storage,
+        downlink: typeof conn?.downlink === "number" ? conn.downlink : null,
+        memHistory: memory ? [...prev.memHistory.slice(-23), memory.usedMb] : prev.memHistory,
+      }));
+    };
+    void read();
+    const t = setInterval(() => void read(), 5000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  return m;
+}
+
+/** 画面の描画の速さ（1 秒ごとに実際に数えた FPS。隠れている間は数えない） */
+function useFrameRate(len = 36): number[] {
+  const [hist, setHist] = useState<number[]>([]);
+  useEffect(() => {
+    let frames = 0;
+    let raf = 0;
+    let last = performance.now();
+    const loop = () => {
+      frames++;
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    const iv = setInterval(() => {
+      const t = performance.now();
+      if (document.hidden) {
+        frames = 0;
+        last = t;
+        return;
+      }
+      const fps = Math.round((frames * 1000) / Math.max(1, t - last));
+      frames = 0;
+      last = t;
+      setHist((h) => [...h.slice(-(len - 1)), fps]);
+    }, 1000);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearInterval(iv);
+    };
+  }, [len]);
+  return hist;
+}
+
+/** 端末に保存する小さな設定（保存できない環境でも動く） */
+function useStored<T>(key: string, parse: (raw: unknown) => T, initial: T): [T, (f: (v: T) => T) => void] {
+  const [v, setV] = useState<T>(initial);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) setV(parse(JSON.parse(raw)));
+    } catch {
+      /* 読めなければ既定のまま */
+    }
+  }, [key, parse]);
+  const update = useCallback(
+    (f: (v: T) => T) =>
+      setV((prev) => {
+        const next = f(prev);
+        try {
+          localStorage.setItem(key, JSON.stringify(next));
+        } catch {
+          /* 保存できなくても表示は変える */
+        }
+        return next;
+      }),
+    [key],
+  );
+  return [v, update];
+}
+const parsePage = (raw: unknown): Page => (PAGES.some((p) => p.key === raw) ? (raw as Page) : "display");
+const parsePreset = (raw: unknown): PresetKey => (PRESETS.some((p) => p.key === raw) ? (raw as PresetKey) : "tactical");
+
+const MODE_LABEL: Record<VoiceState, string> = { off: "VOICE OFF", standby: "STANDBY", listening: "LISTENING", thinking: "THINKING", speaking: "SPEAKING" };
+const MODE_HINT: Record<VoiceState, string> = {
+  off: "音声はオフです（押すと声で指示できます）",
+  standby: "呼びかけを待っています",
+  listening: "聞いています",
+  thinking: "考えています",
+  speaking: "話しています",
+};
+
+type Link = "online" | "offline" | "checking";
+
 interface Props {
   messages: UiMessage[];
   voiceState: VoiceState;
@@ -125,12 +275,28 @@ interface Props {
   onOpenSettings: () => void;
   /** 画面のリンクを開く（新しいタブ） */
   onOpenUrl: (url: string) => void;
+  /** AI（Gemini）が応答できるか（/api/status の結果） */
+  aiStatus?: Link;
+  /** 使っている AI のモデル名（表示用） */
+  model?: string;
+  /** 脳（Obsidian）の接続 */
+  brain?: { configured: boolean; connected: boolean };
+  /** Google カレンダーの接続 */
+  calendar?: { configured: boolean; connected: boolean };
+  /** 会話の記憶の上限（メッセージ数） */
+  maxContext?: number;
 }
 
 export const EdithHud = memo(function EdithHud(props: Props) {
   const { messages, voiceState, voiceInterim, voiceError, onDismissVoiceError, onCommand, onMic, onBack, onOpenSettings, onOpenUrl } = props;
+  const { aiStatus = "checking", model, brain, calendar, maxContext = 24 } = props;
   const now = useNow();
   const sys = useSystemStatus();
+  const metrics = useDeviceMetrics();
+  const fps = useFrameRate();
+  const [display, setDisplay] = useStored<DisplaySettings>(DISPLAY_KEY, parseDisplay, DEFAULT_DISPLAY);
+  const [page, setPage] = useStored<Page>(PAGE_KEY, parsePage, "display");
+  const [preset, setPreset] = useStored<PresetKey>(`${DISPLAY_KEY}.preset`, parsePreset, "tactical");
   const [cat, setCat] = useState<EdithCategory>("news");
   const { state: news, retry } = useEdithNews(cat);
   const allNews = useAllLoadedNews();
@@ -161,7 +327,15 @@ export const EdithHud = memo(function EdithHud(props: Props) {
     });
   }, [messages]);
 
-  // リアルタイム会話のやりとり（声で話した内容と E.D.I.T.H. の返事）。最後の 1 往復を、コマンドバーの上に出す
+  // CLEAN UI のときは Esc で元に戻す
+  useEffect(() => {
+    if (!display.clean) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDisplay((d) => ({ ...d, clean: false }));
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [display.clean, setDisplay]);
+
+  // リアルタイム会話のやりとり（声で話した内容と E.D.I.T.H. の返事）。最後の 1 往復を、操作バーの上に出す
   const liveLines = useMemo(() => messages.filter((m) => m.id.startsWith("live-") && m.createdAt >= openedAt.current - 500 && m.content.trim()).slice(-2), [messages]);
   const lastLiveAt = liveLines.length ? Math.max(...liveLines.map((m) => m.createdAt)) : 0;
   const showLive = liveLines.length > 0 && voiceState !== "off" && (voiceState !== "standby" || (now ? now.getTime() - lastLiveAt < 25_000 : true));
@@ -185,11 +359,23 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const chooseCat = (c: EdithCategory) => {
     setCat(c);
     setSelected(null);
+  };
+  const showPage = (p: Page) => {
+    setPage(() => p);
+    setPanel("right");
+  };
+  const openWin = (kind: "analysis" | "context") => {
+    setWins((w) => [...w.filter((x) => x.kind !== kind), { id: kind, kind }].slice(-4));
     setPanel("none");
   };
-  const openWin = (kind: "analysis" | "context") => setWins((w) => [...w.filter((x) => x.kind !== kind), { id: kind, kind }].slice(-4));
   const closeWin = (id: string) => setWins((w) => w.filter((x) => x.id !== id));
   const front = (id: string) => setWins((w) => [...w.filter((x) => x.id !== id), ...w.filter((x) => x.id === id)]);
+  const setD = <K extends keyof DisplaySettings>(k: K, v: DisplaySettings[K]) => setDisplay((d) => ({ ...d, [k]: v }));
+  const cyclePreset = () => {
+    const next = nextPreset(preset);
+    setPreset(() => next);
+    setDisplay((d) => applyPreset(next, d));
+  };
 
   const submit = useCallback(
     (text: string) => {
@@ -223,126 +409,194 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const listening = voiceState === "listening";
   const speaking = voiceState === "speaking";
 
-  return (
-    <div className="edith" role="application" aria-label="E.D.I.T.H. グローバルインテリジェンスシステム" data-panel={panel}>
-      <div className="edith__grid" aria-hidden="true" />
-      {/* ---------- ヘッダー ---------- */}
-      <header className="ehead">
-        <div className="ehead__brand">
-          <span className="ehead__logo"><I n="logo" s={26} /></span>
-          <span className="ehead__name">E.D.I.T.H.</span>
-        </div>
-        <nav className="ehead__nav" aria-label="E.D.I.T.H. のナビゲーション">
-          <button type="button" title="ホーム（初期表示に戻す）" aria-label="ホーム" onClick={() => (chooseCat("news"), setResetKey((k) => k + 1), setWins([]))}><I n="home" /></button>
-          <button type="button" title="情報検索（指示を入力）" aria-label="情報検索" onClick={() => cmdRef.current?.focus()}><I n="search" /></button>
-          <button type="button" title="グローバル情報（地図を初期の向きに）" aria-label="グローバル情報" onClick={() => setResetKey((k) => k + 1)}><I n="globe" /></button>
-          <button type="button" title="分析（取得した情報の集計）" aria-label="分析" onClick={() => openWin("analysis")}><I n="chart" /></button>
-          <button type="button" title="メッセージ（最近の会話）" aria-label="メッセージ" onClick={() => openWin("context")}><I n="mail" /></button>
-          <button type="button" title="システム設定" aria-label="システム設定" onClick={onOpenSettings}><I n="gear" /></button>
-          <button type="button" className="ehead__back" title="F.R.I.D.A.Y. に戻る" aria-label="F.R.I.D.A.Y. に戻る" onClick={onBack}><I n="back" /><span>F.R.I.D.A.Y.</span></button>
-        </nav>
-        <div className="ehead__status">
-          <span className="ehead__clock">
-            {now ? (
-              <>
-                <span className="ehead__date">{`${now.getFullYear()}.${two(now.getMonth() + 1)}.${two(now.getDate())} ${DOW[now.getDay()]} `}</span>
-                {`${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`}
-              </>
-            ) : (
-              "—"
-            )}
-          </span>
-          <span className="ehead__online" data-on={sys.online || undefined}>{sys.online ? "ONLINE" : "OFFLINE"} · Global</span>
-          <span className="ehead__net" title={sys.net ? `通信：${sys.net}` : "通信の種類は取得できません"}><I n="wifi" s={16} />{sys.net ?? "—"}</span>
-          <span className="ehead__bat" title={sys.battery === null ? "電池の残量は取得できません" : "電池の残量"}>
-            <span className="ehead__batbar"><i style={{ width: `${Math.round((sys.battery ?? 0) * 100)}%` }} /></span>
-            {sys.battery === null ? "—" : `${Math.round(sys.battery * 100)}%`}
-          </span>
-        </div>
-        <div className="ehead__toggles">
-          <button type="button" aria-label="情報の分野を開く" onClick={() => setPanel((p) => (p === "left" ? "none" : "left"))}>分野</button>
-          <button type="button" aria-label="ニュースとツールを開く" onClick={() => setPanel((p) => (p === "right" ? "none" : "right"))}>情報</button>
-        </div>
-      </header>
+  // 左の「AI」：実際の接続状態（/api/status と音声の状態）
+  const contextCount = Math.min(messages.filter((m) => m.content.trim()).length, maxContext);
+  const aiRows: { key: string; label: string; on: boolean | null; value?: string; ratio?: number; hint: string }[] = [
+    { key: "brain", label: "BRAIN", on: brain ? brain.connected : null, hint: brain?.configured ? (brain.connected ? "脳（Obsidian）に接続しています" : "脳（Obsidian）に接続できていません") : "脳（Obsidian）は未設定です" },
+    { key: "calendar", label: "CALENDAR", on: calendar ? calendar.connected : null, hint: calendar?.connected ? "Google カレンダーに接続しています" : "Google カレンダーは未接続です" },
+    { key: "voice", label: "VOICE", on: voiceState !== "off", hint: voiceState !== "off" ? "音声で話しかけられます" : "音声はオフです" },
+    { key: "response", label: "RESPONSE", on: aiStatus === "checking" ? null : aiStatus === "online", hint: aiStatus === "online" ? `AI が応答できます${model ? `（${model}）` : ""}` : aiStatus === "offline" ? "AI に接続できていません" : "AI の状態を確認しています" },
+    { key: "context", label: "CONTEXT", on: true, value: `${contextCount}/${maxContext}`, ratio: maxContext ? contextCount / maxContext : 0, hint: `会話の記憶：${contextCount} / ${maxContext} 件` },
+  ];
 
-      <div className="etabs" role="toolbar" aria-label="表示の切り替え">
-        <button type="button" onClick={() => cmdRef.current?.focus()}>SEARCH</button>
-        <button type="button" onClick={() => setPanel("left")}>INFORMATION</button>
-        <button type="button" onClick={() => openWin("analysis")}>ANALYSIS</button>
-        <button type="button" onClick={() => openWin("context")}>CONTEXT</button>
+  const mb = (v: number) => (v >= 1024 ? `${(v / 1024).toFixed(1)}GB` : `${v < 10 ? v.toFixed(1) : Math.round(v)}MB`);
+  const sysRows: { key: string; label: string; icon: keyof typeof P; value: string; ratio: number | null; hint: string }[] = [
+    { key: "cpu", label: "CPU", icon: "cpu", value: metrics.cores ? `${metrics.cores} CORES` : "—", ratio: null, hint: metrics.cores ? `CPU のコア数（使用率はブラウザからは測れません）` : "CPU の情報は取得できません" },
+    { key: "memory", label: "MEMORY", icon: "mem", value: metrics.memory ? `${Math.round(metrics.memory.ratio * 100)}%` : "—", ratio: metrics.memory?.ratio ?? null, hint: metrics.memory ? `この画面が使っているメモリ ${mb(metrics.memory.usedMb)}（JS ヒープ）` : "このブラウザではメモリの使用量を取得できません" },
+    { key: "storage", label: "STORAGE", icon: "disk", value: metrics.storage ? mb(metrics.storage.usedMb) : "—", ratio: metrics.storage?.ratio ?? null, hint: metrics.storage ? "このアプリが端末に保存している量（ブラウザの見積もり）" : "保存量は取得できません" },
+    { key: "network", label: "NETWORK", icon: "net", value: metrics.downlink !== null ? `${metrics.downlink}Mbps` : sys.online ? "ONLINE" : "OFFLINE", ratio: metrics.downlink !== null ? Math.min(1, metrics.downlink / 10) : null, hint: metrics.downlink !== null ? "回線の速さの目安（ブラウザの推定）" : "回線の速さは取得できません" },
+  ];
+
+  const viewLat = view?.lat ?? HOME.lat;
+  const viewLon = view?.lon ?? HOME.lon;
+  const latStr = (v: number) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? "N" : "S"}`;
+  const lonStr = (v: number) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? "E" : "W"}`;
+  const jst = now ? new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false }).format(now) : "—";
+  const sun = now ? solarElevation(now, viewLat, viewLon) : null;
+  const sunStr = sun === null ? "—" : `${sun >= 0 ? "" : "-"}${Math.abs(sun).toFixed(1)}° EL`;
+  const utc = now ? now.toISOString().slice(0, 19).replace("T", " ") + "Z" : "—";
+  const fpsNow = fps.length ? fps[fps.length - 1] : null;
+  const presetLabel = PRESETS.find((p) => p.key === preset)?.label ?? "TACTICAL";
+
+  // 映像（God's Eye View）に渡す表示設定
+  const viewStyle = {
+    "--fade": display.fade / 100,
+    "--outside": display.outside / 100,
+    "--sharp": display.sharpen ? 1 + (display.sharpenAmt / 100) * 0.5 : 1,
+  } as CSSProperties;
+
+  return (
+    <div
+      className="edith"
+      role="application"
+      aria-label="E.D.I.T.H. グローバルインテリジェンスシステム"
+      data-panel={panel}
+      data-clean={display.clean || undefined}
+      data-layout={display.layout}
+      data-hud={display.hud || undefined}
+    >
+      <div className="edith__grid" aria-hidden="true" />
+      {display.celestial && <div className="edith__stars" aria-hidden="true" />}
+      <Frame />
+
+      {/* ---------- 右上：日時・接続 ---------- */}
+      <header className="estatus">
+        <span className="estatus__clock">
+          {now ? (
+            <>
+              <span className="estatus__date">{`${now.getFullYear()}.${two(now.getMonth() + 1)}.${two(now.getDate())}  ${DOW[now.getDay()]}  `}</span>
+              {`${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`}
+            </>
+          ) : (
+            "—"
+          )}
+        </span>
+        <span className="estatus__online" data-on={sys.online || undefined}>{sys.online ? "ONLINE" : "OFFLINE"} · Gemini</span>
+        <span className="estatus__net" title={sys.net ? `通信：${sys.net}` : "通信の種類は取得できません"}><I n="wifi" s={15} /></span>
+        <span className="estatus__bat" title={sys.battery === null ? "電池の残量は取得できません" : "電池の残量"}>
+          <span className="estatus__batbar"><i style={{ width: `${Math.round((sys.battery ?? 0) * 100)}%` }} /></span>
+          {sys.battery === null ? "—" : `${Math.round(sys.battery * 100)}%`}
+        </span>
+        <button type="button" className="estatus__btn" title="システム設定" aria-label="システム設定" onClick={onOpenSettings}><I n="gear" s={15} /></button>
+        <button type="button" className="estatus__btn estatus__back" title="F.R.I.D.A.Y. に戻る" aria-label="F.R.I.D.A.Y. に戻る" onClick={onBack}><I n="back" s={15} /><span>F.R.I.D.A.Y.</span></button>
+      </header>
+      <div className="etoggles">
+        <button type="button" aria-label="システムを開く" aria-pressed={panel === "left"} onClick={() => setPanel((p) => (p === "left" ? "none" : "left"))}>システム</button>
+        <button type="button" aria-label="表示設定とニュースを開く" aria-pressed={panel === "right"} onClick={() => setPanel((p) => (p === "right" ? "none" : "right"))}>情報</button>
       </div>
 
-      {/* ---------- 左：GLOBAL INFORMATION ---------- */}
-      <aside className="epanel eleft" aria-label="GLOBAL INFORMATION">
-        <h2 className="epanel__title"><I n="logo" s={16} />GLOBAL INFORMATION</h2>
-        <ul className="ecats">
-          {CATEGORIES.map((c) => (
-            <li key={c.key}>
-              <button type="button" className="ecat" data-on={cat === c.key || undefined} aria-pressed={cat === c.key} onClick={() => chooseCat(c.key)}>
-                <span className="ecat__icon"><I n={c.icon} s={22} /></span>
-                <span className="ecat__text">
-                  <b>{c.label}</b>
-                  <small>{c.desc}</small>
-                </span>
-                <span className="ecat__arrow"><I n="arrow" s={16} /></span>
-              </button>
-            </li>
-          ))}
-        </ul>
+      {/* ---------- 左：ロゴ・ナビ・システム・AI・現在地 ---------- */}
+      <aside className="eleft" aria-label="システム">
+        <div className="ebrand">
+          <span className="ebrand__logo"><I n="eye" s={34} /></span>
+          <span className="ebrand__titles">
+            <span className="ebrand__name">EDITH</span>
+            <span className="ebrand__motto">NO PLACE LEFT BEHIND</span>
+          </span>
+        </div>
+        <nav className="enav" aria-label="E.D.I.T.H. のナビゲーション">
+          <button type="button" title="情報を集める（分野ごとのニュース）" onClick={() => showPage("news")}>AGENTS</button>
+          <button type="button" title="取得した情報の集計" onClick={() => openWin("analysis")}>NOTES</button>
+          <button type="button" title="クイックアクセス（Web 検索・画像検索・資料作成・翻訳）" onClick={() => (showPage("tasks"), setTimeout(() => quickRef.current?.focus(), 50))}>TASKS</button>
+          <button type="button" title="最近の会話" onClick={() => openWin("context")}>CONTEXT</button>
+        </nav>
+
+        <section className="ebox esys" aria-label="SYSTEM STATUS">
+          <h2 className="ebox__title"><span className="edot" />SYSTEM STATUS<span className="ebox__dash" /></h2>
+          <ul className="esys__list">
+            {sysRows.map((r) => (
+              <li key={r.key} title={r.hint}>
+                <span className="esys__icon"><I n={r.icon} s={20} /></span>
+                <span className="esys__label">{r.label}</span>
+                <span className="esys__bar" data-empty={r.ratio === null || undefined}><i style={{ width: `${Math.round((r.ratio ?? 0) * 100)}%` }} /></span>
+                <span className="esys__value">{r.value}</span>
+              </li>
+            ))}
+          </ul>
+          <h3 className="ebox__sub"><span className="edot" />CURRENT MODE<span className="ebox__dash" /></h3>
+          <button type="button" className="emode" data-state={voiceState} title={MODE_HINT[voiceState]} onClick={onMic}>
+            <I n="logo" s={17} />
+            <span>{MODE_LABEL[voiceState]}</span>
+          </button>
+          <h3 className="ebox__sub ebox__sub--ai"><I n="logo" s={12} />AI</h3>
+          <ul className="eai">
+            {aiRows.map((r) => (
+              <li key={r.key} title={r.hint}>
+                <span className="eai__label">{r.label}</span>
+                <span className="eai__bar" data-on={r.on || undefined}><i style={{ width: `${r.ratio !== undefined ? Math.round(r.ratio * 100) : r.on ? 70 : 0}%` }} /></span>
+                <span className="eai__value" data-on={r.on || undefined}>{r.value ?? (r.on === null ? "—" : r.on ? "ON" : "OFF")}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="eloc" aria-label="現在地">
+          <Radar />
+          <div className="eloc__text">
+            <b><I n="pin" s={14} />{HOME.name}</b>
+            <span>{`${latStr(HOME.lat)}  ${lonStr(HOME.lon)}`}</span>
+            <small>{jst}  JST</small>
+          </div>
+        </section>
+
+        <section className="ebox echart edeco" aria-label="描画の速さ" title="この画面の描画の速さ（1 秒ごとに実測）">
+          <p className="echart__head"><span>RENDER</span><b>{fpsNow === null ? "—" : `${fpsNow} FPS`}</b></p>
+          <Bars values={fps} max={Math.max(60, ...fps)} />
+        </section>
+
+        <footer className="efoot">
+          <span className="efoot__brand"><I n="eye" s={18} />EDITH</span>
+          <span className="efoot__attr">MAP DATA: Natural Earth</span>
+        </footer>
       </aside>
 
-      {/* ---------- 中央：世界地図 ---------- */}
-      <main className="ecenter" aria-label="世界地図">
-        <div className="emap">
-          <EdithGlobe points={points} selectedId={selected} onSelect={setSelected} autoRotate={autoRotate} resetKey={resetKey} onView={setView} />
-          <span className="emap__dir emap__dir--n">N</span>
-          <span className="emap__dir emap__dir--s">S</span>
-          <span className="emap__dir emap__dir--w">W</span>
-          <span className="emap__dir emap__dir--e">E</span>
-          <div className="emap__tag"><I n="globe" s={22} /><span>GLOBAL<br />REAL-TIME<br />INFORMATION</span></div>
-          <div className="emap__coord" aria-label="地図の中心の座標">
-            {view ? (
+      {/* ---------- 中央：ビューポート（God's Eye View の映像を入れる場所） ---------- */}
+      <main className="ecenter" aria-label="ビューポート">
+        <div className="eview" style={viewStyle} data-bloom={display.bloom || undefined} data-3d={display.threeD || undefined}>
+          <Bezel />
+          <Gauges />
+          {/* ここに God's Eye View の映像を入れる（今は空けておく）。表示設定は data 属性と CSS 変数で渡す */}
+          <div
+            className="eview__slot"
+            data-gev-slot=""
+            data-sparse={display.sparse || undefined}
+            data-density={display.density}
+            data-allocation={display.allocation}
+            data-outside={display.outside}
+            aria-label="God's Eye View の映像（未接続）"
+          >
+            <div className="eview__empty" aria-hidden="true">
+              <span className="eview__cross" />
+              <b>GOD&apos;S EYE VIEW</b>
+              <small>映像未接続</small>
+            </div>
+          </div>
+          <span className="eview__link" aria-hidden="true"><I n="link" s={20} /></span>
+          <span className="eview__live">LIVE &gt; GOD&apos;S EYE VIEW : 未接続</span>
+        </div>
+
+        {(selectedItem || selectedAi) && (
+          <div className="epoint" role="dialog" aria-label="地点の詳細">
+            <button type="button" className="epoint__close" onClick={() => setSelected(null)} aria-label="閉じる"><I n="close" s={14} /></button>
+            {selectedItem ? (
               <>
-                <span>{Math.abs(view.lat).toFixed(4)}° {view.lat >= 0 ? "N" : "S"}</span>
-                <span>{Math.abs(view.lon).toFixed(4)}° {view.lon >= 0 ? "E" : "W"}</span>
+                <p className="epoint__meta">{selectedItem.place?.name ?? selectedItem.region} · {CAT_LABEL[cat]}</p>
+                <h3>{selectedItem.title}</h3>
+                <p>{selectedItem.summary}</p>
+                {news.status === "ready" && <p className="epoint__time">{ago(news.fetchedAt)}（地点は国・都市の代表地点）</p>}
+                <Sources sources={selectedItem.sources.length ? selectedItem.sources : news.status === "ready" ? news.refs : []} />
+                {!selectedItem.sources.length && <p className="epoint__time">（この話題だけの出典は特定できなかったため、一覧を作るのに参照したページを出しています）</p>}
+                <button type="button" className="ebtn" onClick={() => submit(`「${selectedItem.title}」について詳しく調べて`)}>詳しく調べる</button>
               </>
             ) : (
-              <span>—</span>
+              <>
+                <p className="epoint__meta">{selectedAi!.name} · AI の答え</p>
+                <p>情報ウィンドウの答えに出てきた地域です。</p>
+                <button type="button" className="ebtn" onClick={() => submit(`${selectedAi!.name}の最新の動向を調べて`)}>この地域の最新動向を調べる</button>
+              </>
             )}
-            <i className="emap__bars" aria-hidden="true"><b /><b /><b /><b /><b /><b /></i>
           </div>
-          <div className="emap__legend">
-            <span>● {CAT_LABEL[cat]}（{news.status === "ready" ? `${points.filter((p) => !p.hot).length} 地点` : news.status === "loading" ? "取得中" : "未取得"}）</span>
-            {answerPlaces.length > 0 && <span className="emap__legend-ai">● AI の答えに出た地域</span>}
-            <span className="emap__legend-home">● 東京（起点）</span>
-          </div>
-          <div className="emap__ctrl">
-            <button type="button" onClick={() => setResetKey((k) => k + 1)} title="初期の視点に戻す" aria-label="初期の視点に戻す"><I n="reset" s={16} /></button>
-            <button type="button" onClick={() => setAutoRotate((v) => !v)} aria-pressed={autoRotate} title={autoRotate ? "自動回転を止める" : "自動回転する"} aria-label="自動回転の切り替え"><I n="rotate" s={16} /></button>
-          </div>
-          {(selectedItem || selectedAi) && (
-            <div className="epoint" role="dialog" aria-label="地点の詳細">
-              <button type="button" className="epoint__close" onClick={() => setSelected(null)} aria-label="閉じる"><I n="close" s={14} /></button>
-              {selectedItem ? (
-                <>
-                  <p className="epoint__meta">{selectedItem.place?.name ?? selectedItem.region} · {CAT_LABEL[cat]}</p>
-                  <h3>{selectedItem.title}</h3>
-                  <p>{selectedItem.summary}</p>
-                  {news.status === "ready" && <p className="epoint__time">{ago(news.fetchedAt)}（地点は国・都市の代表地点）</p>}
-                  <Sources sources={selectedItem.sources.length ? selectedItem.sources : news.status === "ready" ? news.refs : []} />
-                  {!selectedItem.sources.length && <p className="epoint__time">（この話題だけの出典は特定できなかったため、一覧を作るのに参照したページを出しています）</p>}
-                  <button type="button" className="ebtn" onClick={() => submit(`「${selectedItem.title}」について詳しく調べて`)}>詳しく調べる</button>
-                </>
-              ) : (
-                <>
-                  <p className="epoint__meta">{selectedAi!.name} · AI の答え</p>
-                  <p>情報ウィンドウの答えに出てきた地域です。</p>
-                  <button type="button" className="ebtn" onClick={() => submit(`${selectedAi!.name}の最新の動向を調べて`)}>この地域の最新動向を調べる</button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+        )}
 
         {/* 情報ウィンドウ（AI の答え・分析・会話） */}
         <div className="ewins">
@@ -358,122 +612,25 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             </InfoWindow>
           ))}
         </div>
-      </main>
 
-      {/* ---------- 右：INTELLIGENCE PANELS ---------- */}
-      <aside className="eright" aria-label="インテリジェンスパネル">
-        <section className="epanel enews" aria-label="REAL-TIME NEWS">
-          <h2 className="epanel__title"><I n="logo" s={16} />REAL-TIME NEWS<small>{CAT_LABEL[cat]}</small></h2>
-          {news.status === "loading" && <p className="estate estate--scan">Google 検索で最新の話題を取得しています…</p>}
-          {news.status === "error" && (
-            <p className="estate estate--err">
-              {news.error}
-              <button type="button" className="ebtn" onClick={retry}>再試行</button>
-            </p>
-          )}
-          {news.status === "ready" && items.length === 0 && (
-            <p className="estate">
-              Google 検索で、出典を確かめられる話題を取得できませんでした。
-              <button type="button" className="ebtn" onClick={retry}>再取得</button>
-            </p>
-          )}
-          {news.status === "ready" && items.length > 0 && (
-            <ul className="enews__list">
-              {items.map((it, i) => (
-                <li key={i}>
-                  <button type="button" className="enews__item" data-on={selected === `${cat}-${i}` || undefined} onClick={() => setSelected(`${cat}-${i}`)}>
-                    <span className="enews__thumb" aria-hidden="true"><I n={CATEGORIES.find((c) => c.key === cat)!.icon} s={22} /><small>{it.place?.name ?? it.region}</small></span>
-                    <span className="enews__text">
-                      <b>{it.title}</b>
-                      <small>{it.summary}</small>
-                      <em>{it.sources[0]?.title ?? "出典は下の参照ページ"} · {ago(news.fetchedAt)}</em>
-                    </span>
-                  </button>
-                </li>
+        {/* ---------- 下：指示の入力と、LOCATION ／ 声 ／ VISUAL PRESETS ---------- */}
+        <div className="ecmd">
+          {showLive && (
+            <div className="elive" aria-live="polite" aria-label="リアルタイム会話">
+              {liveLines.map((m) => (
+                <p key={m.id} data-role={m.role} data-streaming={m.status === "streaming" || undefined}>
+                  <b>{m.role === "user" ? "YOU" : "E.D.I.T.H."}</b>
+                  <span>{m.content}</span>
+                </p>
               ))}
-            </ul>
-          )}
-          {news.status === "ready" && items.length > 0 && news.refs.length > 0 && (
-            <div className="enews__refs">
-              <p>この一覧を作るのに Google 検索で参照したページ（話題ごとの出典は特定できませんでした）</p>
-              <Sources sources={news.refs} />
             </div>
           )}
-        </section>
-
-        <section className="epanel etrend" aria-label="GLOBAL TREND">
-          <h2 className="epanel__title"><I n="chart" s={16} />GLOBAL TREND</h2>
-          {allNews.length === 0 ? (
-            <p className="estate">データ未取得（ニュースを取得すると、分野ごとの関連件数を数えます）</p>
-          ) : (
-            <>
-              <ol className="etrend__list">
-                {trend.map((t, i) => (
-                  <li key={t.key}>
-                    <span className="etrend__rank">{i + 1}</span>
-                    <span className="etrend__name">{t.label}</span>
-                    <span className="etrend__bar"><i style={{ width: `${(t.count / trendMax) * 100}%` }} /></span>
-                    <span className="etrend__num">{t.count}件</span>
-                  </li>
-                ))}
-              </ol>
-              <p className="etrend__note">取得した話題 {allNews.length} 件のうち関連する件数。推移・前期間との比較はデータ未取得。</p>
-            </>
+          {(voiceInterim || voiceError) && !(showLive && !voiceError && voiceState !== "listening") && (
+            <p className="ecmd__caption" role="status">
+              {voiceError ?? voiceInterim}
+              {voiceError && <button type="button" onClick={onDismissVoiceError} aria-label="閉じる"><I n="close" s={12} /></button>}
+            </p>
           )}
-        </section>
-
-        <section className="epanel equick" aria-label="QUICK ACCESS">
-          <h2 className="epanel__title"><I n="logo" s={16} />QUICK ACCESS</h2>
-          <form
-            className="equick__search"
-            onSubmit={(e) => {
-              e.preventDefault();
-              runQuick(quick ?? "web", quickText);
-            }}
-          >
-            <I n="search" s={16} />
-            <input
-              ref={quickRef}
-              value={quickText}
-              onChange={(e) => setQuickText(e.target.value)}
-              placeholder={quick ? QUICK_HINT[quick] : "知りたいことを入力してください…"}
-              aria-label="クイックアクセスの入力"
-            />
-            <button type="submit" aria-label="実行"><I n="search" s={16} /></button>
-          </form>
-          <div className="equick__cards">
-            {(["web", "image", "doc", "translate"] as const).map((k) => (
-              <button key={k} type="button" className="equick__card" data-on={quick === k || undefined} onClick={() => runQuick(k, quickText)}>
-                <I n={k === "web" ? "globe" : k === "image" ? "image" : k === "doc" ? "doc" : "translate"} s={24} />
-                <span>{k === "web" ? "Web検索" : k === "image" ? "画像検索" : k === "doc" ? "資料作成" : "翻訳"}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      </aside>
-
-      {/* ---------- 下：GLOBAL COMMAND BAR ---------- */}
-      <footer className="ecmd">
-        {showLive && (
-          <div className="elive" aria-live="polite" aria-label="リアルタイム会話">
-            {liveLines.map((m) => (
-              <p key={m.id} data-role={m.role} data-streaming={m.status === "streaming" || undefined}>
-                <b>{m.role === "user" ? "YOU" : "E.D.I.T.H."}</b>
-                <span>{m.content}</span>
-              </p>
-            ))}
-          </div>
-        )}
-        {(voiceInterim || voiceError) && !(showLive && !voiceError && voiceState !== "listening") && (
-          <p className="ecmd__caption" role="status">
-            {voiceError ?? voiceInterim}
-            {voiceError && <button type="button" onClick={onDismissVoiceError} aria-label="閉じる"><I n="close" s={12} /></button>}
-          </p>
-        )}
-        <div className="ecmd__bar">
-          <button type="button" className="ecmd__orb" data-state={voiceState} onClick={onMic} aria-label={listening ? "聞いています" : "声で指示する"} title="声で指示する">
-            <span />
-          </button>
           <form
             className="ecmd__form"
             onSubmit={(e) => {
@@ -481,6 +638,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
               submit(cmd);
             }}
           >
+            <span className="ecmd__prompt" aria-hidden="true">&gt;</span>
             <input
               ref={cmdRef}
               value={cmd}
@@ -489,15 +647,378 @@ export const EdithHud = memo(function EdithHud(props: Props) {
               aria-label="E.D.I.T.H. への指示"
               enterKeyHint="send"
             />
-            <button type="submit" className="ecmd__send" aria-label="送信"><I n="send" s={22} /></button>
+            <button type="submit" className="ecmd__send" aria-label="送信"><I n="send" s={18} /></button>
           </form>
         </div>
-      </footer>
-      <div className="edith__mark" aria-hidden="true"><span className="edith__markring" /><b>E.D.I.T.H.</b><small>Global Intelligence System</small></div>
-      <div className="edith__more" aria-hidden="true">MORE INFORMATION<br />A WIDER WORLD</div>
+        <div className="edock">
+          <button type="button" className="edock__side" onClick={() => setResetKey((k) => k + 1)} title="地図を東京（起点）に戻す">
+            <I n="pin" s={20} />LOCATION
+          </button>
+          <div className="edock__mic">
+            <small>{voiceState === "off" ? "AI AGENT OFF" : "AI AGENT ON"}</small>
+            <button type="button" className="edock__orb" data-state={voiceState} onClick={onMic} aria-label={listening ? "聞いています" : "声で指示する"} title="声で指示する（ON/OFF）">
+              <I n="mic" s={22} />
+              <span />
+            </button>
+            <small className="edock__onoff">ON/OFF</small>
+            <span className="edock__voice">
+              <span className="edock__eq" data-active={listening || speaking || undefined} aria-hidden="true">
+                {Array.from({ length: 9 }, (_, i) => <i key={i} style={{ ["--k" as string]: i }} />)}
+              </span>
+              VOICE {MODE_LABEL[voiceState].replace("VOICE ", "")}
+            </span>
+          </div>
+          <button type="button" className="edock__side" onClick={cyclePreset} title={`表示のプリセットを切り替える（今：${presetLabel}）`}>
+            <I n="presets" s={20} />
+            <span className="edock__label">VISUAL PRESETS<small>{presetLabel}</small></span>
+          </button>
+        </div>
+      </main>
+
+      {/* ---------- 右：スタイル・表示設定／ニュース・計器 ---------- */}
+      <aside className="eright" aria-label="インテリジェンスパネル">
+        <section className="estyle" aria-label="ACTIVE STYLE">
+          <div className="estyle__text">
+            <small>ACTIVE STYLE</small>
+            <b>EDITH</b>
+          </div>
+          <p className="estyle__coord" title="地図の視点の中心と、そこでの太陽の高度（日時と位置からの計算値）">
+            <I n="pin" s={18} />
+            <span>
+              LAT {latStr(viewLat)}
+              <br />
+              LON {lonStr(viewLon)}
+              <br />
+              ALT —
+              <br />
+              SUN {sunStr}
+            </span>
+          </p>
+          <Dial now={now} />
+        </section>
+
+        <section className="ebox ectl" aria-label="表示設定とインテリジェンス">
+          <header className="ectl__rec">
+            <p><span className="ectl__dot" />UTC {utc}</p>
+            <p>SRC: GOD&apos;S EYE VIEW  FEED: 未接続</p>
+          </header>
+          <div className="ectl__tabs" role="tablist" aria-label="パネルの切り替え">
+            {PAGES.map((p) => (
+              <button key={p.key} type="button" role="tab" aria-selected={page === p.key} data-on={page === p.key || undefined} onClick={() => setPage(() => p.key)}>
+                {p.label}
+                {page === p.key && <I n="play" s={10} />}
+              </button>
+            ))}
+          </div>
+
+          <div className="ectl__body">
+            {page === "display" && (
+              <div className="edisp">
+                <Toggle icon="eye" label="HUD" on={display.hud} onChange={(v) => setD("hud", v)} hint="円のまわりの計器を表示する" />
+                <label className="edisp__row edisp__select">
+                  <span>LAYOUT</span>
+                  <select value={display.layout} onChange={(e) => setD("layout", e.target.value === "minimal" ? "minimal" : "tactical")}>
+                    <option value="tactical">Tactical</option>
+                    <option value="minimal">Minimal</option>
+                  </select>
+                </label>
+                <Toggle icon="sparse" label="SPARSE" on={display.sparse} onChange={(v) => setD("sparse", v)} hint="映像の上の目印を間引く（映像の接続後に使います）" />
+                <Slider label="DENSITY" value={display.density} onChange={(v) => setD("density", v)} hint="目印の密度（映像の接続後に使います）" />
+                <div className="edisp__row edisp__seg" role="radiogroup" aria-label="ALLOCATION" title="目印の配置（映像の接続後に使います）">
+                  <span>ALLOCATION</span>
+                  {(["elastic", "weighted"] as const).map((a) => (
+                    <button key={a} type="button" role="radio" aria-checked={display.allocation === a} data-on={display.allocation === a || undefined} onClick={() => setD("allocation", a)}>
+                      {a.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <Slider label="FADE" value={display.fade} onChange={(v) => setD("fade", v)} hint="円のふちを暗くぼかす" />
+                <Slider label="OUTSIDE" value={display.outside} onChange={(v) => setD("outside", v)} hint="円の外側の光" />
+                <Toggle icon="moon" label="CELESTIAL" on={display.celestial} onChange={(v) => setD("celestial", v)} hint="背景に星を出す" />
+                <Toggle icon="sparkle" label="BLOOM" on={display.bloom} onChange={(v) => setD("bloom", v)} hint="映像を明るく光らせる" />
+                <Toggle icon="search" label="SHARPEN" on={display.sharpen} onChange={(v) => setD("sharpen", v)} hint="映像をくっきりさせる" />
+                {display.sharpen && <Slider label="" value={display.sharpenAmt} onChange={(v) => setD("sharpenAmt", v)} hint="くっきりさせる量" />}
+                <Toggle icon="cube" label="3D" on={display.threeD} onChange={(v) => setD("threeD", v)} hint="映像を斜めに傾けて立体的に見せる" />
+                <Toggle icon="frame" label="CLEAN UI" on={display.clean} onChange={(v) => setD("clean", v)} hint="左右のパネルを隠す（Esc で戻す）" />
+              </div>
+            )}
+
+            {page === "news" && (
+              <div className="enews">
+                <label className="edisp__row edisp__select">
+                  <span>CATEGORY</span>
+                  <select value={cat} onChange={(e) => chooseCat(e.target.value as EdithCategory)} title={CATEGORIES.find((c) => c.key === cat)?.desc}>
+                    {CATEGORIES.map((c) => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
+                    ))}
+                  </select>
+                </label>
+                {news.status === "loading" && <p className="estate estate--scan">Google 検索で最新の話題を取得しています…</p>}
+                {news.status === "error" && (
+                  <p className="estate estate--err">
+                    {news.error}
+                    <button type="button" className="ebtn" onClick={retry}>再試行</button>
+                  </p>
+                )}
+                {news.status === "ready" && items.length === 0 && (
+                  <p className="estate">
+                    Google 検索で、出典を確かめられる話題を取得できませんでした。
+                    <button type="button" className="ebtn" onClick={retry}>再取得</button>
+                  </p>
+                )}
+                {news.status === "ready" && items.length > 0 && (
+                  <ul className="enews__list">
+                    {items.map((it, i) => (
+                      <li key={i}>
+                        <button type="button" className="enews__item" data-on={selected === `${cat}-${i}` || undefined} onClick={() => setSelected(`${cat}-${i}`)}>
+                          <span className="enews__text">
+                            <b>{it.title}</b>
+                            <small>{it.summary}</small>
+                            <em>{it.place?.name ?? it.region} · {it.sources[0]?.title ?? "出典は下の参照ページ"} · {ago(news.fetchedAt)}</em>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {news.status === "ready" && items.length > 0 && news.refs.length > 0 && (
+                  <div className="enews__refs">
+                    <p>この一覧を作るのに Google 検索で参照したページ（話題ごとの出典は特定できませんでした）</p>
+                    <Sources sources={news.refs} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {page === "trend" && (
+              <div className="etrend">
+                {allNews.length === 0 ? (
+                  <p className="estate">データ未取得（NEWS で話題を取得すると、分野ごとの関連件数を数えます）</p>
+                ) : (
+                  <>
+                    <ol className="etrend__list">
+                      {trend.map((t, i) => (
+                        <li key={t.key}>
+                          <span className="etrend__rank">{i + 1}</span>
+                          <span className="etrend__name">{t.label}</span>
+                          <span className="etrend__bar"><i style={{ width: `${(t.count / trendMax) * 100}%` }} /></span>
+                          <span className="etrend__num">{t.count}件</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="etrend__note">取得した話題 {allNews.length} 件のうち関連する件数。推移・前期間との比較はデータ未取得。</p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {page === "tasks" && (
+              <div className="equick">
+                <form
+                  className="equick__search"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    runQuick(quick ?? "web", quickText);
+                  }}
+                >
+                  <I n="search" s={16} />
+                  <input
+                    ref={quickRef}
+                    value={quickText}
+                    onChange={(e) => setQuickText(e.target.value)}
+                    placeholder={quick ? QUICK_HINT[quick] : "知りたいことを入力してください…"}
+                    aria-label="クイックアクセスの入力"
+                  />
+                  <button type="submit" aria-label="実行"><I n="search" s={16} /></button>
+                </form>
+                <div className="equick__cards">
+                  {(["web", "image", "doc", "translate"] as const).map((k) => (
+                    <button key={k} type="button" className="equick__card" data-on={quick === k || undefined} onClick={() => runQuick(k, quickText)}>
+                      <I n={k === "web" ? "globe" : k === "image" ? "image" : k === "doc" ? "doc" : "translate"} s={20} />
+                      <span>{k === "web" ? "Web検索" : k === "image" ? "画像検索" : k === "doc" ? "資料作成" : "翻訳"}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+        <p className="ectl__foot" title="ALT：映像の高度（未接続）／SUN：視点の中心での太陽の高度（計算値）／AIS：船舶の情報（未接続）">
+          <span>ALT: —  SUN: {sunStr}</span>
+          <span>AIS: —</span>
+        </p>
+
+        <section className="erdock" aria-label="計器と地図">
+          <div className="ebox erdock__box edeco" title="この画面が使っているメモリの推移（5 秒ごと・Chrome 系だけ）">
+            <p className="echart__head"><span>MEMORY</span><b>{metrics.memory ? mb(metrics.memory.usedMb) : "—"}</b></p>
+            <Bars values={metrics.memHistory} max={Math.max(1, ...metrics.memHistory)} />
+          </div>
+          <div className="ebox erdock__box edeco" title="取得した話題の、分野ごとの関連件数">
+            <p className="echart__head"><span>INTEL</span><b>{allNews.length ? `${allNews.length} 件` : "—"}</b></p>
+            <Bars values={trend.map((t) => t.count)} max={trendMax} wide />
+          </div>
+          <div className="ebox erdock__box erdock__link">
+            <p className="echart__head"><span>GEV LINK</span></p>
+            <b>未接続</b>
+            <span className="erdock__flat" aria-hidden="true" />
+          </div>
+          <div className="emap" title="ホログラムの地図（ドラッグで回す・ダブルクリックで寄る）">
+            <EdithGlobe points={points} selectedId={selected} onSelect={setSelected} autoRotate={autoRotate} resetKey={resetKey} onView={setView} />
+            <span className="emap__ctrl">
+              <button type="button" onClick={() => setResetKey((k) => k + 1)} title="初期の視点（東京）に戻す" aria-label="初期の視点に戻す"><I n="reset" s={12} /></button>
+              <button type="button" onClick={() => setAutoRotate((v) => !v)} aria-pressed={autoRotate} title={autoRotate ? "自動回転を止める" : "自動回転する"} aria-label="自動回転の切り替え"><I n="rotate" s={12} /></button>
+            </span>
+            <span className="emap__legend">{news.status === "ready" ? `${points.filter((p) => !p.hot).length} PTS` : news.status === "loading" ? "SCAN" : "—"}</span>
+          </div>
+        </section>
+      </aside>
+
+      {display.clean && (
+        <button type="button" className="eunclean" onClick={() => setD("clean", false)} title="左右のパネルを戻す（Esc）">
+          <I n="frame" s={14} />UI を戻す
+        </button>
+      )}
     </div>
   );
 });
+
+function Toggle({ icon, label, on, onChange, hint }: { icon: keyof typeof P; label: string; on: boolean; onChange: (v: boolean) => void; hint: string }) {
+  return (
+    <button type="button" className="edisp__row edisp__toggle" role="switch" aria-checked={on} data-on={on || undefined} onClick={() => onChange(!on)} title={hint}>
+      <I n={icon} s={15} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function Slider({ label, value, onChange, hint }: { label: string; value: number; onChange: (v: number) => void; hint: string }) {
+  return (
+    <label className="edisp__row edisp__slider" title={hint} style={{ ["--v" as string]: `${value}%` }}>
+      <span>{label}</span>
+      <input type="range" min={0} max={100} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label || hint} />
+      <b>{value}%</b>
+    </label>
+  );
+}
+
+/** 小さな棒グラフ（実際の値だけ。値が無ければ空の枠） */
+function Bars({ values, max, wide = false }: { values: number[]; max: number; wide?: boolean }) {
+  const n = wide ? Math.max(values.length, 5) : 36;
+  const w = 100 / n;
+  return (
+    <svg className="ebars" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="0" y1="29.5" x2="100" y2="29.5" className="ebars__base" />
+      {values.slice(-n).map((v, i, a) => {
+        const h = Math.max(0.8, (v / (max || 1)) * 27);
+        const x = (n - a.length + i) * w;
+        return <rect key={i} x={x + w * 0.18} y={29.5 - h} width={w * 0.64} height={h} />;
+      })}
+    </svg>
+  );
+}
+
+/** 画面のふち（角を切った光る枠と飾り。位置は 1600×900 を基準に伸び縮み） */
+function Frame() {
+  return (
+    <svg className="edith__frame" viewBox="0 0 1600 900" preserveAspectRatio="none" aria-hidden="true">
+      <path className="ef-line" d="M30 8 H560 L578 24 H1022 L1040 8 H1570 L1592 30 V870 L1570 892 H1040 L1022 876 H578 L560 892 H30 L8 870 V30 Z" />
+      <path className="ef-dim" d="M18 40 V300 M18 600 V860 M1582 40 V300 M1582 600 V860" />
+      <path className="ef-glow" d="M600 24 H760 M840 24 H1000 M600 876 H760 M840 876 H1000" />
+      <path className="ef-stripe" d="M470 14 l10 -8 M482 14 l10 -8 M494 14 l10 -8 M506 14 l10 -8 M518 14 l10 -8 M1082 14 l10 -8 M1094 14 l10 -8 M1106 14 l10 -8" />
+      <path className="ef-corner" d="M8 70 V30 L30 8 H70 M1530 8 H1570 L1592 30 V70 M1592 830 V870 L1570 892 H1530 M70 892 H30 L8 870 V830" />
+    </svg>
+  );
+}
+
+/** 円のふち（暗い縁・光る切れ目・目盛り） */
+function Bezel() {
+  const ticks = Array.from({ length: 120 }, (_, i) => {
+    const a = (i * 3 * Math.PI) / 180;
+    const long = i % 10 === 0;
+    const r1 = long ? 88 : 90;
+    return <line key={i} x1={100 + Math.cos(a) * r1} y1={100 + Math.sin(a) * r1} x2={100 + Math.cos(a) * 91.6} y2={100 + Math.sin(a) * 91.6} className={long ? "eb-tick eb-tick--long" : "eb-tick"} />;
+  });
+  return (
+    <svg className="eview__bezel" viewBox="0 0 200 200" aria-hidden="true">
+      <defs>
+        <filter id="edith-glow" x="-10%" y="-10%" width="120%" height="120%">
+          <feGaussianBlur stdDeviation="1.1" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <circle cx="100" cy="100" r="98.6" className="eb-outer" />
+      <circle cx="100" cy="100" r="95.6" className="eb-band" />
+      <g filter="url(#edith-glow)">
+        <circle cx="100" cy="100" r="95.6" className="eb-lit" />
+        <circle cx="100" cy="100" r="95.6" className="eb-lit eb-lit--b" />
+        <circle cx="100" cy="100" r="92.4" className="eb-inner" />
+      </g>
+      <g className="eb-ticks">{ticks}</g>
+      <g className="eb-spin">
+        <circle cx="100" cy="100" r="86.5" className="eb-arc" />
+      </g>
+    </svg>
+  );
+}
+
+/** 円の左右の計器（飾り。数字は出さない） */
+function Gauges() {
+  return (
+    <>
+      <span className="egauge egauge--l edeco" aria-hidden="true">
+        {Array.from({ length: 22 }, (_, i) => <i key={i} />)}
+      </span>
+      <span className="egauge egauge--r edeco" aria-hidden="true">
+        <span className="egauge__diamond" />
+        {Array.from({ length: 16 }, (_, i) => <i key={i} />)}
+      </span>
+    </>
+  );
+}
+
+/** 左下のレーダー（現在地＝東京の目印。回る走査線は飾り） */
+function Radar() {
+  return (
+    <svg className="eradar" viewBox="0 0 100 100" aria-hidden="true">
+      <circle cx="50" cy="50" r="47" className="er-ring" />
+      <circle cx="50" cy="50" r="34" className="er-ring er-ring--dim" />
+      <circle cx="50" cy="50" r="20" className="er-ring" />
+      <path d="M50 3V14M50 86V97M3 50H14M86 50H97" className="er-ring" />
+      <g className="er-sweep">
+        <path d="M50 50 L50 3 A47 47 0 0 1 83 17 Z" />
+      </g>
+      <circle cx="50" cy="50" r="5" className="er-dot" />
+    </svg>
+  );
+}
+
+/** 右上の計器（実際の時刻を指すアナログ表示。照準のような輪は飾り） */
+function Dial({ now }: { now: Date | null }) {
+  const h = now ? ((now.getHours() % 12) + now.getMinutes() / 60) * 30 : 0;
+  const m = now ? (now.getMinutes() + now.getSeconds() / 60) * 6 : 0;
+  const s = now ? now.getSeconds() * 6 : 0;
+  return (
+    <svg className="edial" viewBox="0 0 140 140" role="img" aria-label={now ? `時刻 ${two(now.getHours())}:${two(now.getMinutes())}` : "時刻"}>
+      <circle cx="70" cy="70" r="67" className="edial__outer" />
+      <circle cx="70" cy="70" r="60" className="edial__band" />
+      <circle cx="70" cy="70" r="46" className="edial__inner" />
+      <circle cx="70" cy="70" r="28" className="edial__inner" />
+      <path d="M70 2V14M70 126V138M2 70H14M126 70H138" className="edial__major" />
+      {Array.from({ length: 60 }, (_, i) => {
+        const a = (i * 6 * Math.PI) / 180;
+        const r1 = i % 5 === 0 ? 50 : 54;
+        return <line key={i} x1={70 + Math.sin(a) * r1} y1={70 - Math.cos(a) * r1} x2={70 + Math.sin(a) * 57} y2={70 - Math.cos(a) * 57} className={i % 5 === 0 ? "edial__major" : "edial__minor"} />;
+      })}
+      <line x1="70" y1="70" x2="70" y2="42" className="edial__hour" transform={`rotate(${h} 70 70)`} />
+      <line x1="70" y1="70" x2="70" y2="26" className="edial__min" transform={`rotate(${m} 70 70)`} />
+      <line x1="70" y1="78" x2="70" y2="20" className="edial__sec" transform={`rotate(${s} 70 70)`} />
+      <circle cx="70" cy="70" r="3.5" className="edial__hub" />
+    </svg>
+  );
+}
 
 const QUICK_HINT: Record<QuickKind, string> = {
   web: "Web で調べる言葉を入力…",
