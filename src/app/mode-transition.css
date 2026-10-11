@@ -469,3 +469,11 @@
     opacity: 0;
   }
 }
+
+/* 拍手 2 回の起動：起動の一言（約 3 秒）に合わせて、名前を見せる時間を長めに */
+.mswitch[data-kind="boot"] .mswitch__mark--hold {
+  animation-duration: 2.9s;
+}
+.mswitch[data-kind="boot"] .mswitch__bar i {
+  animation-duration: 1.9s;
+}

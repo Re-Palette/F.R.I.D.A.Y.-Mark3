@@ -231,6 +231,10 @@ export function useVoice({
   const warmRef = useRef<LiveSession | null>(null);
   const warmTimer = useRef(0);
   const warmFailures = useRef(0);
+  /** 前もってつないでいる途中の準備（終わったら話せる。途中で話しかけられたら、捨てずに終わるのを待って使う） */
+  const warmPending = useRef<Promise<void> | null>(null);
+  /** 拍手で起動した直後は、画面がまだ裏にあっても前もってつないでおく（起動の一言のあと、すぐ話せるように） */
+  const bootWarmUntil = useRef(0);
   const warmUpRef = useRef<() => void>(() => {});
   const onStallRef = useRef(onStall);
   onStallRef.current = onStall;
@@ -958,7 +962,10 @@ export function useVoice({
     warmRef.current = null;
     clearTimeout(warmTimer.current);
     const useWarm = Boolean(warm?.isReady && warm.persona === ctx.persona);
-    if (warm && !useWarm) warm.stop("closed");
+    // つないでいる途中なら、捨ててつなぎ直さずに、その準備が終わるのを待って使う（拍手の起動の一言のあとなど）
+    const pending = !useWarm && warm && warm.active && warm.persona === ctx.persona ? warmPending.current : null;
+    warmPending.current = null;
+    if (warm && !useWarm && !pending) warm.stop("closed");
     setInterim(firstText ?? (useWarm ? "どうぞ" : "つないでいます…"));
     set(firstText ? "thinking" : "listening");
     let userId = "";
@@ -997,10 +1004,10 @@ export function useVoice({
         if (stateRef.current !== "off") toStandby();
       },
     };
-    const session = useWarm ? warm! : new LiveSession(handlers);
+    const session = useWarm || pending ? warm! : new LiveSession(handlers);
     session.setHandlers(handlers);
     liveRef.current = session;
-    (useWarm ? session.begin(firstText) : session.start({ ...ctx, firstText })).catch(() => {
+    (useWarm ? session.begin(firstText) : pending ? pending.then(() => session.begin(firstText)) : session.start({ ...ctx, firstText })).catch(() => {
       if (liveRef.current !== session) return;
       liveRef.current = null;
       liveFailedAt.current = Date.now();
@@ -1025,7 +1032,8 @@ export function useVoice({
     if (!liveOn.current || liveRef.current || stateRef.current === "off") return;
     if (Date.now() - liveFailedAt.current < LIVE_RETRY_MS || !navigator.onLine || typeof WebSocket === "undefined") return;
     // 画面が裏にある間はつないでおかない（つなぎ直しを繰り返して無料枠を減らさない。表に戻ったらつなぐ）
-    if (document.visibilityState === "hidden") {
+    // ただし拍手で起動した直後は別（画面を前に出している最中なので、待たずにつなぎ始める）
+    if (document.visibilityState === "hidden" && Date.now() > bootWarmUntil.current) {
       const w = warmRef.current;
       warmRef.current = null;
       w?.stop("closed");
@@ -1045,13 +1053,16 @@ export function useVoice({
     });
     session.persona = persona;
     warmRef.current = session;
-    session
-      .prepare(liveContextRef.current?.() ?? {})
+    const ready = session.prepare(liveContextRef.current?.() ?? {});
+    warmPending.current = ready;
+    ready
       .then(() => {
+        if (warmPending.current === ready) warmPending.current = null;
         warmFailures.current = 0;
         if (warmRef.current === session) warmTimer.current = window.setTimeout(() => warmUpRef.current(), WARM_REFRESH_MS);
       })
       .catch((err: unknown) => {
+        if (warmPending.current === ready) warmPending.current = null;
         if (warmRef.current !== session) return;
         warmRef.current = null;
         if (err instanceof Error && err.name === "STALE") return; // 画面が古い：読み込み直すまでつながない
@@ -1065,6 +1076,7 @@ export function useVoice({
     clearTimeout(warmTimer.current);
     const w = warmRef.current;
     warmRef.current = null;
+    warmPending.current = null;
     w?.stop("closed");
   }, []);
 
@@ -1191,6 +1203,9 @@ export function useVoice({
     liveRef.current = null;
     session?.stop("closed");
     cancelSpeech();
+    // 起動の一言を話している間に、会話をつないでおく（話し終えたら「つないでいます」を待たずにすぐ話せる）
+    bootWarmUntil.current = Date.now() + 20_000;
+    warmUpRef.current();
     chime("boot");
     const sp = speech.current;
     sp.id = `boot-${Date.now()}`;

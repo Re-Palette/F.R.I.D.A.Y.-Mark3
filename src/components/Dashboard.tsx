@@ -244,7 +244,9 @@ export function Dashboard() {
   /* ---- F.R.I.D.A.Y. と K.A.R.E.N.（クリエイティブ AI）の切り替え ---- */
   const aiMode = useAiMode();
   // 見せる画面のモード：切り替えの演出で画面が覆われてから変わる（会話・声の行き先は aiMode ですぐ変わる）
-  const { shown: shownMode, overlay: modeOverlay } = useModeTransition(aiMode);
+  const { shown: shownMode, overlay: modeOverlay, playBoot } = useModeTransition(aiMode);
+  const playBootRef = useRef(playBoot);
+  playBootRef.current = playBoot;
   /** 会話とは別に一言話す（音声会話の間だけ。下で定義する sayAloud を使う） */
   const sayRef = useRef<(text: string) => void>(() => {});
   const karenIo = useMemo<KarenIo>(
@@ -572,7 +574,16 @@ export function Dashboard() {
   // 拍手 2 回で全システム起動（パソコン。マイクを開いている音声モードの間だけ聞く。「フライデー」の呼びかけもそのまま使える）
   useEffect(() => {
     // 1 回目の拍手で拡張機能を起こしておき、2 回目のあとすぐタブを前に出す
-    setClapHandler(clapWake && !phone ? () => voiceRef.current.boot() : null, clapWake && !phone ? wakeExtension : null);
+    // 起動の音・一言と一緒に、起動の演出（ALL SYSTEMS ONLINE）を見せる
+    setClapHandler(
+      clapWake && !phone
+        ? () => {
+            playBootRef.current();
+            voiceRef.current.boot();
+          }
+        : null,
+      clapWake && !phone ? wakeExtension : null,
+    );
     return () => setClapHandler(null);
   }, [clapWake, phone]);
 

@@ -8,10 +8,12 @@
  * 会話・声の行き先（モードそのもの）はすぐ切り替わる。遅らせるのは「見せる画面」だけ。
  * 動きは transform と opacity だけで作る（GPU で動くのでカクつきにくい）。
  * ページを開いた直後（保存してあったモードに戻るとき）は演出しない。「視差効果を減らす」設定なら短いフェードだけ。
+ * 拍手 2 回の起動（playBoot）でも、同じ幕で「ALL SYSTEMS ONLINE」を見せる（起動の一言に合わせて少し長め。画面は切り替えない）。
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { AiMode } from "@/lib/ai-mode";
+import { bootGreeting } from "@/lib/boot-line";
 
 const META: Record<AiMode, { name: string; sub: string; caption: string }> = {
   friday: { name: "F.R.I.D.A.Y.", sub: "STANDARD PROTOCOL", caption: "通常モードに復帰" },
@@ -31,6 +33,8 @@ const BOOT_QUIET_MS = 1200;
 
 type Phase = "cover" | "reveal" | "reduced";
 interface Run {
+  /** 切り替え（switch）か、拍手 2 回の起動（boot） */
+  kind: "switch" | "boot";
   from: AiMode;
   to: AiMode;
   key: number;
@@ -45,7 +49,7 @@ const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia
  * 見せる画面のモード（shown）と、演出の重ね（overlay）を返す。
  * 画面の出し分けには shown を使う（mode をそのまま使うと、演出の前に新しい画面が見えてしまう）。
  */
-export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: ReactNode } {
+export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: ReactNode; playBoot: () => void } {
   const [shown, setShown] = useState<AiMode>(mode);
   const [run, setRun] = useState<Run | null>(null);
   const prev = useRef(mode);
@@ -67,11 +71,17 @@ export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: React
     }
     if (reducedMotion()) {
       setShown(mode);
-      setRun({ from, to: mode, key: Date.now(), phase: "reduced", held: true });
+      setRun({ kind: "switch", from, to: mode, key: Date.now(), phase: "reduced", held: true });
       return;
     }
-    setRun({ from, to: mode, key: Date.now(), phase: "cover", held: false });
+    setRun({ kind: "switch", from, to: mode, key: Date.now(), phase: "cover", held: false });
   }, [mode]);
+
+  /** 拍手 2 回の起動の演出（いまの画面のまま。切り替えの途中なら、そちらを優先する） */
+  const playBoot = useCallback(() => {
+    const m = prev.current;
+    setRun((r) => (r && r.kind === "switch" ? r : { kind: "boot", from: m, to: m, key: Date.now(), phase: reducedMotion() ? "reduced" : "cover", held: reducedMotion() }));
+  }, []);
 
   // 新しい画面が描き終わって（2 フレーム待つ）、名前を見せる時間も過ぎたら、幕を開ける
   useEffect(() => {
@@ -109,15 +119,17 @@ export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: React
         document.body,
       )
     : null;
-  return { shown, overlay };
+  return { shown, overlay, playBoot };
 }
 
 function Overlay({ run, onCovered, onHeld, onDone }: { run: Run; onCovered: () => void; onHeld: () => void; onDone: () => void }) {
   const m = META[run.to];
+  const boot = run.kind === "boot";
   return (
     <div
       key={run.key}
       className="mswitch"
+      data-kind={run.kind}
       data-from={run.from}
       data-to={run.to}
       data-phase={run.phase}
@@ -160,15 +172,15 @@ function Overlay({ run, onCovered, onHeld, onDone }: { run: Run; onCovered: () =
             <path d="M100 52 L141.6 76 V124 L100 148 L58.4 124 V76 Z" className="ms-hex" />
           </svg>
           <div className="mswitch__text">
-            <small>PROTOCOL SWITCH</small>
+            <small>{boot ? "SYSTEM BOOT" : "PROTOCOL SWITCH"}</small>
             <b>
               {Array.from(m.name).map((ch, i) => (
                 <span key={i} style={{ ["--i" as string]: i }}>{ch}</span>
               ))}
             </b>
-            <span className="mswitch__sub">{m.sub}</span>
+            <span className="mswitch__sub">{boot ? "ALL SYSTEMS ONLINE" : m.sub}</span>
             <span className="mswitch__bar"><i /></span>
-            <em>{m.caption}</em>
+            <em>{boot ? `${bootGreeting()}, sir.` : m.caption}</em>
           </div>
         </div>
       </div>
