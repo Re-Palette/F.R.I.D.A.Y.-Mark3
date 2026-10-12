@@ -3,7 +3,9 @@
  *
  *   0. EDITH_INTEL=on でなければ何もしない（脳にも外にも触れない）
  *   1. 設定ノートを読む（無ければ既定値で作る。あるノートは上書きしない）。「全体」が OFF なら終わる
- *   2. 実行中の印を取る（取れなければ、ほかの実行が動いているので終わる）
+ *   2. 印を取る前に、状態を読むだけで確かめる（書かない）。ほかの実行の有効な印があれば busy、
+ *      時刻が来た情報源が無ければ done で終わる（何もしない回は、脳に書き込まない）。読めない・締切なら、そのとおりに返す
+ *      そうでなければ実行中の印を取る（ほかの実行が先に取っていれば busy。書けない・障害は error。busy と区別する）
  *   3. 時刻が来た情報源だけ取りに行く（1 つ失敗しても、ほかは続ける。全体の持ち時間を超えたら次回へ）
  *   4. 保存の前に、まだ自分が印を持っているか確かめる（失っていたら何も書かない）
  *   5. 集めた情報を保存し、フィードの観測の記録を保存し（Phase 3-2）、情報源ごとの結果（成功・失敗・次の時刻）を状態に書いて印を外す
@@ -18,11 +20,11 @@
  * ここでは情報を集めて保存するだけ。メール・予定・ファイル操作などの機能は読み込まない・呼ばない。
  * 取った文章はデータとして保存するだけで、命令として扱わない。
  */
-import { abortInfo, githubBrainIO, type IntelBrainIO } from "./brain-io";
+import { abortInfo, githubBrainIO, INTEL_STATE_PATH, type IntelBrainIO } from "./brain-io";
 import { SourceError, type FetchLike } from "./http";
 import { activeSources, ensureSettingsNote, intelAllowedByEnv, readIntelSettings, type IntelSettings } from "./settings";
 import { readItems, saveItems } from "./store";
-import { confirmOwner, finishRun, isDue, isStale, recordDeferred, recordFailure, recordSuccess, sourceStatus, stillOwner, tryAcquireRun, type IntelRun } from "./state";
+import { confirmOwner, finishRun, isDue, isStale, lockHeld, parseState, recordDeferred, recordFailure, recordSuccess, sourceStatus, stillOwner, tryAcquireRun, type IntelRun } from "./state";
 import { uniqueById, type SourceFetcher } from "./sources/common";
 import { fetchUsgs } from "./sources/usgs";
 import { fetchNhc } from "./sources/nhc";
@@ -330,7 +332,23 @@ export async function runIntel(opts: RunOptions = {}): Promise<IntelRunResult> {
     if (!settings.enabled) return { ...result, status: "off" };
     if (clock.passed(dl.finishStartMs)) return { ...result, status: "timeout", error: "印を取る前に締切を過ぎました" };
 
-    // 2. 実行中の印（finishRun の開始締切で止める。書かれたか分からなければ、自分の印だと確かめられたときだけ続ける）
+    // 2. 印を取る前に、状態を読むだけで確かめる（書かない。読めない・締切を「情報源なし」とは扱わない）
+    let before: IntelState;
+    try {
+      before = parseState(await io.read(INTEL_STATE_PATH, { signal: clock.signal(dl.finishStartMs) }));
+    } catch (err) {
+      if (abortInfo(err) || clock.passed(dl.finishStartMs)) return { ...result, status: "timeout", error: "状態を時間内に読めませんでした（何も書いていません）" };
+      throw err;
+    }
+    const checkedAt = now();
+    // ほかの実行の有効な印がある：取りに行かず、何も書かない
+    if (lockHeld(before, checkedAt)) return { ...result, status: "busy" };
+    // 時刻が来た情報源が無い：印を取らず、何も書かずに終わる（印を取った後にも、最新の状態で決め直す）
+    if (!activeSources(settings, env).some((id) => fetchers[id] && isDue(before, id, checkedAt))) {
+      return { ...result, stale: activeSources(settings, env).filter((id) => isStale(before, id, checkedAt)) };
+    }
+
+    // 実行中の印（finishRun の開始締切で止める。書かれたか分からなければ、自分の印だと確かめられたときだけ続ける）
     const started = now();
     const acq = await tryAcquireRun(io, started, undefined, { signal: clock.signal(dl.finishStartMs) });
     let run: IntelRun;
@@ -338,7 +356,8 @@ export async function runIntel(opts: RunOptions = {}): Promise<IntelRunResult> {
     else if (acq.status === "busy") return { ...result, status: "busy" };
     else if (acq.status === "failed") {
       if (acq.aborted || clock.passed(dl.finishStartMs)) return { ...result, status: "timeout", error: "印を時間内に取れませんでした（印は書いていません）" };
-      return { ...result, status: "busy" };
+      // 書けない（権限・制限）・通信の失敗・ぶつかり続けた・状態を書き戻せない など。ほかの実行が動いている（busy）とは限らないので、失敗にする
+      return { ...result, status: "error", error: "印を取れませんでした（脳に書けない・通信の失敗など。印は書いていません）" };
     } else {
       let confirmed: IntelRun | null = null;
       if (clock.remaining(dl.finishStartMs) >= GITHUB_CALL_MS) {

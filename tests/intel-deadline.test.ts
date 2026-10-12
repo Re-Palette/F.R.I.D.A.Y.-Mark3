@@ -280,11 +280,12 @@ describe("印の書き込みの結果が分からないとき（自分の印だ�
   it("ほかの実行が印を取っていた（確かめると他人の印）→ lock-unknown。何も書かない", async () => {
     const clock = new FakeClock(T0);
     const b = slowBrain(clock, { [SETTINGS]: settingsWith("usgs") }, { onPut: (p) => (p === STATE ? "unknown-lost" : "ok") });
+    let stateReads = 0;
     const io: IntelBrainIO = {
       ...b.io,
       read: async (p, o) => {
-        // 確かめる直前に、別の実行が印を取った
-        if (p === STATE) b.files.set(STATE, { text: JSON.stringify({ ...emptyState(), lock: { owner: "other", until: iso(T0 + 3 * MIN) } }), sha: 9 });
+        // 確かめる直前に、別の実行が印を取った（1 回目の読み込みは、印を取る前の事前の確認）
+        if (p === STATE && ++stateReads === 2) b.files.set(STATE, { text: JSON.stringify({ ...emptyState(), lock: { owner: "other", until: iso(T0 + 3 * MIN) } }), sha: 9 });
         return b.io.read(p, o);
       },
     };
@@ -514,7 +515,10 @@ describe("実行結果の区別", () => {
     ]) {
       const clock = new FakeClock(T0);
       const b = slowBrain(clock, { [SETTINGS]: settingsWith("usgs") }, opts);
-      const r = await clock.run(runIntel({ io: b.io, env: ON, now: clock.now, setTimer: clock.setTimer, fetchers: {} }));
+      // 時刻が来た情報源がある（無ければ、印を取る前に done で終わるため）
+      const f = slowFetch(clock, S, itemsFor("usgs", "a"));
+      const r = await clock.run(runIntel({ io: b.io, env: ON, now: clock.now, setTimer: clock.setTimer, fetchers: { usgs: f.fn } }));
+      assert.equal(f.calls, 0);
       statuses.add(r.status);
       assert.ok(r.error && !/token|ghp_/i.test(r.error));
     }
