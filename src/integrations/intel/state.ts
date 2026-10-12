@@ -8,13 +8,20 @@
  *   3. 途中で止まっても、印の期限（until）を過ぎれば次の実行が取り直せる。
  */
 import { randomUUID } from "node:crypto";
-import { type IntelBrainIO, INTEL_STATE_PATH } from "./brain-io";
+import { abortInfo, isWriteUnknown, type IntelBrainIO, INTEL_STATE_PATH } from "./brain-io";
 import { isUnsupportedTracking, normalizeTracking } from "./normalize";
 import { sourceDef } from "./sources";
 import type { IntelSourceId, IntelSourceStatus, IntelState, UnsupportedTrackingHold } from "./types";
 
 /** 印の期限（実行は 60 秒で打ち切られるので、余裕を見て 3 分） */
 export const LOCK_TTL_MS = 3 * 60_000;
+/**
+ * 印の期限として受け付ける、時計のずれの余裕。印の期限は「印を取った実行の時計で、取った時刻＋LOCK_TTL_MS」で、延長しない。
+ * なので、正しい印の期限は「今＋LOCK_TTL_MS＋（時計のずれ）」より先にはならない。それより先の期限は、
+ * 手で直した・壊れた印とみなす（ずっと busy にならないように）。余裕 1 分は、実行環境の時計のずれ（ふつう 1 秒未満）より十分大きく、
+ * 1 回の実行（最長 55 秒で止める）や定期実行の間隔（5 分）とも食い違わない。
+ */
+export const LOCK_CLOCK_SKEW_MS = 60_000;
 /** 失敗が続いたときの待ちの上限 */
 const MAX_BACKOFF_MS = 6 * 60 * 60_000;
 /**
@@ -142,8 +149,15 @@ export function serializeState(s: IntelState): string {
   return JSON.stringify(out, null, 1);
 }
 
+/**
+ * 印が有効か。期限切れ・読めない期限は無効（これまでどおり）。
+ * 期限が「今＋LOCK_TTL_MS＋LOCK_CLOCK_SKEW_MS」より先なら、壊れた印として無効にする（次の実行が取り直せる。
+ * 取り直しは、これまでどおり GitHub の sha 比較を通して書き、持ち主の確認も変えない）。
+ */
 export function lockHeld(s: IntelState, now = Date.now()): boolean {
-  return Boolean(s.lock && Date.parse(s.lock.until) > now);
+  if (!s.lock) return false;
+  const until = Date.parse(s.lock.until);
+  return until > now && until <= now + LOCK_TTL_MS + LOCK_CLOCK_SKEW_MS;
 }
 
 export interface IntelRun {
@@ -153,11 +167,25 @@ export interface IntelRun {
 }
 
 /**
- * 実行中の印を取る。ほかの実行が動いていれば null（何もせずに終わる）。
+ * 印を取った結果。
+ *   acquired … 自分の印を書けた
+ *   busy     … ほかの実行が印を持っている（何も書いていない）
+ *   failed   … 書き込みを送る前に失敗した・止めた、または GitHub が拒否した（書いていない）
+ *   unknown  … 書き込みを送った後に止めた・通信が切れた・5xx（印が書かれたか分からない）。owner で確かめられる
+ */
+export type AcquireResult =
+  | { status: "acquired"; run: IntelRun }
+  | { status: "busy" }
+  | { status: "failed"; aborted: boolean }
+  | { status: "unknown"; owner: string };
+
+/**
+ * 実行中の印を取る（結果を 4 つに分ける）。opts.signal（省略可）で止められる。
  * 書き込みは GitHub の sha 比較で守られるので、同時に 2 つが取ることはない。
  */
-export async function acquireRun(io: IntelBrainIO, now = Date.now(), owner: string = randomUUID()): Promise<IntelRun | null> {
+export async function tryAcquireRun(io: IntelBrainIO, now = Date.now(), owner: string = randomUUID(), opts?: { signal?: AbortSignal }): Promise<AcquireResult> {
   let taken: IntelState | null = null;
+  let held = false;
   try {
     await io.update(
       INTEL_STATE_PATH,
@@ -165,24 +193,45 @@ export async function acquireRun(io: IntelBrainIO, now = Date.now(), owner: stri
         const s = parseState(current);
         if (lockHeld(s, now) && s.lock?.owner !== owner) {
           taken = null;
+          held = true;
           return current ?? serializeState(s);
         }
+        held = false;
         taken = { ...s, lock: { owner, until: new Date(now + LOCK_TTL_MS).toISOString() } };
         return serializeState(taken);
       },
       "E.D.I.T.H.: 情報収集を開始",
+      opts,
     );
-  } catch {
-    return null; // ぶつかり続けた・書けない → 今回は動かない
+  } catch (err) {
+    // 書き込みを送った後の失敗：印が書かれたか分からない（取れたとは仮定しない。confirmOwner で確かめる）
+    if (abortInfo(err)?.maybeWritten || isWriteUnknown(err)) return { status: "unknown", owner };
+    return { status: "failed", aborted: Boolean(abortInfo(err)) }; // ぶつかり続けた・書けない・送る前に止めた
   }
-  return taken ? { owner, state: taken } : null;
+  if (taken) return { status: "acquired", run: { owner, state: taken } };
+  return held ? { status: "busy" } : { status: "failed", aborted: false };
+}
+
+/** 実行中の印を取る。ほかの実行が動いている・取れたか分からないときは null（何もせずに終わる） */
+export async function acquireRun(io: IntelBrainIO, now = Date.now(), owner: string = randomUUID()): Promise<IntelRun | null> {
+  const r = await tryAcquireRun(io, now, owner);
+  return r.status === "acquired" ? r.run : null;
+}
+
+/**
+ * 印が自分（owner）のものか、state.json を読んで確かめる（印の書き込みの結果が分からないとき）。
+ * 自分の印で期限内なら、その状態で実行を続けられる。違う・読めないときは null（続けない）。
+ */
+export async function confirmOwner(io: IntelBrainIO, owner: string, now = Date.now(), opts?: { signal?: AbortSignal }): Promise<IntelRun | null> {
+  const s = parseState(await io.read(INTEL_STATE_PATH, opts));
+  return s.lock?.owner === owner && lockHeld(s, now) ? { owner, state: s } : null;
 }
 
 /**
  * 実行の結果を書いて印を外す。change は最新の状態を受け取って直す。
  * 自分の印が無くなっていたら（期限切れで別の実行が取った）、何も書かない。
  */
-export async function finishRun(io: IntelBrainIO, run: IntelRun, change: (s: IntelState) => IntelState, now = Date.now()): Promise<boolean> {
+export async function finishRun(io: IntelBrainIO, run: IntelRun, change: (s: IntelState) => IntelState, now = Date.now(), opts?: { signal?: AbortSignal }): Promise<boolean> {
   let wrote = false;
   await io.update(
     INTEL_STATE_PATH,
@@ -197,13 +246,14 @@ export async function finishRun(io: IntelBrainIO, run: IntelRun, change: (s: Int
       return serializeState({ ...next, lock: null, lastRunAt: new Date(now).toISOString() });
     },
     "E.D.I.T.H.: 情報収集の記録",
+    opts,
   );
   return wrote;
 }
 
 /** いまも自分が印を持っているか（ほかのファイルを書く前に確かめる） */
-export async function stillOwner(io: IntelBrainIO, run: IntelRun, now = Date.now()): Promise<boolean> {
-  const s = parseState(await io.read(INTEL_STATE_PATH));
+export async function stillOwner(io: IntelBrainIO, run: IntelRun, now = Date.now(), opts?: { signal?: AbortSignal }): Promise<boolean> {
+  const s = parseState(await io.read(INTEL_STATE_PATH, opts));
   return s.lock?.owner === run.owner && lockHeld(s, now);
 }
 
@@ -233,6 +283,24 @@ export function recordSuccess(s: IntelState, id: IntelSourceId, count: number, n
     failures: 0,
     lastCount: count,
     nextAllowedAt: new Date(now + (def?.minIntervalMs ?? 60 * 60_000)).toISOString(),
+  };
+  return { ...s, sources: { ...s.sources, [id]: st } };
+}
+
+/**
+ * 取得はできたが、集めた情報を保存できなかった（保存しなかった・結果が分からない）とき。
+ * 成功とは記録しない：lastSuccessAt・lastCount・failures・lastError は変えない（気象庁の地震の取りこぼしの補いが次の回に働く）。
+ * 取りに行く間隔は守る：lastRunAt を今にし、nextAllowedAt を「今＋最短の間隔」にする（失敗後の待ちのほうが長ければ、そちらを残す）。
+ */
+export function recordDeferred(s: IntelState, id: IntelSourceId, now = Date.now()): IntelState {
+  const def = sourceDef(id);
+  const prev = sourceStatus(s, id);
+  const next = now + (def?.minIntervalMs ?? 60 * 60_000);
+  const kept = prev.nextAllowedAt ? Date.parse(prev.nextAllowedAt) : NaN;
+  const st: IntelSourceStatus = {
+    ...prev,
+    lastRunAt: new Date(now).toISOString(),
+    nextAllowedAt: new Date(Number.isFinite(kept) && kept > next ? kept : next).toISOString(),
   };
   return { ...s, sources: { ...s.sources, [id]: st } };
 }

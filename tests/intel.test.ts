@@ -9,7 +9,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-const { acquireRun, finishRun, stillOwner, recordSuccess, recordFailure, isDue, isStale, emptyState, parseState, LOCK_TTL_MS } = await import("../src/integrations/intel/state");
+const { acquireRun, finishRun, stillOwner, recordSuccess, recordFailure, isDue, isStale, emptyState, parseState, LOCK_TTL_MS, LOCK_CLOCK_SKEW_MS, lockHeld } = await import("../src/integrations/intel/state");
 const { parseSettingsNote, renderSettingsNote, ensureSettingsNote, readIntelSettings, activeSources, inactiveReason, inQuietHours, defaultSettings, intelAllowedByEnv } = await import(
   "../src/integrations/intel/settings"
 );
@@ -113,6 +113,63 @@ describe("排他制御（二重実行の防止）", () => {
 
   it("壊れた状態ファイルでも止まらない", () => {
     assert.deepEqual(parseState("{壊れている"), emptyState());
+  });
+});
+
+describe("印の期限の上限（遠い未来の期限で、ずっと busy にならない）", () => {
+  const LIMIT = LOCK_TTL_MS + LOCK_CLOCK_SKEW_MS; // 今から 4 分先まで
+  const withLock = (until: unknown, owner = "other") => JSON.stringify({ ...emptyState(), lock: { owner, until } });
+  const at = (t: number) => new Date(t).toISOString();
+
+  it("lockHeld：期限切れ・ちょうど今・正しい期限・上限ちょうど・上限を超えた期限", () => {
+    const held = (until: unknown) => lockHeld(parseState(withLock(until)), NOW);
+    assert.equal(held(at(NOW - 1)), false, "期限切れ");
+    assert.equal(held(at(NOW)), false, "期限ちょうど（切れている）");
+    assert.equal(held(at(NOW + 1)), true);
+    assert.equal(held(at(NOW + LOCK_TTL_MS)), true, "ふつうの印（今＋3 分）");
+    assert.equal(held(at(NOW + LIMIT)), true, "上限ちょうど（時計のずれ 1 分まで）");
+    assert.equal(held(at(NOW + LIMIT + 1)), false, "上限を 1 ミリ秒超えたら壊れた印");
+    assert.equal(held("9999-12-31T00:00:00.000Z"), false, "遠い未来");
+    assert.equal(held("+275760-09-13T00:00:00.000Z"), false, "表せる最大の日時");
+  });
+
+  it("lockHeld：読めない期限・欠落・型の違う期限は、これまでどおり印なし（無効）", () => {
+    for (const until of ["abc", "", "1e20", 123, null, undefined, {}]) {
+      const s = parseState(withLock(until));
+      assert.equal(lockHeld(s, NOW), false, JSON.stringify(until));
+    }
+    assert.equal(parseState(withLock(123)).lock, null, "型の違う期限は、これまでどおり印として読まない");
+    assert.ok(parseState(withLock("abc")).lock, "文字の期限は、これまでどおり印として読む（無効なだけ）");
+  });
+
+  it("遠い未来の期限の印は取り直せる。取り直した後は、新しい持ち主だけが書ける（sha 比較・持ち主の確認はそのまま）", async () => {
+    const b = fakeBrain({ [INTEL_STATE_PATH]: withLock("9999-12-31T00:00:00.000Z", "broken") });
+    const next = await acquireRun(b.io, NOW, "next");
+    assert.equal(next?.owner, "next");
+    const s = parseState(b.files.get(INTEL_STATE_PATH)!.text);
+    assert.equal(s.lock?.owner, "next");
+    assert.equal(s.lock?.until, at(NOW + LOCK_TTL_MS));
+    // 壊れた印の持ち主（もういない実行）としては書けない
+    assert.equal(await finishRun(b.io, { owner: "broken", state: s }, (x) => recordSuccess(x, "usgs", 1, NOW), NOW + 1000), false);
+    assert.equal(await stillOwner(b.io, next!, NOW + 1000), true);
+    assert.equal(await finishRun(b.io, next!, (x) => x, NOW + 2000), true);
+  });
+
+  it("上限以内の正しい印（ほかの実行が使用中・時計が 1 分まで進んでいる）は奪わない", async () => {
+    for (const until of [at(NOW + LOCK_TTL_MS), at(NOW + LIMIT)]) {
+      const b = fakeBrain({ [INTEL_STATE_PATH]: withLock(until, "running") });
+      assert.equal(await acquireRun(b.io, NOW, "next"), null, until);
+      assert.equal(parseState(b.files.get(INTEL_STATE_PATH)!.text).lock?.owner, "running");
+    }
+  });
+
+  it("自分の印は、実行の間ずっと有効（取った直後から期限の直前まで）", async () => {
+    const b = fakeBrain();
+    const run = (await acquireRun(b.io, NOW, "me"))!;
+    assert.equal(await stillOwner(b.io, run, NOW), true);
+    assert.equal(await stillOwner(b.io, run, NOW + 55_000), true, "実行の締切（55 秒）の時点");
+    assert.equal(await stillOwner(b.io, run, NOW + LOCK_TTL_MS - 1), true);
+    assert.equal(await stillOwner(b.io, run, NOW + LOCK_TTL_MS), false, "期限が来たら無効（これまでどおり）");
   });
 });
 

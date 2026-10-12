@@ -65,13 +65,13 @@ export function serializeItems(items: IntelItem[]): string {
   return text;
 }
 
-export async function readItems(io: IntelBrainIO): Promise<IntelItem[]> {
+export async function readItems(io: IntelBrainIO, opts?: { signal?: AbortSignal }): Promise<IntelItem[]> {
   if (!io.configured()) return [];
-  return parseItems(await io.read(INTEL_ITEMS_PATH));
+  return parseItems(await io.read(INTEL_ITEMS_PATH, opts));
 }
 
-/** 新しい情報を足して保存する（呼ぶ前に stillOwner で印を確かめること） */
-export async function saveItems(io: IntelBrainIO, incoming: IntelItem[], now = Date.now()): Promise<IntelItem[]> {
+/** 新しい情報を足して保存する（呼ぶ前に stillOwner で印を確かめること）。opts.signal（省略可）で止められる */
+export async function saveItems(io: IntelBrainIO, incoming: IntelItem[], now = Date.now(), opts?: { signal?: AbortSignal }): Promise<IntelItem[]> {
   let merged: IntelItem[] = [];
   await io.update(
     INTEL_ITEMS_PATH,
@@ -80,6 +80,7 @@ export async function saveItems(io: IntelBrainIO, incoming: IntelItem[], now = D
       return serializeItems(merged);
     },
     "E.D.I.T.H.: 集めた情報を保存",
+    opts,
   );
   return merged;
 }

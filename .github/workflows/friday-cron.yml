@@ -31,6 +31,7 @@ jobs:
   # E.D.I.T.H. の情報収集（上の push とは別のジョブ。止まっても上の通知には影響しない）。
   # Vercel の環境変数 EDITH_INTEL=on のときだけ実際に集める（それ以外は何もせずに返る）。
   # 各情報源は自分の間隔（10 分〜1 時間）が来たときだけ取りに行く。
+  # 応答の health を見て、degraded（時間切れ・印の異常）は警告を出してから失敗、failed・HTTP 200 以外・JSON でない応答は失敗にする。
   intel:
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -41,6 +42,66 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           if [ -z "$FRIDAY_URL" ] || [ -z "$CRON_SECRET" ]; then
-            echo "FRIDAY_URL / CRON_SECRET が未設定のため何もしません"; exit 0
+            # これまでどおり成功で終わる。ただし気づけるように、決まった文の警告と Step Summary を出す
+            # （secret の値・外からの入力は出さない。Step Summary に書けなくても止めない）
+            echo "FRIDAY_URL / CRON_SECRET が未設定のため何もしません"
+            echo "::warning::E.D.I.T.H. の情報収集をスキップしました（FRIDAY_URL または CRON_SECRET の secret が未設定です）"
+            { echo "### E.D.I.T.H. の情報収集：スキップ（FRIDAY_URL または CRON_SECRET の secret が未設定）" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; } 2>/dev/null || true
+            exit 0
           fi
-          curl -sS --max-time 70 -H "Authorization: Bearer $CRON_SECRET" "${FRIDAY_URL%/}/api/cron/intel"
+          # 応答の本文と HTTP の状態の番号を分けて受け取る（エラーのときも本文を表示して調べられるように）
+          body="$(mktemp)"
+          trap 'rm -f "$body"' EXIT
+          summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+          if ! code="$(curl -sS --max-time 70 -o "$body" -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "${FRIDAY_URL%/}/api/cron/intel")"; then
+            echo "::error::E.D.I.T.H. の情報収集を呼び出せませんでした（接続できない・70 秒を超えた）"
+            echo "### E.D.I.T.H. の情報収集：呼び出せませんでした" >> "$summary"
+            exit 1
+          fi
+          echo "HTTP $code"
+          # 本文は調べるために表示するだけ（最大 4000 バイト）。各行の頭に「| 」を付け、本文の中の「::error::」などが
+          # GitHub Actions の命令として読まれないようにする（\r も行の区切りとして扱う）
+          head -c 4000 "$body" | tr '\r' '\n' | while IFS= read -r line || [ -n "$line" ]; do printf '| %s\n' "$line"; done
+          # JSON から文字の項目を 1 つ取り出す（jq → python3 → node の順に、使えるものを使う。どれも無ければ失敗にする）
+          # 読めないときのエラーの文（本文の一部が入ることがある）はログに出さない
+          field() {
+            if command -v jq >/dev/null 2>&1; then
+              jq -er --arg k "$1" 'if type == "object" then (.[$k] // "" | tostring) else error("not an object") end' "$body" 2>/dev/null
+            elif command -v python3 >/dev/null 2>&1; then
+              python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert isinstance(d, dict); v = d.get(sys.argv[2], ""); print(v if isinstance(v, str) else json.dumps(v))' "$body" "$1" 2>/dev/null
+            elif command -v node >/dev/null 2>&1; then
+              node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); if (!d || typeof d !== "object" || Array.isArray(d)) process.exit(1); const v = d[process.argv[2]]; console.log(v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v));' "$body" "$1" 2>/dev/null
+            else
+              echo "JSON を読む道具（jq・python3・node）がありません" >&2
+              return 2
+            fi
+          }
+          if [ "$code" != "200" ]; then
+            echo "::error::E.D.I.T.H. の情報収集が HTTP $code を返しました"
+            echo "### E.D.I.T.H. の情報収集：HTTP $code" >> "$summary"
+            exit 1
+          fi
+          if ! health="$(field health)" || ! status="$(field status)"; then
+            echo "::error::E.D.I.T.H. の情報収集の応答を JSON として読めませんでした"
+            echo "### E.D.I.T.H. の情報収集：応答を読めませんでした" >> "$summary"
+            exit 1
+          fi
+          # 注釈・要約に入れる文字は、決まった形（英小文字とハイフン）だけにする
+          health="$(printf '%s' "$health" | tr -cd 'a-z-')"
+          status="$(printf '%s' "$status" | tr -cd 'a-z-')"
+          case "$health" in
+            ok)
+              echo "E.D.I.T.H. の情報収集：$status（正常）" ;;
+            degraded)
+              echo "::warning::E.D.I.T.H. の情報収集が要注意の状態で終わりました（$status）"
+              echo "### E.D.I.T.H. の情報収集：要注意（$status）" >> "$summary"
+              exit 1 ;;
+            failed)
+              echo "::error::E.D.I.T.H. の情報収集が失敗しました（$status）"
+              echo "### E.D.I.T.H. の情報収集：失敗（$status）" >> "$summary"
+              exit 1 ;;
+            *)
+              echo "::error::E.D.I.T.H. の情報収集の応答に health がありません（$status）"
+              echo "### E.D.I.T.H. の情報収集：health がありません（$status）" >> "$summary"
+              exit 1 ;;
+          esac

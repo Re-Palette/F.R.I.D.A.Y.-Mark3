@@ -39,6 +39,44 @@ export class BrainError extends Error {
   }
 }
 
+/**
+ * 呼び出し側の signal で止めたとき（code は BRAIN_ABORTED）。
+ * maybeWritten が true なら、書き込み（PUT）を送った後に止めたので、GitHub 側で反映されたかは分からない
+ * （止めても、受け付け済みの書き込みは取り消せない）。false なら、書き込みは送っていない。
+ */
+export class BrainAbortError extends BrainError {
+  constructor(public readonly maybeWritten: boolean) {
+    super("BRAIN_ABORTED", maybeWritten ? "書き込みの途中で止めました（反映されたかは分かりません）。" : "書き込みの前に止めました。");
+    this.name = "BrainAbortError";
+  }
+}
+
+/**
+ * 書き込み（PUT）を送った後に、通信が切れた・時間切れ・GitHub の 5xx で結果が分からないとき（code は BRAIN_WRITE_UNKNOWN）。
+ * GitHub 側で反映されたかは分からない。updateNote に signal を渡した呼び出しだけが受け取る（渡さない呼び出しはこれまでどおり）。
+ */
+export class BrainWriteUnknownError extends BrainError {
+  constructor(public readonly status: number | null) {
+    super("BRAIN_WRITE_UNKNOWN", `書き込みの結果が分かりません（${status === null ? "通信の失敗" : `GitHub ${status}`}）。`);
+    this.name = "BrainWriteUnknownError";
+  }
+}
+
+/** 決まった時間で切れる signal と、呼び出し側の signal を合わせる（AbortSignal.any が無い Node 20.0〜20.2 でも動くように） */
+function withTimeout(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+  const timer = AbortSignal.timeout(timeoutMs);
+  if (!signal) return timer;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([signal, timer]);
+  const c = new AbortController();
+  const abort = () => c.abort();
+  if (signal.aborted || timer.aborted) c.abort();
+  else {
+    signal.addEventListener("abort", abort, { once: true });
+    timer.addEventListener("abort", abort, { once: true });
+  }
+  return c.signal;
+}
+
 /* ---------- 脳の中の決まった場所 ---------- */
 
 // Windows は末尾が「.」のフォルダを作れないため、記号なしの名前にする
@@ -51,7 +89,8 @@ export const LOG_DIR = `${BRAIN_DIR}/会話ログ`;
 
 /* ---------- GitHub API ---------- */
 
-async function gh(c: BrainConfig, path: string, init: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
+/** signal（省略可）は呼び出し側から止めるため。決まった時間（timeoutMs）の打ち切りはそのまま */
+async function gh(c: BrainConfig, path: string, init: RequestInit = {}, timeoutMs = 8000, signal?: AbortSignal): Promise<Response> {
   try {
     return await fetch(`${c.apiBase}/repos/${c.owner}/${c.repo}${path}`, {
       ...init,
@@ -61,10 +100,12 @@ async function gh(c: BrainConfig, path: string, init: RequestInit = {}, timeoutM
         "X-GitHub-Api-Version": "2022-11-28",
         ...(init.body ? { "Content-Type": "application/json" } : {}),
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: withTimeout(timeoutMs, signal),
       cache: "no-store",
     });
   } catch {
+    // 呼び出し側が止めた：書き込み（PUT）なら、送った後かもしれないので「反映されたか分からない」
+    if (signal?.aborted) throw new BrainAbortError(init.method === "PUT");
     throw new BrainError("BRAIN_NETWORK", "GitHub に接続できませんでした。");
   }
 }
@@ -149,26 +190,39 @@ export async function readNote(file: BrainFile): Promise<string> {
   return text;
 }
 
-/** ノートを最新の状態で読む（キャッシュを使わない。無ければ null） */
-export async function readFresh(path: string): Promise<string | null> {
-  return (await getFile(path))?.text ?? null;
+/** ノートを最新の状態で読む（キャッシュを使わない。無ければ null）。opts.signal（省略可）で止めると BrainAbortError */
+export async function readFresh(path: string, opts?: { signal?: AbortSignal }): Promise<string | null> {
+  if (opts?.signal?.aborted) throw new BrainAbortError(false);
+  return (await getFile(path, opts?.signal))?.text ?? null;
 }
 
-async function getFile(path: string): Promise<{ text: string; sha: string } | null> {
+async function getFile(path: string, signal?: AbortSignal): Promise<{ text: string; sha: string } | null> {
   const c = getBrainConfig();
-  const res = await gh(c, `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`);
+  const res = await gh(c, `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {}, undefined, signal);
   if (res.status === 404) return null;
   if (!res.ok) throw explain(res.status);
-  const json = (await res.json()) as { content?: string; sha: string };
+  let json: { content?: string; sha: string };
+  try {
+    json = (await res.json()) as { content?: string; sha: string };
+  } catch (err) {
+    if (signal?.aborted) throw new BrainAbortError(false); // 読み込みの途中で止めた（書き込みはしていない）
+    throw err;
+  }
   return { text: b64decode((json.content ?? "").replace(/\n/g, "")), sha: json.sha };
 }
 
-async function putFile(path: string, text: string, message: string, sha?: string): Promise<Response> {
+async function putFile(path: string, text: string, message: string, sha?: string, signal?: AbortSignal): Promise<Response> {
   const c = getBrainConfig();
-  return gh(c, `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {
-    method: "PUT",
-    body: JSON.stringify({ message, content: b64encode(text), ...(sha ? { sha } : {}) }),
-  });
+  return gh(
+    c,
+    `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ message, content: b64encode(text), ...(sha ? { sha } : {}) }),
+    },
+    undefined,
+    signal,
+  );
 }
 
 /** そのファイルが最後に更新された時刻（GitHub の最後のコミット。無ければ null） */
@@ -182,18 +236,35 @@ export async function lastUpdatedAt(path: string): Promise<number | null> {
   return Number.isFinite(at) ? at : null;
 }
 
-/** ファイルを書き換える（無ければ作る）。同時更新でぶつかったら 1 回だけ取り直して再試行 */
-export async function updateNote(path: string, update: (current: string | null) => string, message: string): Promise<void> {
+/**
+ * ファイルを書き換える（無ければ作る）。同時更新でぶつかったら 1 回だけ取り直して再試行。
+ * opts.signal（省略可）で止められる：止めた後は、新しい書き込み・再試行を始めない（BrainAbortError）。
+ * 送った後の書き込みは取り消せないので、その場合は「反映されたか分からない」（maybeWritten）。
+ * signal を渡した呼び出しでは、書き込みを送った後の通信の失敗・GitHub の 5xx も「反映されたか分からない」（BrainWriteUnknownError）。
+ * signal を渡さない呼び出しは、これまでどおり（BrainError）。
+ */
+export async function updateNote(path: string, update: (current: string | null) => string, message: string, opts?: { signal?: AbortSignal }): Promise<void> {
+  const signal = opts?.signal;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const current = await getFile(path);
+    if (signal?.aborted) throw new BrainAbortError(false); // 読み直し・再試行を始めない
+    const current = await getFile(path, signal);
     const next = update(current?.text ?? null);
     if (current && next === current.text) return; // 変更なし
-    const res = await putFile(path, next, message, current?.sha);
+    if (signal?.aborted) throw new BrainAbortError(false); // 書き込みを始めない
+    let res: Response;
+    try {
+      res = await putFile(path, next, message, current?.sha, signal);
+    } catch (err) {
+      // 送った後に通信が切れた・時間切れ：反映されたかは分からない（signal を渡した呼び出しだけ見分ける）
+      if (signal && err instanceof BrainError && err.code === "BRAIN_NETWORK") throw new BrainWriteUnknownError(null);
+      throw err;
+    }
+    if (signal && res.status >= 500) throw new BrainWriteUnknownError(res.status); // 5xx：受け付けたかは分からない
     if (res.ok) {
       markTreeStale(); // 次に一覧を読むとき裏で取り直させる
       return;
     }
-    if ((res.status === 409 || res.status === 422) && attempt === 0) continue;
+    if ((res.status === 409 || res.status === 422) && attempt === 0) continue; // ぶつかった（書き込みは反映されていない）
     throw explain(res.status);
   }
 }

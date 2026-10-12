@@ -204,6 +204,31 @@ export interface FeedStreamObservation {
   docError: { kind: IntelFetchErrorKind; httpStatus: number | null } | null;
 }
 
+/* ---------- 観測の記録の保存（.friday/intel/observations.json。Phase 3-1：保存の仕組みだけで、まだどこからも呼ばない） ---------- */
+
+/** 履歴 1 件の系列（分析に要る最小限。直近の時刻の一覧・項目の id・失敗の詳細は持たない） */
+export type FeedObservationHistoryStream = Pick<FeedStreamObservation, "stream" | "latestAt" | "latestReport" | "bulletin" | "reportAt">;
+
+/** 履歴 1 件（観測の記録を小さくしたもの。失敗のメッセージ・件数は持たない） */
+export interface FeedObservationHistoryEntry extends Pick<FeedObservation, "fetchedAt" | "status" | "feedNewestEntryAt"> {
+  failure: Pick<NonNullable<FeedObservation["failure"]>, "kind" | "httpStatus"> | null;
+  streams: FeedObservationHistoryStream[];
+}
+
+/** 情報源 1 つ分の観測の記録 */
+export interface IntelObservationSourceRecord {
+  /** 直近の観測（そのまま。上限を超えても消さない） */
+  latest: FeedObservation;
+  /** 履歴（新しい順・上限あり。先頭は latest を小さくしたもの） */
+  history: FeedObservationHistoryEntry[];
+}
+
+/** 観測の記録のファイル全体 */
+export interface IntelObservationStore {
+  version: 1;
+  sources: Partial<Record<IntelSourceId, IntelObservationSourceRecord>>;
+}
+
 /** 電文の実況に書かれた現象の階級（気象庁の TyphoonClass の括弧内）。読めない・知らない値は unknown */
 export type IntelPhenomenonCode = "TY" | "STS" | "TS" | "TD" | "LOW" | "unknown";
 

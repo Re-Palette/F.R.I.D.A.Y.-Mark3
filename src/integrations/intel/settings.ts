@@ -130,14 +130,14 @@ ${s.keywords.length ? s.keywords.map((k) => `- ${k}`).join("\n") : "- "}
 }
 
 /** 設定を読む（ノートが無ければ既定値。ノートは作らない） */
-export async function readIntelSettings(io: IntelBrainIO): Promise<IntelSettings> {
+export async function readIntelSettings(io: IntelBrainIO, opts?: { signal?: AbortSignal }): Promise<IntelSettings> {
   if (!io.configured()) return defaultSettings();
-  const text = await io.read(INTEL_SETTINGS_PATH);
+  const text = await io.read(INTEL_SETTINGS_PATH, opts);
   return text === null ? defaultSettings() : parseSettingsNote(text);
 }
 
 /** 設定ノートが無ければ既定の内容で作る（あれば何もしない＝上書きしない） */
-export async function ensureSettingsNote(io: IntelBrainIO): Promise<{ created: boolean }> {
+export async function ensureSettingsNote(io: IntelBrainIO, opts?: { signal?: AbortSignal }): Promise<{ created: boolean }> {
   let created = false;
   await io.update(
     INTEL_SETTINGS_PATH,
@@ -150,6 +150,7 @@ export async function ensureSettingsNote(io: IntelBrainIO): Promise<{ created: b
       return renderSettingsNote();
     },
     "E.D.I.T.H.: 情報収集の設定を作成",
+    opts,
   );
   return { created };
 }
