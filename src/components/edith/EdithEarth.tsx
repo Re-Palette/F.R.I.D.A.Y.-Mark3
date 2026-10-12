@@ -2,8 +2,10 @@
 
 /**
  * GOD'S EYE VIEW の 3D 地球儀（CesiumJS）。EARTH のときに .eview__slot の中に描く。
- *   - 地球の画像は Cesium に同梱の Natural Earth II（パブリックドメイン。/cesium/ から配る）だけ。
- *     Cesium ion・外部の地図タイル・地形は使わない（地形は楕円体。高精細の画像・地形は無い）
+ *   - 地球の画像の土台は Cesium に同梱の Natural Earth II（パブリックドメイン。/cesium/ から配る）。
+ *     その上に、ON のときだけ、API キー不要の外部の画像を重ねる（lib/earth/imagery.ts）：
+ *     詳細な衛星写真（Sentinel-2 cloudless）・今日の地球（NASA GIBS）・雨雲レーダー（RainViewer）。
+ *     Cesium ion・立体の地形は使わない（地形は楕円体）。重ねた画像のクレジットは地球儀の上にリンク付きで出す
  *   - ドラッグで回す・ホイール／ピンチで寄る・引く・右ドラッグ／2 本指で傾ける。クリックで地震・衛星を選ぶ
  *   - 地震：USGS の発表の位置に、規模ごとの大きさ・色の点。衛星：軌道要素から satellite.js で 1 秒ごとに計算した推定位置
  *   - 選んだものへの追従（カメラが付いていく）と解除。地点へ移動
@@ -16,6 +18,7 @@ import type * as CesiumNS from "cesium";
 import { loadCesium, webglAvailable, type CesiumModule } from "@/lib/earth/cesium-loader";
 import { magBand, type QuakePoint } from "@/lib/earth/quakes";
 import { makeSatrec, satPosition, SAT_TICK_MS, type OrbitElement } from "@/lib/earth/satellites";
+import { GIBS_CREDIT, GIBS_MAX_LEVEL, gibsUrl, RADAR_CREDIT, RADAR_MAX_LEVEL, S2_CREDIT, S2_MAX_LEVEL, S2_URL, type ImageryCredit } from "@/lib/earth/imagery";
 
 export type EarthViewStatus = "loading" | "ready" | "unsupported" | "error";
 
@@ -46,6 +49,20 @@ interface Props {
   /** 変わるたびに初期の視点へ */
   resetKey: number;
   onStatus?: (s: EarthViewStatus, message?: string) => void;
+  /** 重ねる画像（無ければ同梱の画像だけ） */
+  imagery?: EarthImagery;
+  /** 重ねた画像の一部を読み込めなかった（種類ごと） */
+  onImageryError?: (kind: ImageryKind) => void;
+}
+
+export type ImageryKind = "detail" | "clouds" | "radar";
+export interface EarthImagery {
+  detail: boolean;
+  clouds: boolean;
+  /** 今日の地球に使う日（UTC。YYYY-MM-DD） */
+  cloudsDate: string;
+  /** 雨雲レーダーのタイルの URL の型（無ければ出さない） */
+  radarUrl: string | null;
 }
 
 /** 初期の視点：宇宙から地球を見下ろす（日本の上空） */
@@ -57,6 +74,12 @@ const SAT_SELECTED = "#ffffff";
 const ROTATE_RAD_PER_SEC = 0.035;
 /** 操作した後、自動回転を止めておく時間 */
 const IDLE_BEFORE_ROTATE_MS = 8000;
+/** 寄れる近さ：同梱の画像だけなら遠め、詳細な衛星写真があれば近くまで */
+const MIN_ZOOM_BASIC = 250_000;
+const MIN_ZOOM_DETAIL = 2_000;
+/** 重ねる画像の透明度 */
+const CLOUDS_ALPHA = 0.88;
+const RADAR_ALPHA = 0.72;
 
 export function EdithEarth(p: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -67,6 +90,8 @@ export function EdithEarth(p: Props) {
   const satEntities = useRef(new Map<string, CesiumNS.Entity>());
   const orbitEntity = useRef<CesiumNS.Entity | null>(null);
   const lastInteract = useRef(0);
+  /** 重ねた画像の層（種類ごと。URL が変わったら作り直す） */
+  const overlays = useRef(new Map<ImageryKind, { url: string; layer: CesiumNS.ImageryLayer; off: () => void }>());
   const propsRef = useRef(p);
   propsRef.current = p;
   const [status, setStatus] = useState<EarthViewStatus>("loading");
@@ -134,8 +159,8 @@ export function EdithEarth(p: Props) {
         if (scene.moon) scene.moon.show = false;
         scene.globe.baseColor = C.Color.fromCssColorString("#120a2c");
         scene.globe.showGroundAtmosphere = true;
-        // 同梱の画像は解像度が低いので、寄りすぎないようにする
-        scene.screenSpaceCameraController.minimumZoomDistance = 250_000;
+        // 同梱の画像は解像度が低いので、寄りすぎないようにする（詳細な衛星写真を重ねたら近くまで寄れる）
+        scene.screenSpaceCameraController.minimumZoomDistance = MIN_ZOOM_BASIC;
         scene.screenSpaceCameraController.maximumZoomDistance = 60_000_000;
         const base = viewer.imageryLayers.get(0);
         if (base) {
@@ -171,6 +196,8 @@ export function EdithEarth(p: Props) {
       viewerRef.current = null;
       quakeEntities.current.clear();
       satEntities.current.clear();
+      overlays.current.forEach((o) => o.off());
+      overlays.current.clear();
       orbitEntity.current = null;
       if (v && !v.isDestroyed()) v.destroy();
       setReady(false);
@@ -188,6 +215,48 @@ export function EdithEarth(p: Props) {
       v.scene.requestRender();
     }
   }, [p.active, ready]);
+
+  /* ---------- 重ねる画像（詳細な衛星写真・今日の地球・雨雲レーダー） ---------- */
+  const img = p.imagery;
+  useEffect(() => {
+    const v = viewerRef.current;
+    const C = cesiumRef.current;
+    if (!v || !C || !ready) return;
+    const want: { kind: ImageryKind; url: string | null; max: number; credit: ImageryCredit; alpha: number }[] = [
+      { kind: "detail", url: img?.detail ? S2_URL : null, max: S2_MAX_LEVEL, credit: S2_CREDIT, alpha: 1 },
+      { kind: "clouds", url: img?.clouds && img.cloudsDate ? gibsUrl(img.cloudsDate) : null, max: GIBS_MAX_LEVEL, credit: GIBS_CREDIT, alpha: CLOUDS_ALPHA },
+      { kind: "radar", url: img?.radarUrl ?? null, max: RADAR_MAX_LEVEL, credit: RADAR_CREDIT, alpha: RADAR_ALPHA },
+    ];
+    const map = overlays.current;
+    for (const w of want) {
+      const cur = map.get(w.kind);
+      if (cur && cur.url === w.url) continue;
+      if (cur) {
+        cur.off();
+        v.imageryLayers.remove(cur.layer, true);
+        map.delete(w.kind);
+      }
+      if (!w.url) continue;
+      const provider = new C.UrlTemplateImageryProvider({ url: w.url, maximumLevel: w.max, tilingScheme: new C.WebMercatorTilingScheme(), credit: new C.Credit(w.credit.text) });
+      const kind = w.kind;
+      let reported = false;
+      const off = provider.errorEvent.addEventListener(() => {
+        if (reported) return;
+        reported = true;
+        propsRef.current.onImageryError?.(kind);
+      });
+      const layer = v.imageryLayers.addImageryProvider(provider);
+      layer.alpha = w.alpha;
+      map.set(w.kind, { url: w.url, layer, off });
+    }
+    // 重ねる順番：土台 → 詳細な衛星写真 → 今日の地球 → 雨雲レーダー
+    for (const k of ["detail", "clouds", "radar"] as const) {
+      const o = map.get(k);
+      if (o) v.imageryLayers.raiseToTop(o.layer);
+    }
+    v.scene.screenSpaceCameraController.minimumZoomDistance = img?.detail ? MIN_ZOOM_DETAIL : MIN_ZOOM_BASIC;
+    v.scene.requestRender();
+  }, [img?.detail, img?.clouds, img?.cloudsDate, img?.radarUrl, ready]);
 
   /* ---------- 地震の点 ---------- */
   useEffect(() => {
@@ -378,9 +447,25 @@ export function EdithEarth(p: Props) {
     return () => cancelAnimationFrame(raf);
   }, [p.active, p.autoRotate, p.trackedId, ready]);
 
+  const credits = [img?.detail && S2_CREDIT, img?.clouds && GIBS_CREDIT, img?.radarUrl && RADAR_CREDIT].filter((c): c is ImageryCredit => Boolean(c));
   return (
     <div className="eearth" data-status={status} aria-label="3D 地球儀（ドラッグで回す・ホイールやピンチで拡大縮小）">
       <div ref={hostRef} className="eearth__canvas" />
+      {/* 重ねた画像のクレジット（リンク付き。見える場所に出す） */}
+      {status === "ready" && credits.length > 0 && (
+        <p className="eearth__imgcredit">
+          {credits.map((c) => (
+            <span key={c.text}>
+              {c.text}
+              {c.links.map((l) => (
+                <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer">
+                  {l.label}
+                </a>
+              ))}
+            </span>
+          ))}
+        </p>
+      )}
       {/* 地図・3D の部品の帰属（Cesium の表示。見た目は小さく、EARTH パネルにも書く） */}
       <div ref={creditRef} className="eearth__credits" aria-hidden="true" />
       {status !== "ready" && (

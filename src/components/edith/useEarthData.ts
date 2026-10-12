@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPoller, fetchLayerJson, type PollResult } from "@/lib/earth/poller";
 import { EMPTY_FETCH, layerStatus, type LayerFetchState, type LayerStatus } from "@/lib/earth/status";
 import { parseQuakesResponse, QUAKE_POLL_MS, QUAKE_STALE_MS, type QuakesResponse } from "@/lib/earth/quakes";
+import { parseRadarResponse, RADAR_POLL_MS, RADAR_STALE_MS, RAINVIEWER_MAPS_URL, type RadarResponse } from "@/lib/earth/imagery";
 import {
   parseSatellitesResponse,
   SAT_LIMIT_MAX,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/earth/satellites";
 
 type QuakesOk = Extract<QuakesResponse, { ok: true }>;
+type RadarOk = Extract<RadarResponse, { ok: true }>;
 type SatsOk = Extract<SatellitesResponse, { ok: true }>;
 
 /** 取れていない理由（衛星だけ。地震では null） */
@@ -269,7 +271,7 @@ function writeSatHold(h: SatHold | null): void {
   }
 }
 
-export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolean; satGroup: SatGroup }) {
+export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolean; satGroup: SatGroup; radar?: boolean }) {
   const now = useTick();
   const { online, visible } = useOnlineVisible();
   const paused = () => !visible || !online;
@@ -335,5 +337,7 @@ export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolea
       }
     },
   });
-  return { now, online, quakes, sats };
+  // 雨雲レーダー：RainViewer の公開 API（ブラウザから直接。ON で EARTH を表示している間だけ、約 10 分ごと）
+  const radar = useLayer<Omit<RadarOk, "ok">>(o.active && o.radar ? RAINVIEWER_MAPS_URL : null, RADAR_POLL_MS, RADAR_STALE_MS, parseRadarResponse as never, now, online, paused);
+  return { now, online, quakes, sats, radar };
 }

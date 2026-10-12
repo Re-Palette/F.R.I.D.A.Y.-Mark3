@@ -1229,3 +1229,73 @@ describe("人工衛星：全体の失敗の後の確かめが、グループだ�
     assert.deepEqual(f.calls.slice(before).sort(), ["gnss", "stations", "visual"], "成功の後に visual・gnss が 1 回ずつ");
   });
 });
+
+/* ---------- 地球の画像・リアルタイムの重ね合わせ・ライブ映像（外部通信なし） ---------- */
+
+const imagery = await import("../src/lib/earth/imagery");
+
+describe("地球の画像・雨雲レーダー・ライブ映像の定義", () => {
+  it("使う外部のホストは決めたものだけ（https・API キーなし）", () => {
+    const urls = [imagery.S2_URL, imagery.gibsUrl("2026-10-11"), imagery.RAINVIEWER_MAPS_URL, imagery.ISS_LIVE_EMBED];
+    for (const u of urls) {
+      const url = new URL(u.replace(/\{[a-z]\}/g, "0"));
+      assert.equal(url.protocol, "https:");
+      assert.ok((imagery.IMAGERY_HOSTS as readonly string[]).includes(url.hostname), url.hostname);
+      assert.doesNotMatch(u, /key=|token=|access_token|apikey/i);
+    }
+    const src = readFileSync(new URL("../src/lib/earth/imagery.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /process\.env|ion\.cesium\.com|api\.cesium\.com|bing|mapbox|googleapis/i);
+  });
+
+  it("今日の地球は UTC の前日の画像。日付の形が違えば作らない", () => {
+    assert.equal(imagery.gibsDate(Date.parse("2026-10-12T00:30:00Z")), "2026-10-11");
+    assert.equal(imagery.gibsDate(Date.parse("2026-10-12T23:59:00Z")), "2026-10-11");
+    assert.match(imagery.gibsUrl("2026-10-11"), /MODIS_Terra_CorrectedReflectance_TrueColor\/default\/2026-10-11\/GoogleMapsCompatible_Level9\/\{z\}\/\{y\}\/\{x\}\.jpg$/);
+    assert.throws(() => imagery.gibsUrl("2026/10/11"));
+    assert.throws(() => imagery.gibsUrl("../x"));
+  });
+
+  it("雨雲レーダー：いちばん新しい観測の画像を使う。決まったホスト・形のものだけ", () => {
+    const ok = imagery.parseRainViewer({ host: "https://tilecache.rainviewer.com", radar: { past: [{ time: 1_791_800_000, path: "/v2/radar/aaa111" }, { time: 1_791_800_600, path: "/v2/radar/bbb222" }], nowcast: [{ time: 1_791_801_200, path: "/v2/radar/ccc333" }] } });
+    assert.ok(ok);
+    assert.equal(ok!.url, "https://tilecache.rainviewer.com/v2/radar/bbb222/256/{z}/{x}/{y}/2/1_1.png");
+    assert.equal(ok!.time, new Date(1_791_800_600 * 1000).toISOString());
+    // ほかのホスト・おかしな path・空 → 使わない
+    assert.equal(imagery.parseRainViewer({ host: "https://evil.example", radar: { past: [{ time: 1, path: "/v2/radar/a" }] } }), null);
+    assert.equal(imagery.parseRainViewer({ host: "https://tilecache.rainviewer.com", radar: { past: [{ time: 1, path: "/../../x" }, { time: 2, path: "https://evil/x" }] } }), null);
+    assert.equal(imagery.parseRainViewer({ host: "https://tilecache.rainviewer.com", radar: { past: [] } }), null);
+    assert.equal(imagery.parseRainViewer(null), null);
+    const r = imagery.parseRadarResponse({ host: "x" });
+    assert.ok(r && !r.ok);
+  });
+
+  it("国際宇宙ステーションの名前を見分ける（ライブ映像のボタンを出す）", () => {
+    assert.equal(imagery.isIssName("ISS (ZARYA)"), true);
+    assert.equal(imagery.isIssName("ISS (NAUKA)"), true);
+    assert.equal(imagery.isIssName("CSS (TIANHE)"), false);
+    assert.equal(imagery.isIssName("MISSION X"), false);
+  });
+
+  it("クレジットにはリンクが付く（EOX・RainViewer は必須）", () => {
+    for (const c of [imagery.S2_CREDIT, imagery.GIBS_CREDIT, imagery.RADAR_CREDIT]) {
+      assert.ok(c.text.length > 5);
+      assert.ok(c.links.length >= 1 && c.links.every((l) => l.href.startsWith("https://")));
+    }
+    assert.match(imagery.S2_CREDIT.text, /Sentinel-2 cloudless.*EOX IT Services GmbH.*Copernicus Sentinel data/);
+    assert.ok(imagery.S2_CREDIT.links.some((l) => l.href === "https://s2maps.eu"));
+    assert.ok(imagery.RADAR_CREDIT.links.some((l) => l.href.includes("rainviewer.com")));
+  });
+
+  it("設定：詳細な衛星写真は既定で ON、今日の地球・雨雲レーダーは OFF。古い保存（項目なし）も読める", () => {
+    assert.equal(DEFAULT_EARTH.detail, true);
+    assert.equal(DEFAULT_EARTH.clouds, false);
+    assert.equal(DEFAULT_EARTH.radar, false);
+    const old = parseEarthSettings({ quakes: false, sats: true, satGroup: "gnss", satLimit: 20, autoRotate: false });
+    assert.equal(old.quakes, false);
+    assert.equal(old.detail, true);
+    assert.equal(old.radar, false);
+    const set = parseEarthSettings({ detail: false, clouds: true, radar: true });
+    assert.deepEqual([set.detail, set.clouds, set.radar], [false, true, true]);
+    assert.equal(parseEarthSettings({ detail: "yes" }).detail, true);
+  });
+});

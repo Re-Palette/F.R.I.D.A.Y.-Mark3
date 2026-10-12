@@ -21,7 +21,8 @@ import { Markdown } from "../Markdown";
 import { EdithGlobe, type GlobePoint } from "./EdithGlobe";
 import { EdithFeedBar, EdithFeedView, feedSummary } from "./EdithFeed";
 import { useEdithFeed } from "@/lib/edith-feed";
-import { EdithEarth, type EarthFlyTo } from "./EdithEarth";
+import { EdithEarth, type EarthFlyTo, type ImageryKind } from "./EdithEarth";
+import { gibsDate } from "@/lib/earth/imagery";
 import { EarthDetail, EarthLayersPanel } from "./EarthPanel";
 import { useEarthData } from "./useEarthData";
 import { DEFAULT_EARTH, EARTH_SETTINGS_KEY, parseEarthSettings, type EarthSettings } from "@/lib/earth/settings";
@@ -318,7 +319,13 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   useEffect(() => {
     if (earthActive) setEarthMounted(true);
   }, [earthActive]);
-  const earthData = useEarthData({ active: earthActive, quakes: earth.quakes, sats: earth.sats, satGroup: earth.satGroup });
+  const earthData = useEarthData({ active: earthActive, quakes: earth.quakes, sats: earth.sats, satGroup: earth.satGroup, radar: earth.radar });
+  // 今日の地球（NASA GIBS）に使う日：UTC の前日（日付が変わったら変わる）
+  const cloudsDate = gibsDate(earthData.now);
+  const radarUrl = earth.radar ? (earthData.radar.data?.items[0]?.url ?? null) : null;
+  const [imageryErrors, setImageryErrors] = useState<Partial<Record<ImageryKind, boolean>>>({});
+  // 画像の種類を切り替えた・日付やレーダーの画像が変わったら、読み込みの失敗の表示を消して確かめ直す
+  useEffect(() => setImageryErrors({}), [earth.detail, earth.clouds, cloudsDate, radarUrl]);
   const [earthSel, setEarthSel] = useState<string | null>(null);
   const [earthTrack, setEarthTrack] = useState<string | null>(null);
   const [earthFly, setEarthFly] = useState<EarthFlyTo | null>(null);
@@ -625,6 +632,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                   flyTo={earthFly}
                   resetKey={earthReset}
                   onStatus={(s) => setEarthView(s.toUpperCase())}
+                  imagery={{ detail: earth.detail, clouds: earth.clouds, cloudsDate, radarUrl }}
+                  onImageryError={(k) => setImageryErrors((e) => (e[k] ? e : { ...e, [k]: true }))}
                 />
               </div>
             )}
@@ -650,6 +659,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
 
         {earthActive && (selQuake || selSat) && (
           <EarthDetail
+            key={earthSel ?? ""}
             quake={selQuake}
             quakesFetchedAt={earthData.quakes.data?.fetchedAt}
             sat={selSat}
@@ -829,6 +839,9 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                   setEarthReset((k) => k + 1);
                 }}
                 viewStatus={earthActive ? `VIEW: ${earthView}` : "VIEW: LOCAL FEED 表示中"}
+                radar={earthData.radar}
+                cloudsDate={cloudsDate}
+                imageryErrors={imageryErrors}
                 selectedId={earthSel}
                 onSelect={(id) => {
                   if (!earthActive) setD("gevMode", "earth");
