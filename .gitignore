@@ -27,3 +27,5 @@ public/fonts/
 public/pdfjs/
 # 声紋認証の AI 実行部品（onnxruntime-web）は build 時に node_modules からコピーする
 public/ort/
+# E.D.I.T.H. の 3D 地球儀（CesiumJS）の本体と静的ファイルは build 時に node_modules からコピーする
+public/cesium/

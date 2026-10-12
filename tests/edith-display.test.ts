@@ -31,6 +31,32 @@ describe("E.D.I.T.H. の表示設定", () => {
   });
 });
 
+describe("映像の枠の形（feedShape）", () => {
+  it("既定は横長。前の版で保存した設定（feedShape が無い）でも、ほかの設定はそのまま読める", () => {
+    assert.equal(DEFAULT_DISPLAY.feedShape, "wide");
+    const old = { hud: false, fade: 70, clean: true, bloom: true };
+    const d = parseDisplay(old);
+    assert.equal(d.feedShape, "wide");
+    assert.equal(d.hud, false);
+    assert.equal(d.fade, 70);
+    assert.equal(d.clean, true);
+    assert.equal(d.bloom, true);
+  });
+  it("円・横長は読み、知らない値・壊れた値は横長に戻す", () => {
+    assert.equal(parseDisplay({ feedShape: "circle" }).feedShape, "circle");
+    assert.equal(parseDisplay({ feedShape: "wide" }).feedShape, "wide");
+    for (const v of ["square", 1, null, {}, "CIRCLE"]) assert.equal(parseDisplay({ feedShape: v }).feedShape, "wide", String(v));
+  });
+  it("保存した形を JSON で読み直しても同じ", () => {
+    const cur = { ...DEFAULT_DISPLAY, feedShape: "circle" as const, sharpenAmt: 12 };
+    assert.deepEqual(parseDisplay(JSON.parse(JSON.stringify(cur))), cur);
+  });
+  it("プリセットを当てても、枠の形は今のまま（CLEAN UI と同じ扱い）", () => {
+    const cur = { ...DEFAULT_DISPLAY, feedShape: "circle" as const };
+    for (const k of ["tactical", "cinematic", "minimal"] as const) assert.equal(applyPreset(k, cur).feedShape, "circle", k);
+  });
+});
+
 describe("太陽の高度", () => {
   it("東京・夏至の正午ごろは約 77°", () => {
     const el = solarElevation(new Date("2024-06-21T02:40:00Z"), 35.6812, 139.7671);

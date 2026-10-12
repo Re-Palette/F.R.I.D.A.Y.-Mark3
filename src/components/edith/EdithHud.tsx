@@ -5,7 +5,9 @@
  *   左上：ロゴ（NO PLACE LEFT BEHIND）・ナビ（AGENTS / NOTES / TASKS / CONTEXT）
  *   左：SYSTEM STATUS（この端末で実際に測れる値だけ）・CURRENT MODE（音声の状態）・AI（実際の接続状態）
  *   左下：現在地（東京）のレーダー・描画の速さ（実測の FPS）
- *   中央：大きな円のビューポート（God's Eye View の映像を入れる場所。今は空けておく）
+ *   中央：GOD'S EYE VIEW のビューポート。EARTH（3D 地球儀・地震・人工衛星。EdithEarth）と
+ *        LOCAL FEED（Web カメラ・画面共有。EdithFeed。この端末の中で映すだけ）を切り替える。
+ *        映っていないときは円の待機画面、映っている間は横長（16:9。既定）か円（DISPLAY・映像の下の操作で切り替え）
  *        下に LOCATION ／ 声（AI AGENT）／ VISUAL PRESETS と、指示の入力
  *   右上：日時・接続・通信・電池／ACTIVE STYLE・視点の座標と太陽の高度（計算値）・時計
  *   右：DISPLAY（映像の表示設定）・NEWS（Google 検索で調べた実際の話題と出典）・TREND・TASKS（クイックアクセス）
@@ -17,6 +19,12 @@ import type { UiMessage } from "@/hooks/useChat";
 import type { VoiceState } from "@/hooks/useVoice";
 import { Markdown } from "../Markdown";
 import { EdithGlobe, type GlobePoint } from "./EdithGlobe";
+import { EdithFeedBar, EdithFeedView, feedSummary } from "./EdithFeed";
+import { useEdithFeed } from "@/lib/edith-feed";
+import { EdithEarth, type EarthFlyTo } from "./EdithEarth";
+import { EarthDetail, EarthLayersPanel } from "./EarthPanel";
+import { useEarthData } from "./useEarthData";
+import { DEFAULT_EARTH, EARTH_SETTINGS_KEY, parseEarthSettings, type EarthSettings } from "@/lib/earth/settings";
 import { findPlaces } from "@/lib/edith-geo";
 import { splitTables } from "@/lib/edith-text";
 import { applyPreset, DEFAULT_DISPLAY, nextPreset, parseDisplay, PRESETS, solarElevation, type DisplaySettings, type PresetKey } from "@/lib/edith-display";
@@ -92,8 +100,9 @@ const CAT_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label])) as
 type QuickKind = "web" | "image" | "doc" | "translate";
 type Win = { id: string; kind: "answer"; msgId: string } | { id: string; kind: "analysis" } | { id: string; kind: "context" };
 /** 右のパネルのページ */
-type Page = "display" | "news" | "trend" | "tasks";
+type Page = "earth" | "display" | "news" | "trend" | "tasks";
 const PAGES: { key: Page; label: string }[] = [
+  { key: "earth", label: "EARTH" },
   { key: "display", label: "DISPLAY" },
   { key: "news", label: "NEWS" },
   { key: "trend", label: "TREND" },
@@ -295,6 +304,32 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const metrics = useDeviceMetrics();
   const fps = useFrameRate();
   const [display, setDisplay] = useStored<DisplaySettings>(DISPLAY_KEY, parseDisplay, DEFAULT_DISPLAY);
+  // 中央の映像（映っている・つないでいる・切れた間は、選んだ形の枠。それ以外は円の待機画面）
+  const feed = useEdithFeed();
+  const feedSum = feedSummary(feed);
+  const feedOn = feed.status === "live" || feed.status === "connecting" || feed.status === "ended";
+  // GOD'S EYE VIEW に映すもの：EARTH（3D 地球儀。円の枠）か LOCAL FEED。LOCAL FEED の映像は EARTH の間も止めない（隠すだけ）
+  const gevMode = display.gevMode;
+  const earthActive = gevMode === "earth";
+  const shape = earthActive ? "circle" : feedOn ? display.feedShape : "circle";
+  const [earth, setEarth] = useStored<EarthSettings>(EARTH_SETTINGS_KEY, parseEarthSettings, DEFAULT_EARTH);
+  // 地球儀は、初めて EARTH を開いたときに作り、その後は LOCAL FEED にしても作り直さない（隠して描画を止める）
+  const [earthMounted, setEarthMounted] = useState(earthActive);
+  useEffect(() => {
+    if (earthActive) setEarthMounted(true);
+  }, [earthActive]);
+  const earthData = useEarthData({ active: earthActive, quakes: earth.quakes, sats: earth.sats, satGroup: earth.satGroup });
+  const [earthSel, setEarthSel] = useState<string | null>(null);
+  const [earthTrack, setEarthTrack] = useState<string | null>(null);
+  const [earthFly, setEarthFly] = useState<EarthFlyTo | null>(null);
+  const [earthReset, setEarthReset] = useState(0);
+  const [earthView, setEarthView] = useState("LOADING");
+  const quakeItems = earthData.quakes.data?.items ?? [];
+  const satElements = earthData.sats.data?.elements ?? [];
+  const selQuake = earthSel?.startsWith("quake:") ? quakeItems.find((q) => `quake:${q.id}` === earthSel) : undefined;
+  const selSat = earthSel?.startsWith("sat:") ? satElements.find((e) => `sat:${e.id}` === earthSel) : undefined;
+  const flyTo = (lat: number, lon: number, height?: number) => setEarthFly((f) => ({ lat, lon, height, key: (f?.key ?? 0) + 1 }));
+  const earthSummary = `地震 ${earth.quakes ? earthData.quakes.status : "OFF"} · 衛星 ${earth.sats ? earthData.sats.status : "OFF"}${earthTrack ? " · TRACKING" : ""}`;
   const [page, setPage] = useStored<Page>(PAGE_KEY, parsePage, "display");
   const [preset, setPreset] = useStored<PresetKey>(`${DISPLAY_KEY}.preset`, parsePreset, "tactical");
   const [cat, setCat] = useState<EdithCategory>("news");
@@ -438,7 +473,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const fpsNow = fps.length ? fps[fps.length - 1] : null;
   const presetLabel = PRESETS.find((p) => p.key === preset)?.label ?? "TACTICAL";
 
-  // 映像（God's Eye View）に渡す表示設定
+  // GOD'S EYE VIEW の映像に渡す表示設定
   const viewStyle = {
     "--fade": display.fade / 100,
     "--outside": display.outside / 100,
@@ -454,6 +489,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
       data-clean={display.clean || undefined}
       data-layout={display.layout}
       data-hud={display.hud || undefined}
+      data-feed={feed.status}
     >
       <div className="edith__grid" aria-hidden="true" />
       {display.celestial && <div className="edith__stars" aria-hidden="true" />}
@@ -550,12 +586,14 @@ export const EdithHud = memo(function EdithHud(props: Props) {
         </footer>
       </aside>
 
-      {/* ---------- 中央：ビューポート（God's Eye View の映像を入れる場所） ---------- */}
+      {/* ---------- 中央：GOD'S EYE VIEW（リアルタイム映像。既存のビューポートに映す） ---------- */}
       <main className="ecenter" aria-label="ビューポート">
-        <div className="eview" style={viewStyle} data-bloom={display.bloom || undefined} data-3d={display.threeD || undefined}>
+        <div className="eview" style={viewStyle} data-shape={shape} data-gev={gevMode} data-feed={feed.status} data-bloom={display.bloom || undefined} data-3d={display.threeD || undefined}>
           <Bezel />
           <Gauges />
-          {/* ここに God's Eye View の映像を入れる（今は空けておく）。表示設定は data 属性と CSS 変数で渡す */}
+          {/* 横長の枠の角飾り（横長のときだけ見える） */}
+          <span className="eview__corners" aria-hidden="true"><i /><i /><i /><i /></span>
+          {/* GOD'S EYE VIEW の映像を入れる場所（Web カメラ・画面共有）。表示設定は data 属性と CSS 変数で渡す */}
           <div
             className="eview__slot"
             data-gev-slot=""
@@ -563,18 +601,73 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             data-density={display.density}
             data-allocation={display.allocation}
             data-outside={display.outside}
-            aria-label="God's Eye View の映像（未接続）"
+            role="region"
+            aria-label={earthActive ? `God's Eye View の 3D 地球儀（${earthSummary}）` : `God's Eye View の映像（${feedSum.status}）`}
           >
-            <div className="eview__empty" aria-hidden="true">
-              <span className="eview__cross" />
-              <b>GOD&apos;S EYE VIEW</b>
-              <small>映像未接続</small>
+            {/* LOCAL FEED：EARTH の間も外さない（カメラ・画面共有を止めない。見えないようにするだけ） */}
+            <div className="egev-feed" hidden={earthActive}>
+              <EdithFeedView shape={shape} />
             </div>
+            {earthMounted && (
+              <div className="egev-earth" hidden={!earthActive}>
+                <EdithEarth
+                  active={earthActive}
+                  quakes={quakeItems}
+                  showQuakes={earth.quakes}
+                  sats={satElements}
+                  showSats={earth.sats}
+                  satLimit={earth.satLimit}
+                  selectedId={earthSel}
+                  onSelect={setEarthSel}
+                  trackedId={earthTrack}
+                  onTrackLost={() => setEarthTrack(null)}
+                  autoRotate={earth.autoRotate}
+                  flyTo={earthFly}
+                  resetKey={earthReset}
+                  onStatus={(s) => setEarthView(s.toUpperCase())}
+                />
+              </div>
+            )}
+          </div>
+          {/* EARTH / LOCAL FEED の切り替え */}
+          <div className="egev-mode" role="tablist" aria-label="GOD'S EYE VIEW に映すもの">
+            <button type="button" role="tab" aria-selected={earthActive} data-on={earthActive || undefined} onClick={() => setD("gevMode", "earth")}>
+              EARTH
+            </button>
+            <button type="button" role="tab" aria-selected={!earthActive} data-on={!earthActive || undefined} onClick={() => setD("gevMode", "feed")} title={feed.status === "live" ? "LOCAL FEED は接続中です（EARTH の間も止めていません）" : "Web カメラ・画面共有"}>
+              {feed.status === "live" && <i className="egev-mode__rec" aria-label="接続中" />}
+              LOCAL FEED
+            </button>
           </div>
           <span className="eview__link" aria-hidden="true"><I n="link" s={20} /></span>
-          <span className="eview__live">LIVE &gt; GOD&apos;S EYE VIEW : 未接続</span>
+          {earthActive ? (
+            <span className="eview__live" data-on={earthData.quakes.status === "LIVE" || earthData.sats.status === "LIVE" || undefined}>EARTH &gt; GOD&apos;S EYE VIEW : {earthSummary}</span>
+          ) : (
+            <span className="eview__live" data-on={feed.status === "live" || undefined}>LIVE &gt; GOD&apos;S EYE VIEW : {feedSum.status}</span>
+          )}
+          {!earthActive && <EdithFeedBar shape={display.feedShape} onShape={(v) => setD("feedShape", v)} focus={display.clean} onFocus={(v) => setD("clean", v)} />}
         </div>
 
+        {earthActive && (selQuake || selSat) && (
+          <EarthDetail
+            quake={selQuake}
+            quakesFetchedAt={earthData.quakes.data?.fetchedAt}
+            sat={selSat}
+            satsFetchedAt={earthData.sats.data?.fetchedAt}
+            now={earthData.now}
+            tracked={earthTrack === earthSel}
+            onTrack={() => setEarthTrack(earthSel)}
+            onUntrack={() => setEarthTrack(null)}
+            onFly={(lat, lon) => {
+              setEarthTrack(null);
+              flyTo(lat, lon);
+            }}
+            onClose={() => {
+              setEarthSel(null);
+              setEarthTrack(null);
+            }}
+          />
+        )}
         {(selectedItem || selectedAi) && (
           <div className="epoint" role="dialog" aria-label="地点の詳細">
             <button type="button" className="epoint__close" onClick={() => setSelected(null)} aria-label="閉じる"><I n="close" s={14} /></button>
@@ -700,7 +793,11 @@ export const EdithHud = memo(function EdithHud(props: Props) {
         <section className="ebox ectl" aria-label="表示設定とインテリジェンス">
           <header className="ectl__rec">
             <p><span className="ectl__dot" />UTC {utc}</p>
-            <p>SRC: GOD&apos;S EYE VIEW  FEED: 未接続</p>
+            {earthActive ? (
+              <p>SRC: GOD&apos;S EYE VIEW (EARTH)  FEED: {earthSummary}</p>
+            ) : (
+              <p>SRC: GOD&apos;S EYE VIEW{feed.kind && feed.status !== "idle" ? ` (${feedSum.src})` : ""}  FEED: {feedSum.status}</p>
+            )}
           </header>
           <div className="ectl__tabs" role="tablist" aria-label="パネルの切り替え">
             {PAGES.map((p) => (
@@ -712,6 +809,36 @@ export const EdithHud = memo(function EdithHud(props: Props) {
           </div>
 
           <div className="ectl__body">
+            {page === "earth" && (
+              <EarthLayersPanel
+                settings={earth}
+                onSettings={setEarth}
+                quakes={earthData.quakes}
+                sats={earthData.sats}
+                now={earthData.now}
+                onSearch={(text) => {
+                  const place = findPlaces(text, 1)[0];
+                  if (!place) return false;
+                  if (!earthActive) setD("gevMode", "earth");
+                  setEarthTrack(null);
+                  flyTo(place.lat, place.lon);
+                  return true;
+                }}
+                onReset={() => {
+                  setEarthTrack(null);
+                  setEarthReset((k) => k + 1);
+                }}
+                viewStatus={earthActive ? `VIEW: ${earthView}` : "VIEW: LOCAL FEED 表示中"}
+                selectedId={earthSel}
+                onSelect={(id) => {
+                  if (!earthActive) setD("gevMode", "earth");
+                  setEarthSel(id);
+                  setEarthTrack(null);
+                  const q = quakeItems.find((x) => `quake:${x.id}` === id);
+                  if (q) flyTo(q.lat, q.lon);
+                }}
+              />
+            )}
             {page === "display" && (
               <div className="edisp">
                 <Toggle icon="eye" label="HUD" on={display.hud} onChange={(v) => setD("hud", v)} hint="円のまわりの計器を表示する" />
@@ -740,6 +867,14 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                 {display.sharpen && <Slider label="" value={display.sharpenAmt} onChange={(v) => setD("sharpenAmt", v)} hint="くっきりさせる量" />}
                 <Toggle icon="cube" label="3D" on={display.threeD} onChange={(v) => setD("threeD", v)} hint="映像を斜めに傾けて立体的に見せる" />
                 <Toggle icon="frame" label="CLEAN UI" on={display.clean} onChange={(v) => setD("clean", v)} hint="左右のパネルを隠す（Esc で戻す）" />
+                <div className="edisp__row edisp__seg" role="radiogroup" aria-label="FEED SHAPE" title="映像が映っているときの枠の形">
+                  <span>FEED SHAPE</span>
+                  {(["wide", "circle"] as const).map((v) => (
+                    <button key={v} type="button" role="radio" aria-checked={display.feedShape === v} data-on={display.feedShape === v || undefined} onClick={() => setD("feedShape", v)}>
+                      {v === "wide" ? "16:9" : "CIRCLE"}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -859,7 +994,11 @@ export const EdithHud = memo(function EdithHud(props: Props) {
           </div>
           <div className="ebox erdock__box erdock__link">
             <p className="echart__head"><span>GEV LINK</span></p>
-            <b>未接続</b>
+            {earthActive ? (
+              <b data-on={earthData.quakes.status === "LIVE" || earthData.sats.status === "LIVE" || undefined}>EARTH</b>
+            ) : (
+              <b data-on={feed.status === "live" || undefined}>{feed.status === "live" ? feedSum.src : feedSum.status}</b>
+            )}
             <span className="erdock__flat" aria-hidden="true" />
           </div>
           <div className="emap" title="ホログラムの地図（ドラッグで回す・ダブルクリックで寄る）">

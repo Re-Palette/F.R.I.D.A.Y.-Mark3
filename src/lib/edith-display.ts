@@ -6,6 +6,10 @@
 
 export type DisplayLayout = "tactical" | "minimal";
 export type DisplayAllocation = "elastic" | "weighted";
+/** 映像が映っているときの枠の形：wide＝横長 16:9（既定）／ circle＝円 */
+export type FeedShape = "wide" | "circle";
+/** GOD'S EYE VIEW に映すもの：earth＝3D 地球儀（既定）／ feed＝LOCAL FEED（Web カメラ・画面共有） */
+export type GevMode = "earth" | "feed";
 
 export interface DisplaySettings {
   /** 円のまわりの計器（目盛り・光る弧・LIVE 表示） */
@@ -34,6 +38,10 @@ export interface DisplaySettings {
   threeD: boolean;
   /** 左右のパネルを隠して映像だけにする */
   clean: boolean;
+  /** 映像が映っているときの枠の形（映っていないときは、いつも円の待機画面） */
+  feedShape: FeedShape;
+  /** GOD'S EYE VIEW に映すもの（3D 地球儀か LOCAL FEED か） */
+  gevMode: GevMode;
 }
 
 export const DEFAULT_DISPLAY: DisplaySettings = {
@@ -50,6 +58,8 @@ export const DEFAULT_DISPLAY: DisplaySettings = {
   sharpenAmt: 49,
   threeD: false,
   clean: false,
+  feedShape: "wide",
+  gevMode: "earth",
 };
 
 export const PRESETS = [
@@ -59,10 +69,10 @@ export const PRESETS = [
 ] as const satisfies readonly { key: string; label: string; values: Partial<DisplaySettings> }[];
 export type PresetKey = (typeof PRESETS)[number]["key"];
 
-/** プリセットを当てた設定（いつも既定から作るので、前の設定が残らない。CLEAN UI だけは今のまま） */
+/** プリセットを当てた設定（いつも既定から作るので、前の設定が残らない。CLEAN UI・映像の枠の形・GOD'S EYE VIEW に映すものは今のまま） */
 export function applyPreset(key: PresetKey, current: DisplaySettings): DisplaySettings {
   const p = PRESETS.find((x) => x.key === key) ?? PRESETS[0];
-  return { ...DEFAULT_DISPLAY, ...(p.values as Partial<DisplaySettings>), clean: current.clean };
+  return { ...DEFAULT_DISPLAY, ...(p.values as Partial<DisplaySettings>), clean: current.clean, feedShape: current.feedShape, gevMode: current.gevMode };
 }
 
 export function nextPreset(key: PresetKey): PresetKey {
@@ -91,6 +101,10 @@ export function parseDisplay(raw: unknown): DisplaySettings {
     sharpenAmt: pct(o.sharpenAmt, d.sharpenAmt),
     threeD: bool(o.threeD, d.threeD),
     clean: bool(o.clean, d.clean),
+    // 前の版で保存した設定には無い：既定（横長）にする
+    feedShape: o.feedShape === "circle" || o.feedShape === "wide" ? o.feedShape : d.feedShape,
+    // 前の版で保存した設定には無い：既定（3D 地球儀）にする
+    gevMode: o.gevMode === "feed" || o.gevMode === "earth" ? o.gevMode : d.gevMode,
   };
 }
 

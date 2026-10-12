@@ -1,7 +1,7 @@
 /*
  * E.D.I.T.H.（Enhanced Data Integration & Tactical Horizon）の画面。
  * 暗い紫紺の地に、ネオンパープルの細い線・光る輪郭・角を切った枠で組む戦術 HUD。
- *   左：ロゴ・ナビ・SYSTEM STATUS・現在地 ／ 中央：画面の高さいっぱいの円（God's Eye View の映像を入れる場所）と下の操作
+ *   左：ロゴ・ナビ・SYSTEM STATUS・現在地 ／ 中央：リアルタイム映像（待機中は画面の高さいっぱいの円、映っている間は横長 16:9 か円）と下の操作
  *   右：日時・ACTIVE STYLE・時計・DISPLAY（表示設定）／ニュース・計器と地図
  */
 
@@ -1631,7 +1631,7 @@
 }
 .ectl__tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
 }
 .edith .ectl__tabs button {
@@ -1961,6 +1961,681 @@
   .emap {
     width: 96px;
     height: 96px;
+  }
+}
+
+/* ---------- GOD'S EYE VIEW のリアルタイム映像（EdithFeed：Web カメラ・画面共有。この端末の中で映すだけ） ---------- */
+.eview {
+  transition: width 0.35s ease;
+}
+/* 映像を枠の形で確実に切り抜く（映像は別の層で描かれ、border-radius だけでは角がはみ出すことがあるため） */
+.eview__slot {
+  clip-path: circle(50% at 50% 50%);
+}
+.eview[data-shape="wide"] .eview__slot {
+  clip-path: inset(0 round 3px);
+}
+/* 映像の箱（効果は .eview__slot > * の filter・transform がこの箱に効く。箱ごと枠の形で切り抜く） */
+.efeed__media {
+  position: absolute;
+  inset: 0;
+  clip-path: inherit;
+}
+.efeed__video {
+  /* 映像そのものも枠の形で切り抜く（箱に効果をかけると、映像の層が箱の切り抜きの外に描かれる場合があるため） */
+  clip-path: inherit;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #05020d;
+  opacity: 0;
+}
+.efeed__video[data-on] {
+  opacity: 1;
+}
+.efeed__video[data-fit="contain"] {
+  object-fit: contain;
+}
+/* 待機・接続中・エラー・切断の表示（映像の上に重ねる） */
+.efeed__state {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 12%;
+  text-align: center;
+  background: radial-gradient(circle, rgba(18, 9, 44, 0.55), rgba(6, 3, 15, 0.8) 72%);
+}
+.efeed__standby {
+  background: none;
+}
+.efeed__state b {
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: 0.5em;
+  color: var(--e-accent);
+  text-shadow: 0 0 10px rgba(181, 108, 255, 0.7);
+}
+.efeed__standby b {
+  color: rgba(215, 180, 255, 0.6);
+  text-shadow: none;
+}
+.efeed__state[data-tone="warn"] b {
+  color: #ffd27a;
+  text-shadow: 0 0 10px rgba(255, 190, 90, 0.6);
+}
+.efeed__state[data-tone="error"] b {
+  color: #ff8fb2;
+  text-shadow: 0 0 10px rgba(255, 80, 140, 0.55);
+}
+.efeed__state small {
+  max-width: 34em;
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.08em;
+  color: var(--e-dim);
+}
+.efeed__note {
+  font-size: 10px !important;
+  opacity: 0.85;
+}
+.efeed__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.edith .efeed__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border: 1px solid var(--e-line);
+  background: rgba(139, 53, 255, 0.14);
+  color: var(--e-text);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: box-shadow 0.2s, background 0.2s;
+}
+.edith .efeed__btn--main {
+  padding: 10px 22px;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  background: var(--e-fill);
+}
+.efeed__btn:hover:not(:disabled),
+.efeed__btn:focus-visible {
+  background: rgba(139, 53, 255, 0.45);
+  box-shadow: 0 0 14px rgba(181, 108, 255, 0.7);
+}
+.efeed__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* 接続中の走査線 */
+.efeed__scan {
+  width: 140px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--e-glow), transparent);
+  box-shadow: 0 0 10px var(--e-purple);
+  animation: efeed-scan 1.4s ease-in-out infinite alternate;
+}
+@keyframes efeed-scan {
+  from {
+    transform: translateX(-60px) scaleX(0.4);
+  }
+  to {
+    transform: translateX(60px) scaleX(1);
+  }
+}
+/* 右上：映像の元・解像度・FPS（実測） */
+.efeed__badge {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(6, 3, 18, 0.72);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--e-accent);
+}
+.efeed__badge b {
+  font-weight: 400;
+  color: var(--e-dim);
+}
+.efeed__rec {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff4f8b;
+  box-shadow: 0 0 8px #ff4f8b;
+  animation: edith-twinkle 1.6s ease-in-out infinite;
+}
+.eview__live[data-on] {
+  border-color: var(--e-glow);
+  color: #fff;
+}
+/* 映像の下の操作 */
+.efeed__bar {
+  position: absolute;
+  left: 50%;
+  top: 17%;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  max-width: 94%;
+  padding: 5px 8px;
+  transform: translateX(-50%);
+  border: 1px solid var(--e-line-dim);
+  background: rgba(6, 3, 18, 0.82);
+  box-shadow: 0 0 14px rgba(139, 53, 255, 0.3);
+  pointer-events: auto;
+}
+.efeed__tool,
+.efeed__seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--e-line-dim);
+  background: none;
+  color: var(--e-text);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.efeed__tool[data-on],
+.efeed__seg button[data-on] {
+  border-color: var(--e-glow);
+  background: var(--e-fill);
+  color: #fff;
+}
+.efeed__tool:hover:not(:disabled),
+.efeed__seg button:hover {
+  box-shadow: 0 0 10px rgba(181, 108, 255, 0.55);
+}
+.efeed__tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.efeed__seg {
+  display: inline-flex;
+  gap: 2px;
+}
+.efeed__sep {
+  width: 1px;
+  height: 18px;
+  background: var(--e-line-dim);
+}
+/* 円のとき：操作は円の上のほう。映像の邪魔をしないよう、触るまで控えめに */
+.eview[data-shape="circle"] .efeed__bar:not(:hover, :focus-within) {
+  opacity: 0.6;
+}
+.efeed__bar {
+  transition: opacity 0.25s;
+}
+/* 円のとき：文字が円のふちで切れないよう、内側に寄せる */
+.eview[data-shape="circle"] .efeed__state {
+  padding: 18% 20%;
+}
+.efeed__select {
+  max-width: 180px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--e-line-dim);
+  background: #0c0620;
+  color: var(--e-text);
+  font: inherit;
+  font-size: 10px;
+}
+
+/* 横長（16:9）：映像を主役に。円の枠の代わりに、角を光らせた四角い枠（左右の計器・上のリンクはそのまま） */
+.eview[data-shape="wide"] {
+  /* 高さの上限：上の表示（LIVE・右上のパネルの張り出し）と、下の操作・指示の入力に重ならない大きさ */
+  width: min(100%, calc((100dvh - 460px) * 16 / 9));
+  aspect-ratio: 16 / 9;
+  margin-bottom: 110px; /* 下の指示の入力の分、少し上に寄せる */
+}
+.eview[data-shape="wide"]::before,
+.eview[data-shape="wide"] .eview__bezel {
+  display: none;
+}
+.eview[data-shape="wide"] .eview__slot {
+  inset: 0;
+  border-radius: 3px;
+  border: 1px solid var(--e-line);
+  box-shadow: 0 0 26px rgba(139, 53, 255, 0.45), inset 0 0 40px rgba(139, 53, 255, 0.22);
+  perspective: 1400px;
+}
+.eview[data-shape="wide"] .eview__slot::after {
+  border-radius: 3px;
+  background: radial-gradient(ellipse at center, transparent calc(70% - var(--fade, 0) * 45%), rgba(4, 2, 11, 0.9) 100%);
+  opacity: calc(var(--fade, 0) * 0.9);
+}
+.eview[data-shape="wide"][data-3d] .eview__slot > * {
+  transform: rotateX(14deg) scale(1.04);
+}
+.eview__corners {
+  display: none;
+}
+.eview[data-shape="wide"] .eview__corners {
+  position: absolute;
+  inset: -9px;
+  z-index: 2;
+  display: block;
+  pointer-events: none;
+}
+.eview__corners i {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--e-glow);
+  filter: drop-shadow(0 0 6px var(--e-purple));
+}
+.eview__corners i:nth-child(1) {
+  top: 0;
+  left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+.eview__corners i:nth-child(2) {
+  top: 0;
+  right: 0;
+  border-left: 0;
+  border-bottom: 0;
+}
+.eview__corners i:nth-child(3) {
+  bottom: 0;
+  left: 0;
+  border-right: 0;
+  border-top: 0;
+}
+.eview__corners i:nth-child(4) {
+  bottom: 0;
+  right: 0;
+  border-left: 0;
+  border-top: 0;
+}
+.eview[data-shape="wide"] .eview__live {
+  top: auto;
+  bottom: 100%;
+  margin-bottom: 14px;
+}
+.eview[data-shape="wide"] .efeed__bar {
+  top: calc(100% + 14px);
+}
+.eview[data-shape="wide"] .efeed__state {
+  padding: 6%;
+}
+/* 映っている間は、下の指示の入力と情報ウィンドウを控えめに（触る・入力するときは元に戻す） */
+.edith[data-feed="live"] .ecmd:not(:hover, :focus-within) {
+  opacity: 0.55;
+}
+.edith[data-feed="live"] .ewin:not(:hover, :focus-within) {
+  opacity: 0.8;
+}
+.ecmd,
+.ewin {
+  transition: opacity 0.25s;
+}
+/* FOCUS（CLEAN UI）：左右のパネルの場所も中央に渡して、映像をできるだけ大きく */
+@media (min-width: 1081px) {
+  .edith[data-clean] {
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+    gap: 0;
+  }
+  .edith[data-clean] .eview[data-shape="wide"] {
+    width: min(100%, calc((100dvh - 400px) * 16 / 9));
+    margin-bottom: 170px;
+  }
+}
+/* 狭い画面：操作の文字は見えなくして（読み上げ用の名前は残す）、1 行に収める */
+@media (max-width: 1440px), (max-width: 640px) {
+  .efeed__tool span,
+  .efeed__seg button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1080px) {
+  .eview[data-shape="wide"] {
+    width: min(100%, calc((100dvh - 460px) * 16 / 9));
+    margin-bottom: 140px;
+  }
+}
+@media (max-width: 640px) {
+  .eview[data-shape="wide"] {
+    width: 100%;
+    margin-bottom: 70px;
+  }
+  .efeed__bar {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .efeed__state {
+    padding: 8%;
+    gap: 6px;
+  }
+  .efeed__state small {
+    font-size: 10px;
+  }
+  .edith .efeed__btn--main {
+    padding: 8px 14px;
+  }
+  .efeed__badge b {
+    display: none;
+  }
+}
+
+/* ---------- GOD'S EYE VIEW：EARTH（3D 地球儀）と LOCAL FEED の切り替え ---------- */
+.egev-feed,
+.egev-earth {
+  position: absolute;
+  inset: 0;
+  clip-path: inherit;
+}
+.egev-feed[hidden],
+.egev-earth[hidden] {
+  display: none !important;
+}
+/* 地球儀には映像の効果（filter・3D の傾き）をかけない（重くなる・クリックの位置がずれるため） */
+.eview__slot > .egev-earth,
+.eview[data-bloom] .eview__slot > .egev-earth,
+.eview[data-3d] .eview__slot > .egev-earth {
+  filter: none;
+  transform: none;
+}
+.egev-mode {
+  position: absolute;
+  top: 1%;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+.egev-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(6, 3, 18, 0.82);
+  color: var(--e-text);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+.egev-mode button[data-on] {
+  border-color: var(--e-glow);
+  background: var(--e-fill);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(139, 53, 255, 0.45);
+}
+.egev-mode__rec {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff4f8b;
+  box-shadow: 0 0 6px #ff4f8b;
+}
+.eview[data-shape="wide"] .egev-mode {
+  top: auto;
+  bottom: 100%;
+  margin-bottom: 52px;
+}
+
+/* 3D 地球儀（CesiumJS。部品の見た目は使わず、必要な大きさだけ決める） */
+.eearth,
+.eearth__canvas {
+  position: absolute;
+  inset: 0;
+}
+.eearth__canvas .cesium-widget,
+.eearth__canvas .cesium-viewer,
+.eearth__canvas .cesium-viewer-cesiumWidgetContainer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.eearth__canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.eearth__canvas .cesium-viewer-bottom,
+.eearth__credits {
+  display: none;
+}
+.eearth__state {
+  pointer-events: none;
+}
+/* 選んだものの詳細（中央の左上。地点の詳細と同じ見た目） */
+.eearth__detail {
+  width: min(340px, 80%);
+}
+.eearth__detail h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.eearth__detail dl,
+.eearth__layer dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 10px;
+  margin: 6px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.eearth__detail dt,
+.eearth__layer dt {
+  color: var(--e-dim);
+  letter-spacing: 0.08em;
+}
+.eearth__detail dd,
+.eearth__layer dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.eearth__detail a {
+  color: var(--e-accent);
+}
+.eearth__dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+.eearth__note {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--e-dim);
+}
+/* 右のパネルの EARTH ページ */
+.eearth__panel {
+  display: grid;
+  gap: 8px;
+  font-size: 11px;
+}
+.eearth__layer {
+  padding: 6px 8px;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(10, 5, 26, 0.55);
+}
+.eearth__layer header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.edith .eearth__layer header .edisp__toggle {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.eearth__panel {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  white-space: normal;
+}
+.eearth__panel > *,
+.eearth__list li,
+.eearth__list span {
+  min-width: 0;
+}
+.eearth__chip {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--e-line-dim);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.eearth__chip[data-status="LIVE"] {
+  border-color: var(--e-online);
+  color: var(--e-online);
+}
+.eearth__chip[data-status="LOADING"] {
+  color: var(--e-accent);
+}
+.eearth__chip[data-status="STALE"],
+.eearth__chip[data-status="NO DATA"] {
+  border-color: #ffd27a;
+  color: #ffd27a;
+}
+.eearth__chip[data-status="ERROR"],
+.eearth__chip[data-status="OFFLINE"] {
+  border-color: #ff8fb2;
+  color: #ff8fb2;
+}
+.eearth__list {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.eearth__list button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--e-text);
+  font-size: 10px;
+  text-align: left;
+}
+.eearth__list button:hover,
+.eearth__list button[data-on] {
+  border-color: var(--e-line-dim);
+  background: rgba(139, 53, 255, 0.18);
+}
+.eearth__list i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.eearth__list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eearth__err {
+  color: #ff8fb2 !important;
+}
+.eearth__search {
+  display: flex;
+  gap: 6px;
+}
+.eearth__search input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--e-line-dim);
+  background: #0c0620;
+  color: var(--e-text);
+  font: inherit;
+  font-size: 11px;
+}
+.eearth__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.eearth__view {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--e-dim);
+}
+.eearth__legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 8px;
+  font-size: 10px;
+}
+.eearth__legend p {
+  grid-column: 1 / -1;
+  margin: 0;
+  letter-spacing: 0.14em;
+  color: var(--e-dim);
+}
+.eearth__legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.eearth__legend i {
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+}
+.eearth__attr {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--e-dim);
+}
+@media (max-width: 640px) {
+  .egev-mode {
+    top: auto;
+    bottom: 100%;
+    left: 50%;
+    margin-bottom: 40px;
+    transform: translateX(-50%);
+  }
+  .eearth__detail {
+    width: 92%;
+    left: 4%;
   }
 }
 
