@@ -43,6 +43,13 @@
 .app[data-ai="edith"] > :not(.edith) {
   visibility: hidden;
 }
+/* 見えない裏の画面（背景の粒・F.R.I.D.A.Y. の画面・サイドバー）のアニメーションも止める（見えないのに動かし続けて重くなるので）。
+   切り替えの演出は終わりの合図を待つので止めない */
+.app[data-ai="edith"] > .bg *,
+.app[data-ai="edith"] > .center *,
+.app[data-ai="edith"] > .sidebar * {
+  animation-play-state: paused !important;
+}
 
 .edith__grid {
   position: absolute;
@@ -2429,6 +2436,25 @@
 .eearth__canvas .cesium-viewer-bottom,
 .eearth__credits {
   display: none;
+}
+/* Google の 3D の街の間は、Google のロゴ・クレジットを地球儀の下に出す（決まり。ほかのクレジットとは分ける） */
+.eearth[data-city] .eearth__credits {
+  display: block;
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  max-width: 70%;
+  z-index: 3;
+  font-size: 9px;
+  color: #fff;
+  pointer-events: auto;
+}
+.eearth[data-city] .eearth__credits img {
+  vertical-align: middle;
+}
+.eearth[data-city] .eearth__credits a {
+  color: #fff;
 }
 .eearth__state {
   pointer-events: none;

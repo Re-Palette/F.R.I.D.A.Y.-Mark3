@@ -881,7 +881,9 @@ export function Dashboard() {
             chatStatus={agent.status}
             onOpenChat={openChat}
             onNavigate={navigate}
-            hidden={view !== "home" || shownMode === "karen"}
+            // K.A.R.E.N.・E.D.I.T.H. の画面の間は、裏の F.R.I.D.A.Y. の画面を隠して 3D・粒子の描画を止める
+            //（隠さないと、返答が流れ込むたびに裏の画面の大きさが変わり、3D の描き直しで全体がカクつく）
+            hidden={view !== "home" || shownMode === "karen" || shownMode === "edith"}
             brain={agent.brain}
             calendar={agent.calendar}
             automation={agent.automation}

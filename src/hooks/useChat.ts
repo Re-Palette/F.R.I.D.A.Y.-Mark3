@@ -107,6 +107,8 @@ export interface LastRunStats {
 }
 
 const STORAGE_KEY = "friday.session.v1";
+/** 返答を流し込む表示の描き直しの最短間隔（ms） */
+const PATCH_GAP_MS = 33;
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -262,6 +264,7 @@ export function useChat() {
       let shown = 0;
       let lastDeltaAt = 0;
       let lastTickAt = 0;
+      let lastPatchAt = 0;
       let avgGap = 120; // 塊が届く平均間隔 (ms)
       let timer = 0;
       let timerIsRaf = false;
@@ -300,8 +303,13 @@ export function useChat() {
             shown = Math.min(received.length, shown + step);
             if (shown < received.length && isHighSurrogate(received.charCodeAt(shown - 1))) shown++;
           }
-          const text = received.slice(0, shown);
-          patch(assistantId, (m) => ({ ...m, content: text }));
+          // 画面の描き直しは 1 秒に 30 回まで（毎フレーム描き直すと、返答の間ずっと画面全体が重くなる）。最後の分は必ず出す
+          const at = performance.now();
+          if (shown >= received.length || at - lastPatchAt >= PATCH_GAP_MS) {
+            lastPatchAt = at;
+            const text = received.slice(0, shown);
+            patch(assistantId, (m) => ({ ...m, content: text }));
+          }
         }
         if (shown < received.length) schedule();
         else lastTickAt = 0;

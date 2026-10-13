@@ -16,6 +16,9 @@ import type { EarthSettings } from "@/lib/earth/settings";
 import type { LayerData } from "./useEarthData";
 import { GIBS_CREDIT, ISS_LIVE_EMBED, ISS_LIVE_PAGE, isIssName, RADAR_CREDIT, S2_CREDIT, S2_YEAR, type ImageryCredit, type RadarFrame } from "@/lib/earth/imagery";
 import type { ImageryKind } from "./EdithEarth";
+import type { EarthConfig } from "./useEarthData";
+import { aircraftPositionAt, type Aircraft } from "@/lib/earth/aircraft";
+import type { Bus, Ship } from "@/lib/earth/transport";
 
 function Credit({ c }: { c: ImageryCredit }) {
   return (
@@ -66,6 +69,59 @@ interface PanelProps {
   cloudsDate?: string;
   /** 重ねた画像の一部を読み込めなかった種類 */
   imageryErrors?: Partial<Record<ImageryKind, boolean>>;
+  /** 飛行機の取得の状態 */
+  aircraft?: LayerData<{ ok: true; fetchedAt: string; items: Aircraft[] }>;
+  /** 見ている範囲が広すぎて、飛行機を取りに行っていない */
+  aircraftTooWide?: boolean;
+  /** 外部サービスの設定の有無 */
+  config?: EarthConfig | null;
+  /** 3D の街の状態 */
+  city3d?: { state: "off" | "loading" | "ready" | "error"; message?: string };
+  /** 3D の街を見る（東京駅のあたりへ斜めに寄る） */
+  onCityView?: () => void;
+  buses?: LayerData<{ ok: true; fetchedAt: string; items: Bus[] }>;
+  busesInView?: boolean;
+  ships?: LayerData<{ ok: true; fetchedAt: string; items: Ship[] }>;
+  shipsInView?: boolean;
+}
+
+/** キーの要るレイヤーの「未設定・寄ると表示・件数・取得時刻・エラー」 */
+function KeyedLayer(p: { configured: boolean | undefined; envName: string; inView: boolean | undefined; viewHint: string; data?: LayerData<{ ok: true; fetchedAt: string; items: unknown[] }>; unit: string; now: number; source: string }) {
+  return (
+    <dl>
+      <dt>DATA</dt>
+      <dd>{p.source}</dd>
+      {p.configured === undefined ? (
+        <>
+          <dt>STATE</dt>
+          <dd>設定を確認しています</dd>
+        </>
+      ) : !p.configured ? (
+        <>
+          <dt>STATE</dt>
+          <dd className="eearth__err">未設定：キーを Vercel の環境変数 {p.envName} に入れると使えます</dd>
+        </>
+      ) : !p.inView ? (
+        <>
+          <dt>VIEW</dt>
+          <dd>{p.viewHint}</dd>
+        </>
+      ) : (
+        <>
+          <dt>COUNT</dt>
+          <dd>{p.data?.data ? `${p.data.data.items.length} ${p.unit}` : "—"}</dd>
+          <dt>FETCHED</dt>
+          <dd>{p.data?.data ? `${agoText(Date.parse(p.data.data.fetchedAt), p.now)}（${utcText(p.data.data.fetchedAt)}）` : "—"}</dd>
+          {p.data?.fetch.lastError && (p.data.status === "STALE" || p.data.status === "ERROR") && (
+            <>
+              <dt>ERROR</dt>
+              <dd className="eearth__err">{p.data.fetch.lastError}</dd>
+            </>
+          )}
+        </>
+      )}
+    </dl>
+  );
 }
 
 export function EarthLayersPanel(p: PanelProps) {
@@ -180,10 +236,143 @@ export function EarthLayersPanel(p: PanelProps) {
         )}
       </section>
 
+      <section className="eearth__layer" aria-label="飛行機のレイヤー">
+        <header>
+          <button type="button" className="edisp__toggle" role="switch" aria-checked={p.settings.aircraft} data-on={p.settings.aircraft || undefined} onClick={() => set("aircraft", !p.settings.aircraft)}>
+            <span>AIRCRAFT</span>
+          </button>
+          {p.settings.aircraft && p.aircraft && !p.aircraftTooWide && <StatusChip status={p.aircraft.status} predicted />}
+        </header>
+        {p.settings.aircraft && (
+          <>
+            <dl>
+              <dt>DATA</dt>
+              <dd>OpenSky Network（機体が報告した位置。報告の後は速度と向きから推定して動かします）</dd>
+              {p.aircraftTooWide ? (
+                <>
+                  <dt>VIEW</dt>
+                  <dd>もっと寄ると表示します（見ている範囲が広すぎるため、取りに行っていません）</dd>
+                </>
+              ) : (
+                <>
+                  <dt>COUNT</dt>
+                  <dd>{p.aircraft?.data ? `${p.aircraft.data.items.length} 機（空を飛んでいるもの）` : "—"}</dd>
+                  <dt>FETCHED</dt>
+                  <dd>{p.aircraft?.data ? `${agoText(Date.parse(p.aircraft.data.fetchedAt), p.now)}（${utcText(p.aircraft.data.fetchedAt)}）` : "—"}</dd>
+                </>
+              )}
+              {p.aircraft?.fetch.lastError && (p.aircraft.status === "STALE" || p.aircraft.status === "ERROR") && !p.aircraftTooWide && (
+                <>
+                  <dt>ERROR</dt>
+                  <dd className="eearth__err">{p.aircraft.fetch.lastError}</dd>
+                </>
+              )}
+              {p.config?.services.opensky === "anonymous" && (
+                <>
+                  <dt>NOTE</dt>
+                  <dd>匿名で取得しています（1 日の回数が少なめ。OpenSky に無料登録して OPENSKY_CLIENT_ID・OPENSKY_CLIENT_SECRET を設定すると増えます）</dd>
+                </>
+              )}
+            </dl>
+            {!p.aircraftTooWide && p.aircraft?.data && p.aircraft.data.items.length > 0 && (
+              <ul className="eearth__list" aria-label="飛行機">
+                {p.aircraft.data.items.slice(0, 5).map((a) => (
+                  <li key={a.icao24}>
+                    <button type="button" data-on={p.selectedId === `air:${a.icao24}` || undefined} onClick={() => p.onSelect(`air:${a.icao24}`)}>
+                      <i className="eearth__dot" style={{ background: "#ffd27a" }} />
+                      <span>{a.callsign ?? a.icao24.toUpperCase()}</span>
+                      <small>{a.altM !== null ? `${Math.round(a.altM).toLocaleString()} m` : ""}</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="eearth__layer" aria-label="道路の渋滞">
+        <header>
+          <button type="button" className="edisp__toggle" role="switch" aria-checked={p.settings.traffic} data-on={p.settings.traffic || undefined} onClick={() => set("traffic", !p.settings.traffic)}>
+            <span>TRAFFIC（渋滞）</span>
+          </button>
+        </header>
+        {p.settings.traffic && (
+          <dl>
+            <dt>DATA</dt>
+            <dd>TomTom の道路ごとの混み具合（緑＝流れている → 赤＝混んでいる）。寄ったときだけ表示します</dd>
+            {p.config && !p.config.services.tomtom && (
+              <>
+                <dt>STATE</dt>
+                <dd className="eearth__err">未設定：キーを Vercel の環境変数 TOMTOM_API_KEY に入れると使えます</dd>
+              </>
+            )}
+            {p.imageryErrors?.traffic && (
+              <>
+                <dt>ERROR</dt>
+                <dd className="eearth__err">一部の渋滞の画像を読み込めませんでした</dd>
+              </>
+            )}
+          </dl>
+        )}
+      </section>
+
+      <section className="eearth__layer" aria-label="都営バスのレイヤー">
+        <header>
+          <button type="button" className="edisp__toggle" role="switch" aria-checked={p.settings.buses} data-on={p.settings.buses || undefined} onClick={() => set("buses", !p.settings.buses)}>
+            <span>BUSES（都営バス）</span>
+          </button>
+          {p.settings.buses && p.config?.services.odpt && p.busesInView && p.buses && <StatusChip status={p.buses.status} />}
+        </header>
+        {p.settings.buses && (
+          <KeyedLayer configured={p.config ? p.config.services.odpt : undefined} envName="ODPT_CONSUMER_KEY" inView={p.busesInView} viewHint="東京のあたりに寄ると表示します" data={p.buses} unit="台" now={p.now} source="公共交通オープンデータ（都営バスの位置。約 30 秒ごと）" />
+        )}
+      </section>
+
+      <section className="eearth__layer" aria-label="船のレイヤー">
+        <header>
+          <button type="button" className="edisp__toggle" role="switch" aria-checked={p.settings.ships} data-on={p.settings.ships || undefined} onClick={() => set("ships", !p.settings.ships)}>
+            <span>SHIPS（船）</span>
+          </button>
+          {p.settings.ships && p.config?.services.ais && p.shipsInView && p.ships && <StatusChip status={p.ships.status} />}
+        </header>
+        {p.settings.ships && (
+          <KeyedLayer configured={p.config ? p.config.services.ais : undefined} envName="AISSTREAM_API_KEY" inView={p.shipsInView} viewHint="もっと寄ると表示します（港や湾のあたり）" data={p.ships} unit="隻（最近報告のあったもの）" now={p.now} source="AISStream（船の AIS の位置の報告。約 1 分ごと）" />
+        )}
+      </section>
+
       <section className="eearth__layer" aria-label="地球の画像">
         <header>
           <span className="eearth__sect">IMAGERY</span>
         </header>
+        <header>
+          <button type="button" className="edisp__toggle" role="switch" aria-checked={p.settings.city3d} data-on={p.settings.city3d || undefined} onClick={() => set("city3d", !p.settings.city3d)} title="Google の写真のような 3D の街（キーが必要）">
+            <span>3D CITY（Google）</span>
+          </button>
+        </header>
+        {p.settings.city3d && (
+          <dl>
+            <dt>STATE</dt>
+            <dd className={p.city3d?.state === "error" || (p.config && !p.config.google3dKey) ? "eearth__err" : undefined}>
+              {!p.config
+                ? "設定を確認しています"
+                : !p.config.google3dKey
+                  ? "未設定：Google Maps Platform のキー（Map Tiles API）を Vercel の環境変数 GOOGLE_MAPS_API_KEY に入れると使えます"
+                  : p.city3d?.state === "ready"
+                    ? "表示中（Google の 3D の間は、ほかの地図の画像は隠しています）"
+                    : p.city3d?.state === "error"
+                      ? `読み込めませんでした：${p.city3d.message ?? ""}`
+                      : "読み込んでいます"}
+            </dd>
+          </dl>
+        )}
+        {p.settings.city3d && p.city3d?.state === "ready" && p.onCityView && (
+          <div className="eearth__row">
+            <button type="button" className="efeed__tool" onClick={p.onCityView} title="東京駅のあたりへ斜めに寄る（場所の検索でも移動できます）">
+              街に寄る（東京）
+            </button>
+          </div>
+        )}
         <header>
           <button type="button" className="edisp__toggle" role="switch" aria-checked={p.settings.detail} data-on={p.settings.detail || undefined} onClick={() => set("detail", !p.settings.detail)} title="Sentinel-2 の雲なし衛星写真（10m 程度まで拡大できます）">
             <span>DETAIL（衛星写真）</span>
@@ -299,12 +488,30 @@ export function EarthLayersPanel(p: PanelProps) {
             {" "}／ <Credit c={RADAR_CREDIT} />
           </>
         )}
+        {p.settings.aircraft && (
+          <>
+            {" "}／ 飛行機：{" "}
+            <a href="https://opensky-network.org" target="_blank" rel="noopener noreferrer">
+              The OpenSky Network
+            </a>
+          </>
+        )}
+        {p.settings.city3d && p.city3d?.state === "ready" && <> ／ 3D の街：Google（地球儀の下にロゴ・クレジット）</>}
+        {p.settings.traffic && p.config?.services.tomtom && <> ／ 渋滞：© TomTom</>}
+        {p.settings.buses && p.config?.services.odpt && <> ／ バス：公共交通オープンデータセンター・東京都交通局（CC BY 4.0）</>}
+        {p.settings.ships && p.config?.services.ais && <> ／ 船：AISStream</>}
       </p>
     </div>
   );
 }
 
 interface DetailProps {
+  bus?: Bus;
+  busesFetchedAt?: string;
+  ship?: Ship;
+  shipsFetchedAt?: string;
+  aircraft?: Aircraft;
+  aircraftFetchedAt?: string;
   quake?: QuakePoint;
   quakesFetchedAt?: string;
   sat?: OrbitElement;
@@ -360,6 +567,87 @@ export function EarthDetail(p: DetailProps) {
           )}
         </>
       )}
+      {p.bus && (
+        <>
+          <p className="epoint__meta">BUS · 都営バス · ODPT</p>
+          <h3>{p.bus.route ?? "都営バス"}</h3>
+          <dl>
+            <dt>車両</dt>
+            <dd>{p.bus.number ?? "—"}</dd>
+            <dt>位置</dt>
+            <dd>
+              {p.bus.lat.toFixed(4)}°, {p.bus.lon.toFixed(4)}°{p.bus.azimuth !== null ? ` · ${Math.round(p.bus.azimuth)}°` : ""}
+            </dd>
+            <dt>位置の時刻</dt>
+            <dd>
+              {utcText(p.bus.reportedAt)}（{agoText(Date.parse(p.bus.reportedAt), p.now)}）
+            </dd>
+            <dt>データの取得</dt>
+            <dd>{p.busesFetchedAt ? utcText(p.busesFetchedAt) : "—"}</dd>
+          </dl>
+          <p className="eearth__note">東京都交通局が公開しているバスの位置（約 30 秒ごと）です。</p>
+        </>
+      )}
+      {p.ship && (
+        <>
+          <p className="epoint__meta">SHIP · AIS · AISStream</p>
+          <h3>{p.ship.name ?? `MMSI ${p.ship.mmsi}`}</h3>
+          <dl>
+            <dt>MMSI</dt>
+            <dd>{p.ship.mmsi}</dd>
+            <dt>位置</dt>
+            <dd>
+              {p.ship.lat.toFixed(4)}°, {p.ship.lon.toFixed(4)}°
+            </dd>
+            <dt>速度・向き</dt>
+            <dd>
+              {p.ship.sog !== null ? `${p.ship.sog.toFixed(1)} ノット` : "—"}
+              {p.ship.heading !== null ? ` · ${Math.round(p.ship.heading)}°` : ""}
+            </dd>
+            <dt>報告の時刻</dt>
+            <dd>
+              {utcText(p.ship.reportedAt)}（{agoText(Date.parse(p.ship.reportedAt), p.now)}）
+            </dd>
+            <dt>データの取得</dt>
+            <dd>{p.shipsFetchedAt ? utcText(p.shipsFetchedAt) : "—"}</dd>
+          </dl>
+          <p className="eearth__note">船が AIS で報告した位置です。止まっている船は報告が少なく、表示が古いことがあります。</p>
+        </>
+      )}
+      {p.aircraft && (() => {
+        const a = p.aircraft;
+        const est = aircraftPositionAt(a, p.now);
+        return (
+          <>
+            <p className="epoint__meta">AIRCRAFT · OpenSky Network</p>
+            <h3>{a.callsign ?? a.icao24.toUpperCase()}</h3>
+            <dl>
+              <dt>ICAO24</dt>
+              <dd>
+                {a.icao24.toUpperCase()}
+                {a.country ? ` · ${a.country}` : ""}
+              </dd>
+              <dt>報告の位置</dt>
+              <dd>
+                {a.lat.toFixed(3)}°, {a.lon.toFixed(3)}°（{utcText(a.reportedAt)}・{agoText(Date.parse(a.reportedAt), p.now)}）
+              </dd>
+              <dt>いまの推定</dt>
+              <dd>{est.estimated ? `${est.lat.toFixed(3)}°, ${est.lon.toFixed(3)}°（速度と向きから推定）` : "報告の位置のまま"}</dd>
+              <dt>高度</dt>
+              <dd>{a.altM !== null ? `${Math.round(a.altM).toLocaleString()} m（約 ${Math.round(a.altM * 3.281).toLocaleString()} ft）` : "—"}</dd>
+              <dt>速度・向き</dt>
+              <dd>
+                {a.speedMs !== null ? `${Math.round(a.speedMs * 3.6).toLocaleString()} km/h` : "—"}
+                {a.heading !== null ? ` · ${Math.round(a.heading)}°` : ""}
+                {a.verticalMs !== null && Math.abs(a.verticalMs) >= 0.5 ? ` · ${a.verticalMs > 0 ? "上昇" : "降下"} ${Math.abs(a.verticalMs).toFixed(1)} m/s` : ""}
+              </dd>
+              <dt>データの取得</dt>
+              <dd>{p.aircraftFetchedAt ? utcText(p.aircraftFetchedAt) : "—"}</dd>
+            </dl>
+            <p className="eearth__note">機体が報告した位置（ADS-B など）です。報告の後は推定で動かしているため、実際の位置とずれることがあります。</p>
+          </>
+        );
+      })()}
       {p.sat && (
         <>
           <p className="epoint__meta">SATELLITE · CelesTrak · 推定位置</p>
@@ -416,6 +704,16 @@ export function EarthDetail(p: DetailProps) {
         ) : (
           <button type="button" className="ebtn" onClick={p.onTrack}>
             追従する
+          </button>
+        )}
+        {(p.bus || p.ship) && (
+          <button type="button" className="ebtn" onClick={() => { const x = (p.bus ?? p.ship)!; p.onFly(x.lat, x.lon); }}>
+            この位置へ移動
+          </button>
+        )}
+        {p.aircraft && (
+          <button type="button" className="ebtn" onClick={() => { const e = aircraftPositionAt(p.aircraft!, p.now); p.onFly(e.lat, e.lon); }}>
+            この飛行機へ移動
           </button>
         )}
         {p.quake && (

@@ -39,6 +39,13 @@
 .app[data-ai="karen"] > :not(.karen) {
   visibility: hidden;
 }
+/* 見えない裏の画面（背景の粒・F.R.I.D.A.Y. の画面・サイドバー）のアニメーションも止める（見えないのに動かし続けて重くなるので）。
+   切り替えの演出は終わりの合図を待つので止めない */
+.app[data-ai="karen"] > .bg *,
+.app[data-ai="karen"] > .center *,
+.app[data-ai="karen"] > .sidebar * {
+  animation-play-state: paused !important;
+}
 
 /* 全面の方眼（細かい線と、5 マスごとの少し明るい線） */
 .karen__grid {

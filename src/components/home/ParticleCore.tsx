@@ -11,7 +11,7 @@
  */
 import { memo, useEffect, useRef } from "react";
 import { voiceLevel } from "@/lib/voice-level";
-import { settled } from "@/lib/settle";
+import { resizeWorthIt, settled } from "@/lib/settle";
 import { isScreenCovered } from "@/lib/screen-cover";
 
 export type CoreMode = "idle" | "listening" | "connect" | "think" | "search" | "create" | "speaking";
@@ -192,10 +192,14 @@ export const ParticleCore = memo(function ParticleCore({
       d.fillStyle = spec;
       d.fillRect(0, 0, hs * 2, hs * 2);
     };
-    const fit = () => {
+    let drawn: { w: number; h: number } | null = null;
+    const fit = (force = false) => {
       const dpr = lite || lowRes ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
+      // 少し縮んだ・伸びただけなら作り直さない（CSS で伸び縮みする。描く位置は前の大きさのまま比率で合う）
+      if (!force && !resizeWorthIt(drawn, canvas.clientWidth, canvas.clientHeight)) return;
       w = canvas.clientWidth;
       h = canvas.clientHeight;
+      drawn = { w, h };
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -203,7 +207,7 @@ export const ParticleCore = memo(function ParticleCore({
     };
     fit();
     // 返事の欄が伸びていく間などは作り直さず、大きさが落ち着いてから 1 回だけ描き直しの準備をする
-    const fitLater = settled(fit);
+    const fitLater = settled(() => fit());
     const ro = new ResizeObserver(fitLater);
     ro.observe(canvas);
 
@@ -402,7 +406,7 @@ export const ParticleCore = memo(function ParticleCore({
           if (strikes >= 2) {
             lite = true;
             gap = 32;
-            fit();
+            fit(true);
             slowRef.current?.();
           }
         }
@@ -416,7 +420,7 @@ export const ParticleCore = memo(function ParticleCore({
       drawAvg = drawAvg * 0.95 + (performance.now() - t0) * 0.05;
       if (!lowRes && !lite && drawAvg > 8) {
         lowRes = true;
-        fit();
+        fit(true);
       }
     };
     if (still) {

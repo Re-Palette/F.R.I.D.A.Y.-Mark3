@@ -15,7 +15,7 @@ import { assetFailed, clearHologram, getHoloState, setHoloExpanded, subscribeHol
 import type { HoloModel } from "@/lib/hologram-schema";
 import { buildAsset, buildModel, dotTexture, holoMaterial } from "./hologram-visuals";
 import { toggleHand, useHandStatus, warmHands } from "./HandControl";
-import { settled } from "@/lib/settle";
+import { resizeWorthIt, settled } from "@/lib/settle";
 import { isScreenCovered } from "@/lib/screen-cover";
 
 const ORANGE = 0xff8a1f;
@@ -263,11 +263,15 @@ export const Hologram = memo(function Hologram({
       body.add(scan);
 
       // 大きさ（拡大表示のときは、画面いっぱいの枠の大きさ）
-      const resize = () => {
+      let drawn: { w: number; h: number } | null = null;
+      const resize = (force = false) => {
         const host = renderer.domElement.parentElement ?? el;
         const w = host.clientWidth;
         const h = host.clientHeight;
         if (!w || !h) return;
+        // 少し縮んだ・伸びただけなら作り直さない（CSS で枠いっぱいに伸び縮みする。返事が流れ込む間のカクつきを防ぐ）
+        if (!force && !resizeWorthIt(drawn, w, h)) return;
+        drawn = { w, h };
         renderer.setSize(w, h, false);
         composer.setPixelRatio(renderer.getPixelRatio());
         composer.setSize(w, h);
@@ -279,7 +283,7 @@ export const Hologram = memo(function Hologram({
         camera.updateProjectionMatrix();
       };
       // 大きさが変わり続けている間は作り直さない（落ち着いてから 1 回）
-      const resizeLater = settled(resize);
+      const resizeLater = settled(() => resize());
       const ro = new ResizeObserver(resizeLater);
       ro.observe(el);
       resize();
@@ -354,7 +358,7 @@ export const Hologram = memo(function Hologram({
           target.appendChild(canvas);
           ro.disconnect();
           ro.observe(target);
-          resize();
+          resize(true);
         }
       };
       const unsubscribe = subscribeHolo(sync);
@@ -407,7 +411,7 @@ export const Hologram = memo(function Hologram({
           else if (quality > 0) {
             quality--;
             renderer.setPixelRatio(pixelRatio());
-            resize();
+            resize(true);
           }
           slow = 0.016;
         }

@@ -21,6 +21,8 @@ import { createPoller, fetchLayerJson, type PollResult } from "@/lib/earth/polle
 import { EMPTY_FETCH, layerStatus, type LayerFetchState, type LayerStatus } from "@/lib/earth/status";
 import { parseQuakesResponse, QUAKE_POLL_MS, QUAKE_STALE_MS, type QuakesResponse } from "@/lib/earth/quakes";
 import { parseRadarResponse, RADAR_POLL_MS, RADAR_STALE_MS, RAINVIEWER_MAPS_URL, type RadarResponse } from "@/lib/earth/imagery";
+import { BUS_MAX_VIEW_AREA, BUS_POLL_MS, BUS_STALE_MS, bboxOverlaps, parseBusesResponse, parseShipsResponse, SHIP_MAX_AREA, SHIP_POLL_MS, SHIP_STALE_MS, TOEI_AREA, type BusesResponse, type ShipsResponse } from "@/lib/earth/transport";
+import { AIRCRAFT_MAX_AREA, AIRCRAFT_POLL_MS, AIRCRAFT_STALE_MS, bboxArea, bboxKey, parseAircraftResponse, roundBBox, type AircraftResponse, type BBox } from "@/lib/earth/aircraft";
 import {
   parseSatellitesResponse,
   SAT_LIMIT_MAX,
@@ -41,6 +43,43 @@ import {
 
 type QuakesOk = Extract<QuakesResponse, { ok: true }>;
 type RadarOk = Extract<RadarResponse, { ok: true }>;
+type AircraftOk = Extract<AircraftResponse, { ok: true }>;
+type BusesOk = Extract<BusesResponse, { ok: true }>;
+type ShipsOk = Extract<ShipsResponse, { ok: true }>;
+
+/** 外部サービスの設定の有無（/api/edith/earth/config）。キーは Google の 3D の街のものだけ（ブラウザが直接使うため） */
+export interface EarthConfig {
+  google3dKey: string | null;
+  services: { opensky: "auth" | "anonymous"; tomtom: boolean; odpt: boolean; ais: boolean };
+}
+export function parseEarthConfig(raw: unknown): EarthConfig | null {
+  const r = raw as { google3dKey?: unknown; services?: Record<string, unknown> } | null;
+  if (!r || typeof r !== "object" || !r.services || typeof r.services !== "object") return null;
+  const s = r.services;
+  return {
+    google3dKey: typeof r.google3dKey === "string" && /^[A-Za-z0-9_-]{20,80}$/.test(r.google3dKey) ? r.google3dKey : null,
+    services: { opensky: s.opensky === "auth" ? "auth" : "anonymous", tomtom: s.tomtom === true, odpt: s.odpt === true, ais: s.ais === true },
+  };
+}
+
+/** EARTH を開いたときに 1 回だけ設定を読む（失敗したら null のまま。キーの要るものは使わない） */
+function useEarthConfig(active: boolean): EarthConfig | null {
+  const [cfg, setCfg] = useState<EarthConfig | null>(null);
+  const tried = useRef(false);
+  useEffect(() => {
+    if (!active || tried.current) return;
+    tried.current = true;
+    const ctrl = new AbortController();
+    fetch("/api/edith/earth/config", { cache: "no-store", credentials: "same-origin", signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setCfg(parseEarthConfig(j)))
+      .catch(() => {
+        tried.current = false;
+      });
+    return () => ctrl.abort();
+  }, [active]);
+  return cfg;
+}
 type SatsOk = Extract<SatellitesResponse, { ok: true }>;
 
 /** 取れていない理由（衛星だけ。地震では null） */
@@ -271,7 +310,7 @@ function writeSatHold(h: SatHold | null): void {
   }
 }
 
-export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolean; satGroup: SatGroup; radar?: boolean }) {
+export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolean; satGroup: SatGroup; radar?: boolean; aircraft?: boolean; buses?: boolean; ships?: boolean; viewBox?: BBox | null }) {
   const now = useTick();
   const { online, visible } = useOnlineVisible();
   const paused = () => !visible || !online;
@@ -339,5 +378,18 @@ export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolea
   });
   // 雨雲レーダー：RainViewer の公開 API（ブラウザから直接。ON で EARTH を表示している間だけ、約 10 分ごと）
   const radar = useLayer<Omit<RadarOk, "ok">>(o.active && o.radar ? RAINVIEWER_MAPS_URL : null, RADAR_POLL_MS, RADAR_STALE_MS, parseRadarResponse as never, now, online, paused);
-  return { now, online, quakes, sats, radar };
+  // 飛行機：見ている範囲が十分に狭いときだけ（0.5 度刻みにそろえて、同じ範囲はまとめる）
+  const box = o.viewBox ? roundBBox(o.viewBox) : null;
+  const aircraftUrl = o.active && o.aircraft && box && bboxArea(box) <= AIRCRAFT_MAX_AREA ? `/api/edith/earth/aircraft?bbox=${bboxKey(box)}` : null;
+  const aircraft = useLayer<Omit<AircraftOk, "ok">>(aircraftUrl, AIRCRAFT_POLL_MS, AIRCRAFT_STALE_MS, parseAircraftResponse as never, now, online, paused);
+  const config = useEarthConfig(o.active);
+  /** 飛行機を出すには広すぎる範囲を見ている */
+  const aircraftTooWide = Boolean(o.aircraft && (!box || bboxArea(box) > AIRCRAFT_MAX_AREA));
+  // 都営バス：キーがあり、東京のあたりに寄って見ているときだけ
+  const busesInView = Boolean(box && bboxArea(box) <= BUS_MAX_VIEW_AREA && bboxOverlaps(box, TOEI_AREA));
+  const buses = useLayer<Omit<BusesOk, "ok">>(o.active && o.buses && config?.services.odpt && busesInView ? "/api/edith/earth/buses" : null, BUS_POLL_MS, BUS_STALE_MS, parseBusesResponse as never, now, online, paused);
+  // 船：キーがあり、寄って見ているときだけ
+  const shipsInView = Boolean(box && bboxArea(box) <= SHIP_MAX_AREA);
+  const ships = useLayer<Omit<ShipsOk, "ok">>(o.active && o.ships && config?.services.ais && shipsInView && box ? `/api/edith/earth/ships?bbox=${bboxKey(box)}` : null, SHIP_POLL_MS, SHIP_STALE_MS, parseShipsResponse as never, now, online, paused);
+  return { now, online, quakes, sats, radar, aircraft, aircraftTooWide, config, buses, busesInView, ships, shipsInView };
 }

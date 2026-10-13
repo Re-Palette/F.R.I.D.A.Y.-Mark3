@@ -1299,3 +1299,317 @@ describe("地球の画像・雨雲レーダー・ライブ映像の定義", () =
     assert.equal(parseEarthSettings({ detail: "yes" }).detail, true);
   });
 });
+
+/* ---------- 飛行機（OpenSky）・外部サービスの設定（見本の応答・外部通信なし） ---------- */
+
+const air = await import("../src/lib/earth/aircraft");
+const airSrv = await import("../src/integrations/earth/aircraft");
+
+const openskyBody = (t: number) => ({
+  time: t,
+  states: [
+    ["86d5a1", "JAL123  ", "Japan", t - 5, t - 4, 139.8, 35.6, 3000.5, false, 200, 90, 5.2, null, 3050, "1234", false, 0],
+    ["86d5a2", "ANA9    ", "Japan", t - 8, t - 6, 139.9, 35.7, null, false, 150, 180, -3, null, 2000, null, false, 0],
+    ["86d5a3", "GND1", "Japan", t - 2, t - 2, 139.7, 35.5, 0, true, 5, 0, 0, null, 0, null, false, 0],
+    ["zzzzzz", "BAD", "X", t, t, 1, 1, 1, false, 1, 1, 1, null, 1, null, false, 0],
+    ["86d5a4", "NOPOS", "Japan", t, t, null, null, 1, false, 1, 1, 1, null, 1, null, false, 0],
+  ],
+});
+
+describe("飛行機：OpenSky の読み取り・範囲・推定位置", () => {
+  it("空を飛んでいて位置のあるものだけ。気圧高度が無ければ幾何高度", () => {
+    const t = Math.floor(NOW / 1000);
+    const list = air.parseOpenSky(openskyBody(t));
+    assert.deepEqual(list.map((a) => a.icao24), ["86d5a1", "86d5a2"]);
+    assert.equal(list[0].callsign, "JAL123");
+    assert.equal(list[0].altM, 3000.5);
+    assert.equal(list[1].altM, 2000);
+    assert.equal(list[0].reportedAt, new Date((t - 5) * 1000).toISOString());
+    assert.deepEqual(air.parseOpenSky({ time: t, states: null }), []);
+    assert.throws(() => air.parseOpenSky({ states: [] }));
+  });
+  it("範囲：0.5 度刻みに広げる・正しくない範囲は使わない・広さ", () => {
+    assert.deepEqual(air.roundBBox({ lamin: 35.31, lomin: 139.26, lamax: 35.92, lomax: 140.01 }), { lamin: 35, lomin: 139, lamax: 36, lomax: 140.5 });
+    assert.equal(air.parseBBoxQuery("35,139,36,140")?.lamax, 36);
+    for (const q of ["", "1,2,3", "36,139,35,140", "a,b,c,d", "-91,0,0,1", "0,-181,1,0"]) assert.equal(air.parseBBoxQuery(q), null, q);
+    assert.equal(air.bboxArea({ lamin: 30, lomin: 130, lamax: 40, lomax: 140 }), 100);
+  });
+  it("報告の後の推定：東へ 200 m/s で 10 秒 → 約 2 km 東。最大の時間を過ぎたら止める", () => {
+    const a = { icao24: "86d5a1", callsign: "X", country: null, lat: 0, lon: 0, altM: 1000, speedMs: 200, heading: 90, verticalMs: 0, reportedAt: new Date(NOW).toISOString() };
+    const p10 = air.aircraftPositionAt(a, NOW + 10_000);
+    assert.ok(p10.estimated);
+    assert.ok(Math.abs(p10.lon - 2000 / 111_195) < 1e-4 && Math.abs(p10.lat) < 1e-6, JSON.stringify(p10));
+    const far = air.aircraftPositionAt(a, NOW + 10 * 60_000);
+    const cap = air.aircraftPositionAt(a, NOW + air.AIRCRAFT_EXTRAPOLATE_MAX_MS);
+    assert.ok(Math.abs(far.lon - cap.lon) < 1e-9, "最大の時間で止まる");
+    assert.equal(air.aircraftPositionAt({ ...a, speedMs: null }, NOW + 10_000).estimated, false);
+  });
+  it("画面側の確認：応答の形を確かめ直す", () => {
+    const ok = air.parseAircraftResponse({ ok: true, fetchedAt: new Date(NOW).toISOString(), bbox: { lamin: 35, lomin: 139, lamax: 36, lomax: 140 }, items: [{ icao24: "86d5a1", lat: 35.6, lon: 139.8, reportedAt: "2026-10-12T06:00:00Z" }, { icao24: "BAD!", lat: 1, lon: 1, reportedAt: "x" }] });
+    assert.ok(ok && ok.ok && ok.items.length === 1);
+    assert.equal(air.parseAircraftResponse({ ok: true, fetchedAt: "x", bbox: { lamin: 2, lomin: 0, lamax: 1, lomax: 1 }, items: [] }), null);
+  });
+});
+
+describe("飛行機：サーバーでの取得（OpenSky）", () => {
+  beforeEach(() => airSrv.resetAircraftCache());
+  const box = { lamin: 35.2, lomin: 139.3, lamax: 35.9, lomax: 140.1 };
+  /** 偽の fetch（呼ばれた URL・ヘッダを記録） */
+  function osFetch(reply: (url: string, init?: RequestInit) => { status?: number; body?: unknown; headers?: Record<string, string> }) {
+    const calls: { url: string; auth: string | null; method: string }[] = [];
+    const fn = async (url: string, init?: RequestInit) => {
+      calls.push({ url, auth: new Headers(init?.headers).get("authorization"), method: init?.method ?? "GET" });
+      const r = reply(url, init);
+      return new Response(typeof r.body === "string" ? r.body : JSON.stringify(r.body ?? {}), { status: r.status ?? 200, headers: r.headers ?? {} });
+    };
+    return { fn, calls };
+  }
+  const t = Math.floor(NOW / 1000);
+
+  it("匿名：0.5 度刻みの範囲で取りに行き、120 秒はためた結果を返す", async () => {
+    const f = osFetch(() => ({ body: openskyBody(t) }));
+    const r = await airSrv.getAircraft(box, { now: NOW, fetchImpl: f.fn as never, env: {} });
+    assert.ok(r.res.ok && r.res.items.length === 2);
+    assert.equal(f.calls[0].url, "https://opensky-network.org/api/states/all?lamin=35&lomin=139&lamax=36&lomax=140.5");
+    assert.equal(f.calls[0].auth, null);
+    await airSrv.getAircraft(box, { now: NOW + airSrv.AIRCRAFT_CACHE_ANON_MS - 1, fetchImpl: f.fn as never, env: {} });
+    assert.equal(f.calls.length, 1);
+    await airSrv.getAircraft(box, { now: NOW + airSrv.AIRCRAFT_CACHE_ANON_MS, fetchImpl: f.fn as never, env: {} });
+    assert.equal(f.calls.length, 2);
+  });
+
+  it("認証あり：トークンを取り（POST）、Bearer で取りに行く。トークンは使い回す。秘密の値は応答に入れない", async () => {
+    const f = osFetch((url) => (url.includes("/token") ? { body: { access_token: "tok-abc", expires_in: 1800 } } : { body: openskyBody(t) }));
+    const env = { OPENSKY_CLIENT_ID: "my-id", OPENSKY_CLIENT_SECRET: "my-secret" };
+    const r = await airSrv.getAircraft(box, { now: NOW, fetchImpl: f.fn as never, env });
+    assert.ok(r.res.ok);
+    assert.equal(f.calls[0].method, "POST");
+    assert.match(f.calls[0].url, /auth\.opensky-network\.org/);
+    assert.equal(f.calls[1].auth, "Bearer tok-abc");
+    await airSrv.getAircraft({ ...box, lamin: 33 }, { now: NOW + 1000, fetchImpl: f.fn as never, env });
+    assert.equal(f.calls.filter((c) => c.url.includes("/token")).length, 1, "トークンは使い回す");
+    assert.doesNotMatch(JSON.stringify(r.res), /tok-abc|my-secret|my-id/);
+  });
+
+  it("429：相手の待ち時間（X-Rate-Limit-Retry-After-Seconds）より前には取りに行かない", async () => {
+    const f = osFetch(() => ({ status: 429, headers: { "X-Rate-Limit-Retry-After-Seconds": "3600" } }));
+    const r = await airSrv.getAircraft(box, { now: NOW, fetchImpl: f.fn as never, env: {} });
+    assert.equal(r.res.ok, false);
+    assert.equal(r.retryAfterSec, 3600);
+    await airSrv.getAircraft({ ...box, lamin: 30 }, { now: NOW + 3600_000 - 1, fetchImpl: f.fn as never, env: {} });
+    assert.equal(f.calls.length, 1, "別の範囲でも待つ");
+  });
+
+  it("広すぎる範囲は取りに行かない。形の違う応答・接続の失敗は作ったデータを返さない", async () => {
+    const f = osFetch(() => ({ body: openskyBody(t) }));
+    const wide = await airSrv.getAircraft({ lamin: 0, lomin: 100, lamax: 30, lomax: 150 }, { now: NOW, fetchImpl: f.fn as never, env: {} });
+    assert.equal(wide.res.ok, false);
+    assert.equal(f.calls.length, 0);
+    const bad = await airSrv.getAircraft(box, { now: NOW, fetchImpl: osFetch(() => ({ body: { nope: 1 } })).fn as never, env: {} });
+    assert.equal(bad.res.ok, false);
+    airSrv.resetAircraftCache();
+    const net = await airSrv.getAircraft(box, { now: NOW, fetchImpl: (async () => { throw new TypeError("x"); }) as never, env: {} });
+    assert.equal(net.res.ok, false);
+  });
+
+  it("API：範囲がおかしい・広すぎる → 400", async () => {
+    const { GET } = await import("../src/app/api/edith/earth/aircraft/route");
+    assert.equal((await GET(new Request("http://localhost/api/edith/earth/aircraft?bbox=1,2"))).status, 400);
+    assert.equal((await GET(new Request("http://localhost/api/edith/earth/aircraft?bbox=0,100,30,150"))).status, 400);
+  });
+});
+
+describe("外部サービスの設定（/api/edith/earth/config）", () => {
+  it("Google のキーだけ画面に渡す。ほかのキーは有無だけ", async () => {
+    const keep = { ...process.env };
+    try {
+      process.env.GOOGLE_MAPS_API_KEY = "AIzaTESTKEY0123456789abcdef";
+      process.env.TOMTOM_API_KEY = "tomtom-secret-value";
+      process.env.ODPT_CONSUMER_KEY = "odpt-secret-value";
+      process.env.AISSTREAM_API_KEY = "ais-secret-value";
+      process.env.OPENSKY_CLIENT_ID = "osid";
+      process.env.OPENSKY_CLIENT_SECRET = "ossecret";
+      const { GET } = await import("../src/app/api/edith/earth/config/route");
+      const body = await (await GET()).json();
+      assert.equal(body.google3dKey, "AIzaTESTKEY0123456789abcdef");
+      assert.deepEqual(body.services, { opensky: "auth", tomtom: true, odpt: true, ais: true });
+      assert.doesNotMatch(JSON.stringify(body), /tomtom-secret|odpt-secret|ais-secret|ossecret|osid/);
+      delete process.env.GOOGLE_MAPS_API_KEY;
+      delete process.env.TOMTOM_API_KEY;
+      const b2 = await (await GET()).json();
+      assert.equal(b2.google3dKey, null);
+      assert.equal(b2.services.tomtom, false);
+    } finally {
+      for (const k of ["GOOGLE_MAPS_API_KEY", "TOMTOM_API_KEY", "ODPT_CONSUMER_KEY", "AISSTREAM_API_KEY", "OPENSKY_CLIENT_ID", "OPENSKY_CLIENT_SECRET"]) {
+        if (keep[k] === undefined) delete process.env[k];
+        else process.env[k] = keep[k];
+      }
+    }
+  });
+  it("画面側の確認：おかしなキーは使わない", () => {
+    assert.equal(ue.parseEarthConfig({ google3dKey: "<script>", services: {} })?.google3dKey, null);
+    assert.equal(ue.parseEarthConfig({ google3dKey: "AIzaTESTKEY0123456789abcdef", services: { opensky: "auth" } })?.services.opensky, "auth");
+    assert.equal(ue.parseEarthConfig(null), null);
+  });
+  it("設定：3D の街・飛行機は既定で ON（キーが無ければ 3D の街は出さない）", () => {
+    assert.equal(DEFAULT_EARTH.city3d, true);
+    assert.equal(DEFAULT_EARTH.aircraft, true);
+    assert.equal(parseEarthSettings({}).aircraft, true);
+    assert.equal(parseEarthSettings({ city3d: false }).city3d, false);
+  });
+});
+
+/* ---------- 渋滞・都営バス・船（見本の応答・外部通信なし） ---------- */
+
+const tr = await import("../src/lib/earth/transport");
+const busSrv = await import("../src/integrations/earth/buses");
+const shipSrv = await import("../src/integrations/earth/ships");
+
+const odptBus = (id: string, lat: unknown, lon: unknown, extra: Record<string, unknown> = {}) => ({ "@type": "odpt:Bus", "owl:sameAs": `odpt.Bus:Toei.To01.${id}`, "dc:date": "2026-10-12T15:00:00+09:00", "odpt:busNumber": `N${id}`, "odpt:busroute": "odpt.Busroute:Toei.To01", "geo:lat": lat, "geo:long": lon, "odpt:azimuth": 90, ...extra });
+const aisMsg = (mmsi: number, lat: number, lon: number, name = "TEST MARU@@@") => ({ MessageType: "PositionReport", MetaData: { MMSI: mmsi, ShipName: name, latitude: lat, longitude: lon, time_utc: "2026-10-12 06:00:00.123456789 +0000 UTC" }, Message: { PositionReport: { Latitude: lat, Longitude: lon, Sog: 12.3, Cog: 45, TrueHeading: 511, UserID: mmsi } } });
+
+describe("都営バス（ODPT）", () => {
+  beforeEach(() => busSrv.resetBusCache());
+  it("位置のあるものだけ読む。系統は最後の部分（To01）", () => {
+    const list = tr.parseOdptBuses([odptBus("1", 35.68, 139.76), odptBus("2", null, 139.7), odptBus("3", "35.7", "139.8"), "junk"]);
+    assert.equal(list.length, 2);
+    assert.equal(list[0].route, "To01");
+    assert.equal(list[0].number, "N1");
+    assert.equal(list[0].reportedAt, "2026-10-12T06:00:00.000Z");
+    assert.equal(list[1].lat, 35.7);
+    assert.throws(() => tr.parseOdptBuses({}));
+  });
+  it("キー未設定なら取りに行かない。キーはエラー文・応答に出さない。25 秒ためる", async () => {
+    let calls = 0;
+    const unset = await busSrv.getBuses({ now: NOW, env: {}, fetchImpl: (async () => (calls++, new Response("[]"))) as never });
+    assert.equal(unset.res.ok, false);
+    assert.equal(calls, 0);
+    const urls: string[] = [];
+    const f = (async (u: string) => (urls.push(u), new Response(JSON.stringify([odptBus("1", 35.68, 139.76)])))) as never;
+    const env = { ODPT_CONSUMER_KEY: "odpt-key-123" };
+    const r = await busSrv.getBuses({ now: NOW, env, fetchImpl: f });
+    assert.ok(r.res.ok && r.res.items.length === 1);
+    assert.match(urls[0], /^https:\/\/api\.odpt\.org\/api\/v4\/odpt:Bus\?odpt:operator=odpt\.Operator:Toei&acl:consumerKey=odpt-key-123$/);
+    assert.doesNotMatch(JSON.stringify(r.res), /odpt-key-123/);
+    await busSrv.getBuses({ now: NOW + busSrv.BUS_CACHE_MS - 1, env, fetchImpl: f });
+    assert.equal(urls.length, 1);
+    busSrv.resetBusCache();
+    const bad = await busSrv.getBuses({ now: NOW, env, fetchImpl: (async () => new Response("x", { status: 401 })) as never });
+    assert.equal(bad.res.ok, false);
+    if (!bad.res.ok) assert.doesNotMatch(bad.res.error, /odpt-key-123/);
+    assert.equal(bad.retryAfterSec, 1800);
+  });
+});
+
+describe("船（AISStream）", () => {
+  beforeEach(() => shipSrv.resetShipCache());
+  /** 偽の WebSocket：開いたら send を記録し、決めた通知を流す */
+  function fakeWs(msgs: unknown[], opts: { fail?: boolean } = {}) {
+    const sent: string[] = [];
+    let made = 0;
+    const factory = (url: string) => {
+      made++;
+      assert.equal(url, "wss://stream.aisstream.io/v0/stream");
+      const ws = { onopen: null as null | (() => void), onmessage: null as null | ((e: { data: unknown }) => void), onerror: null as null | (() => void), onclose: null as null | (() => void), send: (d: string) => sent.push(d), close: () => {} };
+      setTimeout(() => {
+        if (opts.fail) return ws.onerror?.();
+        ws.onopen?.();
+        for (const m of msgs) ws.onmessage?.({ data: JSON.stringify(m) });
+      }, 1);
+      return ws;
+    };
+    return { factory, sent, made: () => made };
+  }
+  const box = { lamin: 35.3, lomin: 139.6, lamax: 35.7, lomax: 140.0 };
+
+  it("AIS の位置の報告を読む（船首方位が 511 なら進路を使う・名前の @ を消す）", () => {
+    const s = tr.parseAisMessage(aisMsg(431000001, 35.5, 139.8), NOW);
+    assert.ok(s);
+    assert.equal(s!.name, "TEST MARU");
+    assert.equal(s!.heading, 45);
+    assert.equal(s!.reportedAt, "2026-10-12T06:00:00.123Z");
+    assert.equal(tr.parseAisMessage({ MessageType: "ShipStaticData" }, NOW), null);
+    assert.equal(tr.parseAisMessage({ ...aisMsg(12, 1, 1) }, NOW), null, "MMSI は 9 桁");
+  });
+
+  it("キーと範囲を送り、範囲の中の船だけ集める。同じ範囲は 60 秒ためる。キーは応答に出さない", async () => {
+    const w = fakeWs([aisMsg(431000001, 35.5, 139.8), aisMsg(431000002, 10, 10), "x"]);
+    const env = { AISSTREAM_API_KEY: "ais-key-xyz" };
+    const r = await shipSrv.getShips(box, { now: NOW, env, ws: w.factory as never, collectMs: 30 });
+    assert.ok(r.res.ok);
+    if (r.res.ok) assert.deepEqual(r.res.items.map((s) => s.mmsi), ["431000001"]);
+    const sub = JSON.parse(w.sent[0]);
+    assert.equal(sub.APIKey, "ais-key-xyz");
+    assert.deepEqual(sub.FilterMessageTypes, ["PositionReport"]);
+    assert.deepEqual(sub.BoundingBoxes, [[[35, 139.5], [36, 140]]]);
+    assert.doesNotMatch(JSON.stringify(r.res), /ais-key-xyz/);
+    await shipSrv.getShips(box, { now: NOW + 1000, env, ws: w.factory as never, collectMs: 30 });
+    assert.equal(w.made(), 1, "60 秒はためた結果");
+  });
+
+  it("前に集めた船も合わせて返す（止まっている船は報告が少ないため）", async () => {
+    const env = { AISSTREAM_API_KEY: "k" };
+    await shipSrv.getShips(box, { now: NOW, env, ws: fakeWs([aisMsg(431000001, 35.5, 139.8)]).factory as never, collectMs: 20 });
+    const r = await shipSrv.getShips(box, { now: NOW + shipSrv.SHIP_CACHE_MS, env, ws: fakeWs([aisMsg(431000003, 35.6, 139.9)]).factory as never, collectMs: 20 });
+    assert.ok(r.res.ok && r.res.items.length === 2);
+  });
+
+  it("キー未設定・広すぎる範囲は つながない。つながらなければ失敗（作ったデータは返さない）", async () => {
+    const w = fakeWs([]);
+    assert.equal((await shipSrv.getShips(box, { now: NOW, env: {}, ws: w.factory as never })).res.ok, false);
+    assert.equal((await shipSrv.getShips({ lamin: 30, lomin: 130, lamax: 40, lomax: 140 }, { now: NOW, env: { AISSTREAM_API_KEY: "k" }, ws: w.factory as never })).res.ok, false);
+    assert.equal(w.made(), 0);
+    const f = await shipSrv.getShips(box, { now: NOW, env: { AISSTREAM_API_KEY: "k" }, ws: fakeWs([], { fail: true }).factory as never, collectMs: 20 });
+    assert.equal(f.res.ok, false);
+  });
+});
+
+describe("道路の渋滞（TomTom のタイルをこのサイトを通して配る）", () => {
+  it("決まった段階・範囲だけ。キー未設定は 503。画像でない応答は 502。キーは応答に出さない", async () => {
+    const { GET } = await import("../src/app/api/edith/earth/traffic/[z]/[x]/[y]/route");
+    const call = (z: string, x: string, y: string) => GET(new Request("http://localhost/x"), { params: Promise.resolve({ z, x, y }) });
+    assert.equal((await call("3", "0", "0")).status, 400, "引いた段階は取りに行かない");
+    assert.equal((await call("12", "99999", "0")).status, 400);
+    const keep = process.env.TOMTOM_API_KEY;
+    const orig = globalThis.fetch;
+    try {
+      delete process.env.TOMTOM_API_KEY;
+      assert.equal((await call("12", "3638", "1612")).status, 503);
+      process.env.TOMTOM_API_KEY = "tt-key-1";
+      const seen: { url: string; key: string | null }[] = [];
+      globalThis.fetch = (async (u: string, init?: RequestInit) => (seen.push({ url: String(u), key: new Headers(init?.headers).get("tomtom-api-key") }), new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } }))) as typeof fetch;
+      const ok = await call("12", "3638", "1612.png");
+      assert.equal(ok.status, 200);
+      assert.equal(ok.headers.get("cache-control"), "private, max-age=120");
+      assert.match(seen[0].url, /^https:\/\/api\.tomtom\.com\/maps\/orbis\/traffic\/tile\/flow\/12\/3638\/1612\.png\?/);
+      assert.equal(seen[0].key, "tt-key-1");
+      globalThis.fetch = (async () => new Response("{\"error\":\"bad\"}", { status: 200, headers: { "Content-Type": "application/json" } })) as typeof fetch;
+      const bad = await call("12", "3638", "1612");
+      assert.equal(bad.status, 502);
+      assert.doesNotMatch(await bad.text(), /tt-key-1/);
+    } finally {
+      globalThis.fetch = orig;
+      if (keep === undefined) delete process.env.TOMTOM_API_KEY;
+      else process.env.TOMTOM_API_KEY = keep;
+    }
+  });
+  it("設定：渋滞・バス・船は既定で ON（キーが無ければ取りに行かない）", () => {
+    assert.deepEqual([DEFAULT_EARTH.traffic, DEFAULT_EARTH.buses, DEFAULT_EARTH.ships], [true, true, true]);
+    assert.equal(parseEarthSettings({ ships: false }).ships, false);
+    assert.equal(tr.bboxOverlaps({ lamin: 35.6, lomin: 139.7, lamax: 35.8, lomax: 139.9 }, tr.TOEI_AREA), true);
+    assert.equal(tr.bboxOverlaps({ lamin: 34, lomin: 135, lamax: 34.5, lomax: 135.5 }, tr.TOEI_AREA), false);
+  });
+});
+
+describe("場所の検索（都市・主な地点）", () => {
+  it("都市はその街が見える高さへ。「東京駅」は「東京」より先。見つからなければ null", async () => {
+    const { findCity } = await import("../src/lib/earth/places");
+    const tokyo = findCity("東京");
+    assert.ok(tokyo && Math.abs(tokyo.lat - 35.68) < 0.01 && Math.abs(tokyo.lon - 139.77) < 0.01 && tokyo.height <= 50_000);
+    assert.equal(findCity("東京駅")?.name, "東京駅");
+    assert.equal(findCity("London")?.name, "ロンドン");
+    assert.equal(findCity("渋谷のあたり")?.name, "渋谷");
+    assert.equal(findCity("どこでもない場所"), null);
+    assert.equal(findCity(""), null);
+  });
+});

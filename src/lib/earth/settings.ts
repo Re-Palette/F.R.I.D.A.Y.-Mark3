@@ -23,9 +23,19 @@ export interface EarthSettings {
   clouds: boolean;
   /** 雨雲レーダー（RainViewer） */
   radar: boolean;
+  /** 写真のような 3D の街（Google Photorealistic 3D Tiles。キーが設定されているときだけ） */
+  city3d: boolean;
+  /** 飛行機（OpenSky Network。寄ったときだけ取りに行く） */
+  aircraft: boolean;
+  /** 道路の渋滞（TomTom。キーが設定されているときだけ） */
+  traffic: boolean;
+  /** 都営バスの位置（ODPT。キーが設定されていて、東京に寄ったときだけ） */
+  buses: boolean;
+  /** 船（AISStream。キーが設定されていて、寄ったときだけ） */
+  ships: boolean;
 }
 
-export const DEFAULT_EARTH: EarthSettings = { quakes: true, sats: true, satGroup: "stations", satLimit: SAT_LIMIT_DEFAULT, autoRotate: true, detail: true, clouds: false, radar: false };
+export const DEFAULT_EARTH: EarthSettings = { quakes: true, sats: true, satGroup: "stations", satLimit: SAT_LIMIT_DEFAULT, autoRotate: true, detail: true, clouds: false, radar: false, city3d: true, aircraft: true, traffic: true, buses: true, ships: true };
 
 export function parseEarthSettings(raw: unknown): EarthSettings {
   const o = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -40,5 +50,10 @@ export function parseEarthSettings(raw: unknown): EarthSettings {
     detail: typeof o.detail === "boolean" ? o.detail : d.detail,
     clouds: typeof o.clouds === "boolean" ? o.clouds : d.clouds,
     radar: typeof o.radar === "boolean" ? o.radar : d.radar,
+    city3d: typeof o.city3d === "boolean" ? o.city3d : d.city3d,
+    aircraft: typeof o.aircraft === "boolean" ? o.aircraft : d.aircraft,
+    traffic: typeof o.traffic === "boolean" ? o.traffic : d.traffic,
+    buses: typeof o.buses === "boolean" ? o.buses : d.buses,
+    ships: typeof o.ships === "boolean" ? o.ships : d.ships,
   };
 }

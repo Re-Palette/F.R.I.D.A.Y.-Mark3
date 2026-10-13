@@ -23,6 +23,10 @@ import { EdithFeedBar, EdithFeedView, feedSummary } from "./EdithFeed";
 import { useEdithFeed } from "@/lib/edith-feed";
 import { EdithEarth, type EarthFlyTo, type ImageryKind } from "./EdithEarth";
 import { gibsDate } from "@/lib/earth/imagery";
+import type { BBox } from "@/lib/earth/aircraft";
+import { TRAFFIC_MAX_VIEW_AREA, TRAFFIC_TILE_URL } from "@/lib/earth/transport";
+import { findCity } from "@/lib/earth/places";
+import { bboxArea, roundBBox } from "@/lib/earth/aircraft";
 import { EarthDetail, EarthLayersPanel } from "./EarthPanel";
 import { useEarthData } from "./useEarthData";
 import { DEFAULT_EARTH, EARTH_SETTINGS_KEY, parseEarthSettings, type EarthSettings } from "@/lib/earth/settings";
@@ -255,6 +259,9 @@ function useStored<T>(key: string, parse: (raw: unknown) => T, initial: T): [T, 
   );
   return [v, update];
 }
+/** データが無いときの空の一覧（毎回新しい配列を渡すと、地球儀が描き直しを繰り返して重くなるので、いつも同じものを渡す） */
+const NONE: never[] = [];
+
 const parsePage = (raw: unknown): Page => (PAGES.some((p) => p.key === raw) ? (raw as Page) : "display");
 const parsePreset = (raw: unknown): PresetKey => (PRESETS.some((p) => p.key === raw) ? (raw as PresetKey) : "tactical");
 
@@ -319,7 +326,16 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   useEffect(() => {
     if (earthActive) setEarthMounted(true);
   }, [earthActive]);
-  const earthData = useEarthData({ active: earthActive, quakes: earth.quakes, sats: earth.sats, satGroup: earth.satGroup, radar: earth.radar });
+  // 見ている範囲（地球儀を動かし終わるたび）。飛行機などは、この範囲だけ取りに行く
+  const [viewBox, setViewBox] = useState<BBox | null>(null);
+  const [city3d, setCity3d] = useState<{ state: "off" | "loading" | "ready" | "error"; message?: string }>({ state: "off" });
+  const earthData = useEarthData({ active: earthActive, quakes: earth.quakes, sats: earth.sats, satGroup: earth.satGroup, radar: earth.radar, aircraft: earth.aircraft, buses: earth.buses, ships: earth.ships, viewBox });
+  // 渋滞：寄って見ているときだけ、見ている範囲（0.5 度刻みに広げたもの）の画像だけ取りに行く
+  const trafficRect = viewBox && bboxArea(viewBox) <= TRAFFIC_MAX_VIEW_AREA ? roundBBox(viewBox) : null;
+  const trafficUrl = earth.traffic && earthData.config?.services.tomtom && trafficRect ? TRAFFIC_TILE_URL : null;
+  const busItems = earth.buses && earthData.busesInView ? (earthData.buses.data?.items ?? NONE) : NONE;
+  const shipItems = earth.ships && earthData.shipsInView ? (earthData.ships.data?.items ?? NONE) : NONE;
+  const city3dKey = earth.city3d ? (earthData.config?.google3dKey ?? null) : null;
   // 今日の地球（NASA GIBS）に使う日：UTC の前日（日付が変わったら変わる）
   const cloudsDate = gibsDate(earthData.now);
   const radarUrl = earth.radar ? (earthData.radar.data?.items[0]?.url ?? null) : null;
@@ -331,10 +347,14 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const [earthFly, setEarthFly] = useState<EarthFlyTo | null>(null);
   const [earthReset, setEarthReset] = useState(0);
   const [earthView, setEarthView] = useState("LOADING");
-  const quakeItems = earthData.quakes.data?.items ?? [];
-  const satElements = earthData.sats.data?.elements ?? [];
+  const quakeItems = earthData.quakes.data?.items ?? NONE;
+  const satElements = earthData.sats.data?.elements ?? NONE;
   const selQuake = earthSel?.startsWith("quake:") ? quakeItems.find((q) => `quake:${q.id}` === earthSel) : undefined;
   const selSat = earthSel?.startsWith("sat:") ? satElements.find((e) => `sat:${e.id}` === earthSel) : undefined;
+  const aircraftItems = earthData.aircraft.data?.items ?? NONE;
+  const selAir = earthSel?.startsWith("air:") ? aircraftItems.find((a) => `air:${a.icao24}` === earthSel) : undefined;
+  const selBus = earthSel?.startsWith("bus:") ? busItems.find((b) => `bus:${b.id}` === earthSel) : undefined;
+  const selShip = earthSel?.startsWith("ship:") ? shipItems.find((x) => `ship:${x.mmsi}` === earthSel) : undefined;
   const flyTo = (lat: number, lon: number, height?: number) => setEarthFly((f) => ({ lat, lon, height, key: (f?.key ?? 0) + 1 }));
   const earthSummary = `地震 ${earth.quakes ? earthData.quakes.status : "OFF"} · 衛星 ${earth.sats ? earthData.sats.status : "OFF"}${earthTrack ? " · TRACKING" : ""}`;
   const [page, setPage] = useStored<Page>(PAGE_KEY, parsePage, "display");
@@ -632,8 +652,15 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                   flyTo={earthFly}
                   resetKey={earthReset}
                   onStatus={(s) => setEarthView(s.toUpperCase())}
-                  imagery={{ detail: earth.detail, clouds: earth.clouds, cloudsDate, radarUrl }}
+                  imagery={{ detail: earth.detail, clouds: earth.clouds, cloudsDate, radarUrl, trafficUrl, trafficRect }}
                   onImageryError={(k) => setImageryErrors((e) => (e[k] ? e : { ...e, [k]: true }))}
+                  city3dKey={city3dKey}
+                  onCity3d={(state, message) => setCity3d({ state, message })}
+                  aircraft={aircraftItems}
+                  showAircraft={earth.aircraft}
+                  onView={(b) => setViewBox(b)}
+                  buses={busItems}
+                  ships={shipItems}
                 />
               </div>
             )}
@@ -657,12 +684,18 @@ export const EdithHud = memo(function EdithHud(props: Props) {
           {!earthActive && <EdithFeedBar shape={display.feedShape} onShape={(v) => setD("feedShape", v)} focus={display.clean} onFocus={(v) => setD("clean", v)} />}
         </div>
 
-        {earthActive && (selQuake || selSat) && (
+        {earthActive && (selQuake || selSat || selAir || selBus || selShip) && (
           <EarthDetail
             key={earthSel ?? ""}
             quake={selQuake}
             quakesFetchedAt={earthData.quakes.data?.fetchedAt}
             sat={selSat}
+            aircraft={selAir}
+            bus={selBus}
+            busesFetchedAt={earthData.buses.data?.fetchedAt}
+            ship={selShip}
+            shipsFetchedAt={earthData.ships.data?.fetchedAt}
+            aircraftFetchedAt={earthData.aircraft.data?.fetchedAt}
             satsFetchedAt={earthData.sats.data?.fetchedAt}
             now={earthData.now}
             tracked={earthTrack === earthSel}
@@ -827,11 +860,13 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                 sats={earthData.sats}
                 now={earthData.now}
                 onSearch={(text) => {
-                  const place = findPlaces(text, 1)[0];
+                  // 都市・主な地点なら、その街が見える高さまで寄る。無ければ国の中心へ
+                  const city = findCity(text);
+                  const place = city ?? findPlaces(text, 1)[0];
                   if (!place) return false;
                   if (!earthActive) setD("gevMode", "earth");
                   setEarthTrack(null);
-                  flyTo(place.lat, place.lon);
+                  flyTo(place.lat, place.lon, city?.height);
                   return true;
                 }}
                 onReset={() => {
@@ -840,6 +875,19 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                 }}
                 viewStatus={earthActive ? `VIEW: ${earthView}` : "VIEW: LOCAL FEED 表示中"}
                 radar={earthData.radar}
+                aircraft={earthData.aircraft}
+                aircraftTooWide={earthData.aircraftTooWide}
+                buses={earthData.buses}
+                busesInView={earthData.busesInView}
+                ships={earthData.ships}
+                shipsInView={earthData.shipsInView}
+                config={earthData.config}
+                city3d={city3d}
+                onCityView={() => {
+                  if (!earthActive) setD("gevMode", "earth");
+                  setEarthTrack(null);
+                  setEarthFly((f) => ({ lat: 35.6812, lon: 139.7671, height: 1_600, pitch: -32, key: (f?.key ?? 0) + 1 }));
+                }}
                 cloudsDate={cloudsDate}
                 imageryErrors={imageryErrors}
                 selectedId={earthSel}
