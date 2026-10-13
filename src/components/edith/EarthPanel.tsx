@@ -19,6 +19,7 @@ import type { ImageryKind } from "./EdithEarth";
 import type { EarthConfig } from "./useEarthData";
 import { aircraftPositionAt, type Aircraft } from "@/lib/earth/aircraft";
 import type { Bus, Ship } from "@/lib/earth/transport";
+import type { Webcam } from "@/lib/earth/webcams";
 
 function Credit({ c }: { c: ImageryCredit }) {
   return (
@@ -83,6 +84,11 @@ interface PanelProps {
   busesInView?: boolean;
   ships?: LayerData<{ ok: true; fetchedAt: string; items: Ship[] }>;
   shipsInView?: boolean;
+  webcams?: LayerData<{ ok: true; fetchedAt: string; items: Webcam[] }>;
+  /** ライブカメラを探す場所が決まっている（寄っている・ピックアップした） */
+  webcamsInView?: boolean;
+  /** 見つかったカメラを一覧で開く */
+  onOpenCams?: () => void;
 }
 
 /** キーの要るレイヤーの「未設定・寄ると表示・件数・取得時刻・エラー」 */
@@ -341,6 +347,25 @@ export function EarthLayersPanel(p: PanelProps) {
         )}
       </section>
 
+      <section className="eearth__layer" aria-label="ライブカメラのレイヤー">
+        <header>
+          <button type="button" className="edisp__toggle" role="switch" aria-checked={p.settings.webcams} data-on={p.settings.webcams || undefined} onClick={() => set("webcams", !p.settings.webcams)}>
+            <span>LIVE CAMS（ライブカメラ）</span>
+          </button>
+          {p.settings.webcams && p.config?.services.webcams && p.webcamsInView && p.webcams && <StatusChip status={p.webcams.status} />}
+        </header>
+        {p.settings.webcams && (
+          <>
+            <KeyedLayer configured={p.config ? p.config.services.webcams : undefined} envName="WINDY_WEBCAMS_KEY" inView={p.webcamsInView} viewHint="街に寄るか、声で「渋谷をピックアップ」と言うと、近くの公開カメラを探します" data={p.webcams} unit="台（近くの公開カメラ）" now={p.now} source="Windy Webcams（運営者が公開している道路・街・観光地のカメラ）" />
+            {p.config?.services.webcams && p.webcamsInView && (p.webcams?.data?.items.length ?? 0) > 0 && (
+              <button type="button" className="ebtn" onClick={p.onOpenCams}>
+                カメラを一覧で見る
+              </button>
+            )}
+          </>
+        )}
+      </section>
+
       <section className="eearth__layer" aria-label="地球の画像">
         <header>
           <span className="eearth__sect">IMAGERY</span>
@@ -500,12 +525,22 @@ export function EarthLayersPanel(p: PanelProps) {
         {p.settings.traffic && p.config?.services.tomtom && <> ／ 渋滞：© TomTom</>}
         {p.settings.buses && p.config?.services.odpt && <> ／ バス：公共交通オープンデータセンター・東京都交通局（CC BY 4.0）</>}
         {p.settings.ships && p.config?.services.ais && <> ／ 船：AISStream</>}
+        {p.settings.webcams && p.config?.services.webcams && (
+          <>
+            {" "}／ ライブカメラ：
+            <a href="https://www.windy.com/" target="_blank" rel="noopener noreferrer">
+              Webcams provided by windy.com
+            </a>
+          </>
+        )}
       </p>
     </div>
   );
 }
 
 interface DetailProps {
+  cam?: Webcam;
+  camsFetchedAt?: string;
   bus?: Bus;
   busesFetchedAt?: string;
   ship?: Ship;
@@ -567,6 +602,7 @@ export function EarthDetail(p: DetailProps) {
           )}
         </>
       )}
+      {p.cam && <CamDetail cam={p.cam} fetchedAt={p.camsFetchedAt} now={p.now} />}
       {p.bus && (
         <>
           <p className="epoint__meta">BUS · 都営バス · ODPT</p>
@@ -727,6 +763,97 @@ export function EarthDetail(p: DetailProps) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** ライブカメラの出典（Windy の条件：Windy.com へのリンクを出す） */
+export const WINDY_CREDIT = { label: "Webcams provided by windy.com", href: "https://www.windy.com/" };
+
+/** ライブカメラの詳細：最新の静止画と、押したときだけ読み込む再生画面（Windy） */
+function CamDetail({ cam, fetchedAt, now }: { cam: Webcam; fetchedAt?: string; now: number }) {
+  const [play, setPlay] = useState(false);
+  return (
+    <>
+      <p className="epoint__meta">LIVE CAM · {cam.traffic ? "道路・交通" : "公開カメラ"} · Windy</p>
+      <h3>{cam.title}</h3>
+      {play && cam.player ? (
+        <div className="eearth__video">
+          <iframe src={cam.player} title={`${cam.title}（Windy の再生画面）`} allow="autoplay; fullscreen" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen />
+        </div>
+      ) : cam.preview ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className="ecam__img" src={cam.preview} alt={`${cam.title} の最新の画像`} loading="lazy" referrerPolicy="no-referrer" />
+      ) : (
+        <p className="eearth__note">画像を読み込めませんでした。</p>
+      )}
+      <dl>
+        <dt>場所</dt>
+        <dd>{[cam.city, cam.country].filter(Boolean).join(" · ") || `${cam.lat.toFixed(3)}°, ${cam.lon.toFixed(3)}°`}</dd>
+        <dt>画像の更新</dt>
+        <dd>{cam.updatedAt ? `${utcText(cam.updatedAt)}（${agoText(Date.parse(cam.updatedAt), now)}）` : "—"}</dd>
+        <dt>データの取得</dt>
+        <dd>{fetchedAt ? utcText(fetchedAt) : "—"}</dd>
+      </dl>
+      <div className="eearth__row">
+        {cam.player && (
+          <button type="button" className="ebtn" onClick={() => setPlay((v) => !v)} title="押したときだけ Windy の再生画面を読み込みます">
+            {play ? "静止画に戻す" : "▶ 映像を再生（Windy）"}
+          </button>
+        )}
+        {cam.detail && (
+          <a className="ebtn" href={cam.detail} target="_blank" rel="noopener noreferrer">
+            Windy で開く
+          </a>
+        )}
+      </div>
+      <p className="eearth__note">
+        運営者が公開しているカメラの画像です（数分ごとの更新。再生はタイムラプス、カメラによってはライブ）。{" "}
+        <a href={WINDY_CREDIT.href} target="_blank" rel="noopener noreferrer">
+          {WINDY_CREDIT.label}
+        </a>
+      </p>
+    </>
+  );
+}
+
+/** ピックアップした場所の近くのライブカメラの一覧（静止画を並べる。押すとそのカメラを選ぶ） */
+export function CamGrid(p: { title: string; items: Webcam[]; status: string; error?: string | null; onPick: (cam: Webcam) => void; onClose: () => void }) {
+  return (
+    <div className="ecams" role="dialog" aria-label={`${p.title} のライブカメラ`}>
+      <button type="button" className="epoint__close" onClick={p.onClose} aria-label="閉じる">
+        ×
+      </button>
+      <p className="epoint__meta">PICKUP · LIVE CAMS · Windy</p>
+      <h3>
+        {p.title}
+        <small>{p.items.length ? ` ${p.items.length} 台` : ""}</small>
+      </h3>
+      {p.items.length ? (
+        <ul className="ecams__grid">
+          {p.items.slice(0, 12).map((c) => (
+            <li key={c.id}>
+              <button type="button" onClick={() => p.onPick(c)} title={c.title}>
+                {c.thumbnail ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="ecams__noimg">NO IMAGE</span>
+                )}
+                <span className="ecams__name">{c.title}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="eearth__note">{p.error ? p.error : p.status}</p>
+      )}
+      <p className="eearth__note">
+        運営者が公開しているカメラだけを表示します。{" "}
+        <a href={WINDY_CREDIT.href} target="_blank" rel="noopener noreferrer">
+          {WINDY_CREDIT.label}
+        </a>
+      </p>
     </div>
   );
 }

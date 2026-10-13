@@ -2330,6 +2330,17 @@
   }
 }
 @media (max-width: 640px) {
+  .ecams {
+    top: auto;
+    bottom: 12%;
+    left: 3%;
+    right: 3%;
+    width: auto;
+    max-height: 52%;
+  }
+  .ecmd-note {
+    max-width: 92%;
+  }
   .eview[data-shape="wide"] {
     width: 100%;
     margin-bottom: 70px;
@@ -2728,6 +2739,116 @@
 }
 
 /* ---------- 小さめのノート PC ---------- */
+/* ライブカメラ：詳細の静止画・ピックアップの一覧 */
+.ecam__img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  margin: 4px 0 6px;
+  border: 1px solid var(--e-line-dim);
+  background: #05020f;
+}
+.eearth__detail .eearth__row a.ebtn {
+  text-decoration: none;
+}
+.ecams {
+  position: absolute;
+  top: 10%;
+  right: 3%;
+  width: min(420px, 46%);
+  max-height: 78%;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--e-line);
+  background: rgba(9, 7, 25, 0.94);
+  box-shadow: var(--e-shadow);
+  font-size: 12px;
+  line-height: 1.5;
+  animation: edith-in 0.35s ease-out both;
+  z-index: 12;
+}
+.ecams h3 {
+  margin: 4px 0 8px;
+  font-size: 14px;
+  color: var(--e-text);
+}
+.ecams h3 small {
+  font-size: 11px;
+  color: var(--e-dim);
+}
+.ecams p {
+  margin: 6px 0 0;
+  color: var(--e-dim);
+}
+.ecams a {
+  color: var(--e-accent);
+}
+.ecams__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ecams__grid button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--e-line-dim);
+  background: #05020f;
+  color: var(--e-text);
+  text-align: left;
+  cursor: pointer;
+}
+.ecams__grid button:hover,
+.ecams__grid button:focus-visible {
+  border-color: var(--e-glow);
+}
+.ecams__grid img,
+.ecams__noimg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+.ecams__noimg {
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  color: var(--e-dim);
+}
+.ecams__name {
+  overflow: hidden;
+  padding: 0 5px 4px;
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 声・文字の指示を受けたときの一言（GOD'S EYE VIEW の上） */
+.ecmd-note {
+  position: absolute;
+  left: 50%;
+  top: 4%;
+  transform: translateX(-50%);
+  max-width: 70%;
+  margin: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--e-line);
+  background: rgba(9, 7, 25, 0.9);
+  color: var(--e-text);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: edith-in 0.3s ease-out both;
+  z-index: 13;
+}
+
 @media (max-width: 1360px) {
   .edith {
     gap: 0 16px;

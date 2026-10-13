@@ -27,7 +27,10 @@ import type { BBox } from "@/lib/earth/aircraft";
 import { TRAFFIC_MAX_VIEW_AREA, TRAFFIC_TILE_URL } from "@/lib/earth/transport";
 import { findCity } from "@/lib/earth/places";
 import { bboxArea, roundBBox } from "@/lib/earth/aircraft";
-import { EarthDetail, EarthLayersPanel } from "./EarthPanel";
+import { CamGrid, EarthDetail, EarthLayersPanel } from "./EarthPanel";
+import { distanceKm, WEBCAM_MAX_VIEW_HEIGHT_M, WEBCAM_RADIUS_DEFAULT, WEBCAM_RADIUS_MAX, webcamQuery } from "@/lib/earth/webcams";
+import { aircraftPositionAt } from "@/lib/earth/aircraft";
+import { LAYER_LABEL, setEdithCommandHandler, type EdithCommand, type TrackTarget } from "@/lib/edith-commands";
 import { useEarthData } from "./useEarthData";
 import { DEFAULT_EARTH, EARTH_SETTINGS_KEY, parseEarthSettings, type EarthSettings } from "@/lib/earth/settings";
 import { findPlaces } from "@/lib/edith-geo";
@@ -262,6 +265,8 @@ function useStored<T>(key: string, parse: (raw: unknown) => T, initial: T): [T, 
 /** データが無いときの空の一覧（毎回新しい配列を渡すと、地球儀が描き直しを繰り返して重くなるので、いつも同じものを渡す） */
 const NONE: never[] = [];
 
+const TRACK_LABEL: Record<TrackTarget, string> = { aircraft: "飛行機", ship: "船", bus: "バス" };
+
 const parsePage = (raw: unknown): Page => (PAGES.some((p) => p.key === raw) ? (raw as Page) : "display");
 const parsePreset = (raw: unknown): PresetKey => (PRESETS.some((p) => p.key === raw) ? (raw as PresetKey) : "tactical");
 
@@ -328,8 +333,34 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   }, [earthActive]);
   // 見ている範囲（地球儀を動かし終わるたび）。飛行機などは、この範囲だけ取りに行く
   const [viewBox, setViewBox] = useState<BBox | null>(null);
+  const [viewHeight, setViewHeight] = useState<number | null>(null);
+  // ライブカメラを探す場所：ピックアップした場所（声・文字の指示）。無ければ、寄って見ている所の中心
+  const [camFocus, setCamFocus] = useState<{ name: string; lat: number; lon: number; radiusKm: number; traffic: boolean } | null>(null);
+  const [camGridOpen, setCamGridOpen] = useState(false);
+  // 声・文字の指示を受けたときの一言（数秒で消す）
+  const [cmdNote, setCmdNote] = useState<{ text: string; key: number } | null>(null);
+  // ピックアップした場所の近くの飛行機などを、データが届いたら選んで追う
+  const [pendingTrack, setPendingTrack] = useState<{ target: TrackTarget; lat: number; lon: number; until: number } | null>(null);
+  const viewCenter = viewBox ? { lat: (viewBox.lamin + viewBox.lamax) / 2, lon: (viewBox.lomin + viewBox.lomax) / 2 } : null;
+  const passiveCams =
+    viewBox && viewCenter && viewHeight !== null && viewHeight <= WEBCAM_MAX_VIEW_HEIGHT_M
+      ? webcamQuery(viewCenter.lat, viewCenter.lon, Math.min(WEBCAM_RADIUS_MAX, distanceKm(viewBox.lamin, viewBox.lomin, viewBox.lamax, viewBox.lomax) / 2))
+      : null;
+  const camQuery = earth.webcams ? (camFocus ? webcamQuery(camFocus.lat, camFocus.lon, camFocus.radiusKm) : passiveCams) : null;
+  const camTraffic = camFocus?.traffic ?? false;
   const [city3d, setCity3d] = useState<{ state: "off" | "loading" | "ready" | "error"; message?: string }>({ state: "off" });
-  const earthData = useEarthData({ active: earthActive, quakes: earth.quakes, sats: earth.sats, satGroup: earth.satGroup, radar: earth.radar, aircraft: earth.aircraft, buses: earth.buses, ships: earth.ships, viewBox });
+  const earthData = useEarthData({
+    active: earthActive,
+    quakes: earth.quakes,
+    sats: earth.sats,
+    satGroup: earth.satGroup,
+    radar: earth.radar,
+    aircraft: earth.aircraft,
+    buses: earth.buses,
+    ships: earth.ships,
+    viewBox,
+    webcams: camQuery ? { ...camQuery, traffic: camTraffic } : null,
+  });
   // 渋滞：寄って見ているときだけ、見ている範囲（0.5 度刻みに広げたもの）の画像だけ取りに行く
   const trafficRect = viewBox && bboxArea(viewBox) <= TRAFFIC_MAX_VIEW_AREA ? roundBBox(viewBox) : null;
   const trafficUrl = earth.traffic && earthData.config?.services.tomtom && trafficRect ? TRAFFIC_TILE_URL : null;
@@ -355,7 +386,159 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const selAir = earthSel?.startsWith("air:") ? aircraftItems.find((a) => `air:${a.icao24}` === earthSel) : undefined;
   const selBus = earthSel?.startsWith("bus:") ? busItems.find((b) => `bus:${b.id}` === earthSel) : undefined;
   const selShip = earthSel?.startsWith("ship:") ? shipItems.find((x) => `ship:${x.mmsi}` === earthSel) : undefined;
+  const camItems = earth.webcams && camQuery ? (earthData.webcams.data?.items ?? NONE) : NONE;
+  const selCam = earthSel?.startsWith("cam:") ? camItems.find((c) => `cam:${c.id}` === earthSel) : undefined;
   const flyTo = (lat: number, lon: number, height?: number) => setEarthFly((f) => ({ lat, lon, height, key: (f?.key ?? 0) + 1 }));
+
+  /* ---------- 声・文字の指示（「渋谷をピックアップ」「雨雲を出して」など。src/lib/edith-commands.ts） ---------- */
+  /** 近くの飛行機・船・バスのうち一番近いもの（maxKm より遠ければ無し） */
+  const nearestMover = (target: TrackTarget, at: { lat: number; lon: number }, maxKm = Infinity): { id: string; label: string } | null => {
+    let best: { id: string; label: string; d: number } | null = null;
+    const consider = (id: string, label: string, lat: number, lon: number) => {
+      const d = distanceKm(at.lat, at.lon, lat, lon);
+      if (d <= maxKm && (!best || d < best.d)) best = { id, label, d };
+    };
+    if (target === "aircraft") for (const a of aircraftItems) {
+      const pos = aircraftPositionAt(a, earthData.now);
+      consider(`air:${a.icao24}`, a.callsign ?? a.icao24.toUpperCase(), pos.lat, pos.lon);
+    }
+    else if (target === "ship") for (const x of shipItems) consider(`ship:${x.mmsi}`, x.name ?? `MMSI ${x.mmsi}`, x.lat, x.lon);
+    else for (const b of busItems) consider(`bus:${b.id}`, b.route ?? "都営バス", b.lat, b.lon);
+    const found = best as { id: string; label: string; d: number } | null;
+    return found ? { id: found.id, label: found.label } : null;
+  };
+  const note = (text: string) => setCmdNote({ text, key: Date.now() });
+  const runCmdRef = useRef<(c: EdithCommand) => string>(() => "");
+  runCmdRef.current = (c) => {
+    const cfg = earthData.config;
+    if (!earthActive) setD("gevMode", "earth");
+    const keyMissing = (layer: string) => {
+      if (!cfg) return "";
+      if (layer === "traffic" && !cfg.services.tomtom) return "渋滞はキーが未設定のため表示できません。";
+      if (layer === "buses" && !cfg.services.odpt) return "都営バスはキーが未設定のため表示できません。";
+      if (layer === "ships" && !cfg.services.ais) return "船はキーが未設定のため表示できません。";
+      if (layer === "webcams" && !cfg.services.webcams) return "ライブカメラはキーが未設定のため表示できません。";
+      if (layer === "city3d" && !cfg.google3dKey) return "3D の街はキーが未設定のため表示できません。";
+      return "";
+    };
+    switch (c.kind) {
+      case "pickup": {
+        const { name, lat, lon } = c.place;
+        setEarthTrack(null);
+        setEarthSel(null);
+        setPendingTrack(null);
+        let reply: string;
+        if (c.city3d && !c.country) {
+          setEarth((s) => ({ ...s, city3d: true }));
+          setEarthFly((f) => ({ lat, lon, height: 1_600, pitch: -32, key: (f?.key ?? 0) + 1 }));
+          reply = cfg && !cfg.google3dKey ? `${name}に寄ります。3D の街はキーが未設定のため、衛星写真で表示します。` : `${name}を3Dで表示します。`;
+        } else {
+          flyTo(lat, lon, c.place.height);
+          reply = c.city3d ? `国全体は3Dでは表示できないため、${name}を上から表示します。` : `${name}をピックアップします。`;
+        }
+        if (c.cams) {
+          setEarth((s) => ({ ...s, webcams: true }));
+          setCamFocus({ name, lat, lon, radiusKm: c.country ? WEBCAM_RADIUS_MAX : WEBCAM_RADIUS_DEFAULT, traffic: c.traffic });
+          setCamGridOpen(true);
+          reply += keyMissing("webcams") || (c.traffic ? "近くの公開されている道路カメラを探します。" : "近くのライブカメラを探します。");
+        } else setCamGridOpen(false);
+        if (c.track) {
+          const layer = c.track === "aircraft" ? "aircraft" : c.track === "ship" ? "ships" : "buses";
+          setEarth((s) => ({ ...s, [layer]: true }));
+          setPendingTrack({ target: c.track, lat, lon, until: Date.now() + 90_000 });
+          reply += keyMissing(layer) || `近くの${TRACK_LABEL[c.track]}を探して追跡します。`;
+        }
+        note(`PICKUP: ${name}${c.city3d && !c.country ? " · 3D" : ""}${c.cams ? (c.traffic ? " · 道路カメラ" : " · LIVE CAMS") : ""}${c.track ? ` · ${TRACK_LABEL[c.track]}を追跡` : ""}`);
+        return reply;
+      }
+      case "cams": {
+        if (!viewCenter || viewHeight === null || viewHeight > WEBCAM_MAX_VIEW_HEIGHT_M) {
+          note("LIVE CAMS: もっと寄ってください");
+          return "もう少し寄るか、「渋谷をピックアップ」のように場所を言ってください。";
+        }
+        setEarth((s) => ({ ...s, webcams: true }));
+        setCamFocus({ name: "この辺り", lat: viewCenter.lat, lon: viewCenter.lon, radiusKm: passiveCams?.radiusKm ?? WEBCAM_RADIUS_DEFAULT, traffic: c.traffic });
+        setCamGridOpen(true);
+        note(c.traffic ? "LIVE CAMS: この辺りの道路カメラ" : "LIVE CAMS: この辺り");
+        return keyMissing("webcams") || (c.traffic ? "この辺りの公開されている道路カメラを探します。" : "この辺りのライブカメラを探します。");
+      }
+      case "track": {
+        const layer = c.target === "aircraft" ? "aircraft" : c.target === "ship" ? "ships" : "buses";
+        setEarth((s) => ({ ...s, [layer]: true }));
+        const missing = keyMissing(layer);
+        if (missing) return missing;
+        const at = viewCenter;
+        const found = at ? nearestMover(c.target, at) : null;
+        if (found) {
+          setEarthSel(found.id);
+          setEarthTrack(found.id);
+          note(`TRACKING: ${found.label}`);
+          return `${TRACK_LABEL[c.target]}「${found.label}」を追跡します。`;
+        }
+        if (at && viewHeight !== null && viewHeight <= WEBCAM_MAX_VIEW_HEIGHT_M) {
+          setPendingTrack({ target: c.target, lat: at.lat, lon: at.lon, until: Date.now() + 90_000 });
+          note(`TRACKING: ${TRACK_LABEL[c.target]}を探しています`);
+          return `近くの${TRACK_LABEL[c.target]}を探しています。見つかったら追跡します。`;
+        }
+        note(`TRACKING: もっと寄ってください`);
+        return `もう少し寄ると、${TRACK_LABEL[c.target]}を探せます。`;
+      }
+      case "untrack":
+        setEarthTrack(null);
+        setPendingTrack(null);
+        note("TRACKING: 解除");
+        return "追跡を解除しました。";
+      case "layer": {
+        setEarth((s) => ({ ...s, [c.layer]: c.on }));
+        if (c.layer === "webcams" && !c.on) {
+          setCamGridOpen(false);
+          setCamFocus(null);
+        }
+        note(`${LAYER_LABEL[c.layer]}: ${c.on ? "ON" : "OFF"}`);
+        return `${LAYER_LABEL[c.layer]}を${c.on ? "表示します" : "消します"}。${c.on ? keyMissing(c.layer) : ""}`;
+      }
+      case "reset":
+        setEarthTrack(null);
+        setEarthSel(null);
+        setPendingTrack(null);
+        setCamFocus(null);
+        setCamGridOpen(false);
+        setEarthReset((k) => k + 1);
+        note("VIEW: 地球全体");
+        return "地球全体に戻します。";
+    }
+  };
+  useEffect(() => setEdithCommandHandler((c) => runCmdRef.current(c)), []);
+  // 一言は数秒で消す
+  useEffect(() => {
+    if (!cmdNote) return;
+    const t = window.setTimeout(() => setCmdNote(null), 5000);
+    return () => clearTimeout(t);
+  }, [cmdNote]);
+  // ピックアップした場所の近くの飛行機などを、データが届いたら選んで追う（90 秒たっても見つからなければやめる）
+  useEffect(() => {
+    if (!pendingTrack) return;
+    if (Date.now() > pendingTrack.until) {
+      setPendingTrack(null);
+      return;
+    }
+    const found = nearestMover(pendingTrack.target, pendingTrack, 150);
+    if (!found) return;
+    setPendingTrack(null);
+    setEarthSel(found.id);
+    setEarthTrack(found.id);
+    note(`TRACKING: ${found.label}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTrack, aircraftItems, shipItems, busItems]);
+  // ピックアップした場所から大きく離れたら、その場所のカメラの一覧は片付ける（寄って見ている所のカメラに戻る）
+  useEffect(() => {
+    if (!camFocus || !viewCenter) return;
+    if (distanceKm(camFocus.lat, camFocus.lon, viewCenter.lat, viewCenter.lon) > Math.max(40, camFocus.radiusKm * 3)) {
+      setCamFocus(null);
+      setCamGridOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewBox]);
   const earthSummary = `地震 ${earth.quakes ? earthData.quakes.status : "OFF"} · 衛星 ${earth.sats ? earthData.sats.status : "OFF"}${earthTrack ? " · TRACKING" : ""}`;
   const [page, setPage] = useStored<Page>(PAGE_KEY, parsePage, "display");
   const [preset, setPreset] = useStored<PresetKey>(`${DISPLAY_KEY}.preset`, parsePreset, "tactical");
@@ -658,9 +841,13 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                   onCity3d={(state, message) => setCity3d({ state, message })}
                   aircraft={aircraftItems}
                   showAircraft={earth.aircraft}
-                  onView={(b) => setViewBox(b)}
+                  onView={(b, h) => {
+                    setViewBox(b);
+                    setViewHeight(h);
+                  }}
                   buses={busItems}
                   ships={shipItems}
+                  webcams={camItems}
                 />
               </div>
             )}
@@ -684,9 +871,36 @@ export const EdithHud = memo(function EdithHud(props: Props) {
           {!earthActive && <EdithFeedBar shape={display.feedShape} onShape={(v) => setD("feedShape", v)} focus={display.clean} onFocus={(v) => setD("clean", v)} />}
         </div>
 
-        {earthActive && (selQuake || selSat || selAir || selBus || selShip) && (
+        {earthActive && cmdNote && (
+          <p key={cmdNote.key} className="ecmd-note" role="status">
+            {cmdNote.text}
+          </p>
+        )}
+        {earthActive && camGridOpen && earth.webcams && (
+          <CamGrid
+            title={camFocus?.name ?? "この辺り"}
+            items={camItems}
+            status={
+              earthData.config && !earthData.config.services.webcams
+                ? "ライブカメラはキーが未設定です（Vercel の環境変数 WINDY_WEBCAMS_KEY）"
+                : earthData.webcams.data
+                  ? "近くに公開されているカメラが見つかりませんでした"
+                  : "近くの公開カメラを探しています…"
+            }
+            error={earthData.webcams.fetch.lastError && !earthData.webcams.data ? earthData.webcams.fetch.lastError : null}
+            onPick={(cam) => {
+              setEarthTrack(null);
+              setEarthSel(`cam:${cam.id}`);
+              flyTo(cam.lat, cam.lon, 3_000);
+            }}
+            onClose={() => setCamGridOpen(false)}
+          />
+        )}
+        {earthActive && (selQuake || selSat || selAir || selBus || selShip || selCam) && (
           <EarthDetail
             key={earthSel ?? ""}
+            cam={selCam}
+            camsFetchedAt={earthData.webcams.data?.fetchedAt}
             quake={selQuake}
             quakesFetchedAt={earthData.quakes.data?.fetchedAt}
             sat={selSat}
@@ -881,6 +1095,9 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                 busesInView={earthData.busesInView}
                 ships={earthData.ships}
                 shipsInView={earthData.shipsInView}
+                webcams={earthData.webcams}
+                webcamsInView={Boolean(camQuery)}
+                onOpenCams={() => setCamGridOpen(true)}
                 config={earthData.config}
                 city3d={city3d}
                 onCityView={() => {

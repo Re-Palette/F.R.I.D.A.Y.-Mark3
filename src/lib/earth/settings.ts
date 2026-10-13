@@ -33,9 +33,11 @@ export interface EarthSettings {
   buses: boolean;
   /** 船（AISStream。キーが設定されていて、寄ったときだけ） */
   ships: boolean;
+  /** 世界のライブカメラ（Windy。寄って見ている所・ピックアップした所の近く） */
+  webcams: boolean;
 }
 
-export const DEFAULT_EARTH: EarthSettings = { quakes: true, sats: true, satGroup: "stations", satLimit: SAT_LIMIT_DEFAULT, autoRotate: true, detail: true, clouds: false, radar: false, city3d: true, aircraft: true, traffic: true, buses: true, ships: true };
+export const DEFAULT_EARTH: EarthSettings = { quakes: true, sats: true, satGroup: "stations", satLimit: SAT_LIMIT_DEFAULT, autoRotate: true, detail: true, clouds: false, radar: false, city3d: true, aircraft: true, traffic: true, buses: true, ships: true, webcams: true };
 
 export function parseEarthSettings(raw: unknown): EarthSettings {
   const o = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -55,5 +57,6 @@ export function parseEarthSettings(raw: unknown): EarthSettings {
     traffic: typeof o.traffic === "boolean" ? o.traffic : d.traffic,
     buses: typeof o.buses === "boolean" ? o.buses : d.buses,
     ships: typeof o.ships === "boolean" ? o.ships : d.ships,
+    webcams: typeof o.webcams === "boolean" ? o.webcams : d.webcams,
   };
 }

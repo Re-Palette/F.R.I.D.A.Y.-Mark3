@@ -20,6 +20,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type * as CesiumNS from "cesium";
 import { loadCesium, webglAvailable, type CesiumModule } from "@/lib/earth/cesium-loader";
 import { holdReveal } from "@/lib/screen-cover";
+import type { Webcam } from "@/lib/earth/webcams";
 import { magBand, type QuakePoint } from "@/lib/earth/quakes";
 import { makeSatrec, satPosition, SAT_TICK_MS, type OrbitElement } from "@/lib/earth/satellites";
 import { GIBS_CREDIT, GIBS_MAX_LEVEL, gibsUrl, RADAR_CREDIT, RADAR_MAX_LEVEL, S2_CREDIT, S2_MAX_LEVEL, S2_URL, type ImageryCredit } from "@/lib/earth/imagery";
@@ -72,6 +73,8 @@ interface Props {
   buses?: Bus[];
   /** 船 */
   ships?: Ship[];
+  /** ライブカメラ */
+  webcams?: Webcam[];
   /** 見ている範囲（動かし終わるたび。宇宙を見ているなど範囲が無ければ null） */
   onView?: (bbox: BBox | null, heightM: number) => void;
 }
@@ -117,6 +120,9 @@ const AIR_COLOR = "#ffd27a";
 const BUS_COLOR = "#7dffa8";
 const SHIP_COLOR = "#6fd6ff";
 /** 船の形（上が北。向きに合わせて回す） */
+/** ライブカメラの印（カメラの形） */
+const CAM_SVG = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="2.5" y="7" width="13" height="10" rx="2" fill="#ffd36e" stroke="#1a1000" stroke-width="1.2"/><path d="M15.5 10.5 L21.5 7.5 V16.5 L15.5 13.5 Z" fill="#ffd36e" stroke="#1a1000" stroke-width="1.2"/><circle cx="9" cy="12" r="2.2" fill="#1a1000"/></svg>')}`;
+const CAM_COLOR = "#ffd36e";
 const SHIP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M12 2 L18 20 L12 16.5 L6 20 Z" fill="#6fd6ff" stroke="#00121a" stroke-width="1.2"/></svg>')}`;
 /** 飛行機の形（上が北。向きに合わせて回す） */
 const PLANE_SVG = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M16 2 L18.2 12 L29 17 L29 19.6 L18.2 17 L17.6 25 L21 27.6 L21 29.4 L16 28 L11 29.4 L11 27.6 L14.4 25 L13.8 17 L3 19.6 L3 17 L13.8 12 Z" fill="#ffd27a" stroke="#1a0d00" stroke-width="1.1"/></svg>')}`;
@@ -135,6 +141,7 @@ function EdithEarthImpl(p: Props) {
   const airEntities = useRef(new Map<string, CesiumNS.Entity>());
   const busEntities = useRef(new Map<string, CesiumNS.Entity>());
   const shipEntities = useRef(new Map<string, CesiumNS.Entity>());
+  const camEntities = useRef(new Map<string, CesiumNS.Entity>());
   const cityTileset = useRef<{ key: string; tileset: CesiumNS.Cesium3DTileset | null; loading: boolean } | null>(null);
   const [cityOn, setCityOn] = useState(false);
   const propsRef = useRef(p);
@@ -226,7 +233,7 @@ function EdithEarthImpl(p: Props) {
           lastInteract.current = performance.now();
           const picked = scene.pick(e.position) as { id?: CesiumNS.Entity } | undefined;
           const id = picked?.id instanceof C.Entity ? picked.id.id : null;
-          if (id && /^(quake|sat|air|bus|ship):/.test(id)) propsRef.current.onSelect(id);
+          if (id && /^(quake|sat|air|bus|ship|cam):/.test(id)) propsRef.current.onSelect(id);
         }, C.ScreenSpaceEventType.LEFT_CLICK);
         for (const t of [C.ScreenSpaceEventType.LEFT_DOWN, C.ScreenSpaceEventType.WHEEL, C.ScreenSpaceEventType.PINCH_START, C.ScreenSpaceEventType.RIGHT_DOWN]) {
           handler.setInputAction(() => (lastInteract.current = performance.now()), t);
@@ -274,6 +281,7 @@ function EdithEarthImpl(p: Props) {
       airEntities.current.clear();
       busEntities.current.clear();
       shipEntities.current.clear();
+      camEntities.current.clear();
       cityTileset.current = null;
       orbitEntity.current = null;
       if (v && !v.isDestroyed()) v.destroy();
@@ -396,8 +404,20 @@ function EdithEarthImpl(p: Props) {
       (x) => C.Cartesian3.fromDegrees(x.lon, x.lat, 0),
       (x) => x.heading,
     );
+    sync(
+      camEntities.current,
+      p.webcams ?? [],
+      (w) => `cam:${w.id}`,
+      (w) => ({
+        name: w.title,
+        position: new C.ConstantPositionProperty(C.Cartesian3.fromDegrees(w.lon, w.lat, 5)),
+        billboard: { image: CAM_SVG, width: 18, height: 18, disableDepthTestDistance: NEAR_NO_DEPTH },
+        label: { text: w.title.slice(0, 28), font: "10px monospace", fillColor: C.Color.fromCssColorString(CAM_COLOR), showBackground: true, backgroundColor: C.Color.fromCssColorString("#120a2c").withAlpha(0.75), pixelOffset: new C.Cartesian2(0, -16), distanceDisplayCondition: new C.DistanceDisplayCondition(0, 30_000), disableDepthTestDistance: NEAR_NO_DEPTH },
+      }),
+      (w) => C.Cartesian3.fromDegrees(w.lon, w.lat, 5),
+    );
     v.scene.requestRender();
-  }, [p.buses, p.ships, ready]);
+  }, [p.buses, p.ships, p.webcams, ready]);
 
   /* ---------- 写真のような 3D の街（Google Photorealistic 3D Tiles） ---------- */
   useEffect(() => {
@@ -655,7 +675,7 @@ function EdithEarthImpl(p: Props) {
   useEffect(() => {
     const v = viewerRef.current;
     if (!v || !ready) return;
-    const target = p.trackedId ? (quakeEntities.current.get(p.trackedId) ?? satEntities.current.get(p.trackedId) ?? airEntities.current.get(p.trackedId) ?? busEntities.current.get(p.trackedId) ?? shipEntities.current.get(p.trackedId)) : undefined;
+    const target = p.trackedId ? (quakeEntities.current.get(p.trackedId) ?? satEntities.current.get(p.trackedId) ?? airEntities.current.get(p.trackedId) ?? busEntities.current.get(p.trackedId) ?? shipEntities.current.get(p.trackedId) ?? camEntities.current.get(p.trackedId)) : undefined;
     if (p.trackedId && !target) {
       // 追従の対象が描かれていない（レイヤーを OFF にした・データから消えた）：解除する
       v.trackedEntity = undefined;
@@ -664,7 +684,7 @@ function EdithEarthImpl(p: Props) {
     }
     v.trackedEntity = target;
     v.scene.requestRender();
-  }, [p.trackedId, ready, p.showQuakes, p.showSats, p.quakes, satrecs, p.aircraft, p.showAircraft, p.buses, p.ships]);
+  }, [p.trackedId, ready, p.showQuakes, p.showSats, p.quakes, satrecs, p.aircraft, p.showAircraft, p.buses, p.ships, p.webcams]);
 
   /* ---------- 地点へ移動・初期の視点 ---------- */
   useEffect(() => {

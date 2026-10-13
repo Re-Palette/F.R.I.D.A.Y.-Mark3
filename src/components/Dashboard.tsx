@@ -41,13 +41,14 @@ import { addFiles, saveOriginals, takeAttachments } from "@/lib/attachments";
 import { asksAboutScreen, captureScreen, getScreenState, toggleScreen, useScreenState } from "@/lib/screen";
 import { refreshCalendarCache } from "@/lib/calendar-cache";
 import { detectModeCommand, getAiMode, setAiMode, useAiMode } from "@/lib/ai-mode";
+import { runEdithCommand } from "@/lib/edith-commands";
 import { autoSwitchToRecorded, useLiveVoice, useVoiceInput } from "@/lib/voice-input";
 import { calendarForChat } from "@/lib/calendar-cache";
 import { aiCall, stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { busy as karenBusy, dispatchKaren, getKarenState, subscribeKaren } from "@/lib/karen-state";
 import { getScene } from "@/lib/karen-scene";
-import { EDITH_TOOL, FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-voice";
+import { EDITH_TOOL, EDITH_VIEW_TOOL, FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-voice";
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
 import { EdithHud } from "./edith/EdithHud";
@@ -320,6 +321,15 @@ export function Dashboard() {
         settle();
         return true;
       }
+      // E.D.I.T.H. の画面の操作（「渋谷をピックアップ」「雨雲を出して」など）は、AI に渡さずこの端末で動かす
+      if (mode === "edith") {
+        const reply = runEdithCommand(text);
+        if (reply !== null) {
+          karenIo.speak?.(reply);
+          settle();
+          return true;
+        }
+      }
       if (mode === "karen") {
         let chatted = false;
         void handleKarenText(text, {
@@ -499,6 +509,14 @@ export function Dashboard() {
     const raw = typeof args.request === "string" ? args.request : typeof args.query === "string" ? args.query : "";
     const request = raw.trim();
     if (!request) return { ok: false, error: "頼みの内容が空です。" };
+    // E.D.I.T.H. の画面の操作（ピックアップ・3D・ライブカメラ・追跡・表示の切り替え）は、この端末で動かす
+    if (name === EDITH_VIEW_TOOL || ((name === FRIDAY_TOOL || name === EDITH_TOOL) && getAiMode() === "edith")) {
+      const reply = runEdithCommand(request);
+      if (reply !== null) return { ok: true, result: reply };
+      if (name === EDITH_VIEW_TOOL) {
+        return { ok: false, error: getAiMode() === "edith" ? "画面の操作として分かりませんでした。場所の名前と「ピックアップ」「3Dで見せて」「〜を出して」などで頼んでください。" : "E.D.I.T.H. の画面が開いていません。" };
+      }
+    }
     // E.D.I.T.H. の調べもの：これまでの会話の仕組み（E.D.I.T.H. の人格・Google 検索）で調べる。返答は画面の情報ウィンドウに出る
     if (name === FRIDAY_TOOL || name === EDITH_TOOL) return runFridayAction(request);
     if (name !== KAREN_TOOL || getAiMode() !== "karen") return { ok: false, error: "いまは K.A.R.E.N. のモードではありません。" };

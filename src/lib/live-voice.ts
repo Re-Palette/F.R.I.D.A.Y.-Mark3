@@ -52,6 +52,19 @@ const EDITH_TOOL_DECL = {
   ],
 };
 
+/** E.D.I.T.H. の GOD'S EYE VIEW の操作（場所のピックアップ・3D・ライブカメラ・追跡・表示の切り替え） */
+export const EDITH_VIEW_TOOL = "edith_view";
+const EDITH_VIEW_DECL = {
+  name: EDITH_VIEW_TOOL,
+  description:
+    "E.D.I.T.H. の画面（3D 地球儀 GOD'S EYE VIEW）を操作する：場所をピックアップして近くの公開ライブカメラを並べる、街を 3D で見せる、近くの飛行機・船・バスを選んで追跡する、雨雲・渋滞・地震・衛星などの表示を出す・消す、地球全体に戻す。",
+  parameters: {
+    type: "OBJECT",
+    properties: { request: { type: "STRING", description: "ユーザーの頼み（日本語のまま。例：渋谷をピックアップして／新宿を3Dで見せて／近くの飛行機を追って／雨雲を出して）" } },
+    required: ["request"],
+  },
+};
+
 /** F.R.I.D.A.Y. の操作を、これまでの会話の仕組み（予定・メールなどの操作ができる）に頼む道具 */
 export const FRIDAY_TOOL = "friday_action";
 const FRIDAY_TOOL_DECL = {
@@ -129,7 +142,7 @@ export function buildSetup(
   persona?: "karen" | "edith",
 ) {
   // 操作の道具は、細かい設定を受け付けないモデル向けの最小の設定にも入れる（無いと操作ができない）
-  const own = persona === "karen" ? [KAREN_TOOL_DECL] : persona === "edith" ? [{ functionDeclarations: [...FRIDAY_TOOL_DECL.functionDeclarations, ...EDITH_TOOL_DECL.functionDeclarations] }] : [FRIDAY_TOOL_DECL];
+  const own = persona === "karen" ? [KAREN_TOOL_DECL] : persona === "edith" ? [{ functionDeclarations: [...FRIDAY_TOOL_DECL.functionDeclarations, ...EDITH_TOOL_DECL.functionDeclarations, EDITH_VIEW_DECL] }] : [FRIDAY_TOOL_DECL];
   const tools = full ? [{ googleSearch: {} }, ...own] : own;
   return {
     setup: {

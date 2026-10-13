@@ -211,10 +211,12 @@ describe("E.D.I.T.H. のリアルタイム会話", () => {
     const tools = JSON.stringify(buildSetup({ model: "m", systemInstruction: "i" }, true, "edith").setup.tools);
     assert.match(tools, /edith_research/);
     assert.match(tools, /friday_action/);
+    assert.match(tools, /edith_view/, "画面（地球儀）の操作の道具");
     assert.doesNotMatch(tools, /karen_operate/);
     const text = buildLiveInstruction({ now: new Date(), timezone: "Asia/Tokyo", events: null, tasks: null, reminders: null, weather: null, recent: [], persona: "edith" });
     assert.match(text, /E\.D\.I\.T\.H\./);
     assert.match(text, /edith_research/);
+    assert.match(text, /edith_view/);
     assert.match(text, /声では使わない/, "声では見出し・表を使わない");
     assert.match(text, /その場で Google 検索/, "ふつうの質問はその場で答える（いつも調査の道具を使わない）");
   });

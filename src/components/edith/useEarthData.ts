@@ -22,6 +22,7 @@ import { EMPTY_FETCH, layerStatus, type LayerFetchState, type LayerStatus } from
 import { parseQuakesResponse, QUAKE_POLL_MS, QUAKE_STALE_MS, type QuakesResponse } from "@/lib/earth/quakes";
 import { parseRadarResponse, RADAR_POLL_MS, RADAR_STALE_MS, RAINVIEWER_MAPS_URL, type RadarResponse } from "@/lib/earth/imagery";
 import { BUS_MAX_VIEW_AREA, BUS_POLL_MS, BUS_STALE_MS, bboxOverlaps, parseBusesResponse, parseShipsResponse, SHIP_MAX_AREA, SHIP_POLL_MS, SHIP_STALE_MS, TOEI_AREA, type BusesResponse, type ShipsResponse } from "@/lib/earth/transport";
+import { parseWebcamsResponse, WEBCAM_POLL_MS, WEBCAM_STALE_MS, type WebcamsResponse } from "@/lib/earth/webcams";
 import { AIRCRAFT_MAX_AREA, AIRCRAFT_POLL_MS, AIRCRAFT_STALE_MS, bboxArea, bboxKey, parseAircraftResponse, roundBBox, type AircraftResponse, type BBox } from "@/lib/earth/aircraft";
 import {
   parseSatellitesResponse,
@@ -46,11 +47,12 @@ type RadarOk = Extract<RadarResponse, { ok: true }>;
 type AircraftOk = Extract<AircraftResponse, { ok: true }>;
 type BusesOk = Extract<BusesResponse, { ok: true }>;
 type ShipsOk = Extract<ShipsResponse, { ok: true }>;
+type WebcamsOk = Extract<WebcamsResponse, { ok: true }>;
 
 /** 外部サービスの設定の有無（/api/edith/earth/config）。キーは Google の 3D の街のものだけ（ブラウザが直接使うため） */
 export interface EarthConfig {
   google3dKey: string | null;
-  services: { opensky: "auth" | "anonymous"; tomtom: boolean; odpt: boolean; ais: boolean };
+  services: { opensky: "auth" | "anonymous"; tomtom: boolean; odpt: boolean; ais: boolean; webcams: boolean };
 }
 export function parseEarthConfig(raw: unknown): EarthConfig | null {
   const r = raw as { google3dKey?: unknown; services?: Record<string, unknown> } | null;
@@ -58,7 +60,7 @@ export function parseEarthConfig(raw: unknown): EarthConfig | null {
   const s = r.services;
   return {
     google3dKey: typeof r.google3dKey === "string" && /^[A-Za-z0-9_-]{20,80}$/.test(r.google3dKey) ? r.google3dKey : null,
-    services: { opensky: s.opensky === "auth" ? "auth" : "anonymous", tomtom: s.tomtom === true, odpt: s.odpt === true, ais: s.ais === true },
+    services: { opensky: s.opensky === "auth" ? "auth" : "anonymous", tomtom: s.tomtom === true, odpt: s.odpt === true, ais: s.ais === true, webcams: s.webcams === true },
   };
 }
 
@@ -310,7 +312,19 @@ function writeSatHold(h: SatHold | null): void {
   }
 }
 
-export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolean; satGroup: SatGroup; radar?: boolean; aircraft?: boolean; buses?: boolean; ships?: boolean; viewBox?: BBox | null }) {
+export function useEarthData(o: {
+  active: boolean;
+  quakes: boolean;
+  sats: boolean;
+  satGroup: SatGroup;
+  radar?: boolean;
+  aircraft?: boolean;
+  buses?: boolean;
+  ships?: boolean;
+  viewBox?: BBox | null;
+  /** ライブカメラを探す場所（null なら探さない） */
+  webcams?: { lat: number; lon: number; radiusKm: number; traffic: boolean } | null;
+}) {
   const now = useTick();
   const { online, visible } = useOnlineVisible();
   const paused = () => !visible || !online;
@@ -391,5 +405,16 @@ export function useEarthData(o: { active: boolean; quakes: boolean; sats: boolea
   // 船：キーがあり、寄って見ているときだけ
   const shipsInView = Boolean(box && bboxArea(box) <= SHIP_MAX_AREA);
   const ships = useLayer<Omit<ShipsOk, "ok">>(o.active && o.ships && config?.services.ais && shipsInView && box ? `/api/edith/earth/ships?bbox=${bboxKey(box)}` : null, SHIP_POLL_MS, SHIP_STALE_MS, parseShipsResponse as never, now, online, paused);
-  return { now, online, quakes, sats, radar, aircraft, aircraftTooWide, config, buses, busesInView, ships, shipsInView };
+  // ライブカメラ：キーがあり、探す場所が決まっているときだけ（静止画の URL が切れる前に取り直す）
+  const w = o.webcams;
+  const webcams = useLayer<Omit<WebcamsOk, "ok">>(
+    o.active && w && config?.services.webcams ? `/api/edith/earth/webcams?lat=${w.lat}&lon=${w.lon}&r=${w.radiusKm}${w.traffic ? "&cat=traffic" : ""}` : null,
+    WEBCAM_POLL_MS,
+    WEBCAM_STALE_MS,
+    parseWebcamsResponse as never,
+    now,
+    online,
+    paused,
+  );
+  return { now, online, quakes, sats, radar, aircraft, aircraftTooWide, config, buses, busesInView, ships, shipsInView, webcams };
 }
