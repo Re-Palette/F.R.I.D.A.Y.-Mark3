@@ -2,8 +2,8 @@
 
 /**
  * E.D.I.T.H. の LIVE（ピックアップした場所のライブカメラ）。GOD'S EYE VIEW いっぱいに、
- *   上：大きな映像（選んだカメラ。最新の静止画、押すと Windy の再生画面）・場所・座標・カメラの番号・全画面
- *   中：近くのカメラの一覧（4 列 × 2 段。押すと上の大きな映像に出す）
+ *   上：大きな映像（選んだカメラ。最初から Windy の再生画面で出す。16:9 の枠に切らずに収める）・場所・座標・カメラの番号・全画面
+ *   中：近くのカメラの一覧（1 段。横に送る。押すと上の大きな映像に出す）
  *   下：最新の更新（取得した時刻・台数）と、Windy のカメラのページを開くボタン
  * 映っているのは運営者が公開しているカメラだけ。画質・ライブかどうかは分からないので「4K」「LIVE」のような印は付けない
  * （更新の時刻を出す。再生はタイムラプス、カメラによってはライブ）。
@@ -32,7 +32,8 @@ interface Props {
 
 export function EdithCamWall({ place, items, fetchedAt, now, emptyText, traffic, onShowOnEarth }: Props) {
   const [selId, setSelId] = useState<string | null>(null);
-  const [play, setPlay] = useState(false);
+  // 静止画にする（既定は再生画面。再生画面の無いカメラは静止画）
+  const [still, setStill] = useState(false);
   const stage = useRef<HTMLDivElement>(null);
   const list = items.slice(0, GRID_MAX);
   const selIndex = Math.max(0, list.findIndex((c) => c.id === selId));
@@ -41,13 +42,14 @@ export function EdithCamWall({ place, items, fetchedAt, now, emptyText, traffic,
   // 場所が変わったら、最初のカメラから
   useEffect(() => {
     setSelId(null);
-    setPlay(false);
+    setStill(false);
   }, [place]);
 
   const pick = (c: Webcam) => {
     setSelId(c.id);
-    setPlay(false);
+    setStill(false);
   };
+  const play = Boolean(sel?.player) && !still;
   const fullscreen = () => {
     const el = stage.current;
     if (!el) return;
@@ -67,6 +69,7 @@ export function EdithCamWall({ place, items, fetchedAt, now, emptyText, traffic,
 
       {sel ? (
         <>
+          <div className="ecamwall__stagebox">
           <div className="ecamwall__stage" ref={stage}>
             {play && sel.player ? (
               <iframe key={sel.id} src={sel.player} title={`${sel.title}（Windy の再生画面）`} allow="autoplay; fullscreen" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen />
@@ -88,7 +91,7 @@ export function EdithCamWall({ place, items, fetchedAt, now, emptyText, traffic,
             <div className="ecamwall__tools">
               <span className="ecamwall__no">{camNo(selIndex)}</span>
               {sel.player && (
-                <button type="button" onClick={() => setPlay((v) => !v)} title={play ? "静止画に戻す" : "Windy の再生画面を開く（タイムラプス。カメラによってはライブ）"} aria-pressed={play}>
+                <button type="button" onClick={() => setStill((v) => !v)} title={play ? "最新の静止画にする" : "Windy の再生画面にする（タイムラプス。カメラによってはライブ）"} aria-pressed={play}>
                   {play ? "■ 静止画" : "▶ 再生"}
                 </button>
               )}
@@ -99,6 +102,7 @@ export function EdithCamWall({ place, items, fetchedAt, now, emptyText, traffic,
                 ⤢
               </button>
             </div>
+          </div>
           </div>
 
           <ul className="ecamwall__grid" aria-label="近くのカメラ">
