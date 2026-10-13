@@ -55,3 +55,18 @@ export function findCity(text: string): CityPlace | null {
   const hit = COMPILED.find((c) => c.re.test(t));
   return hit ? { name: hit.name, lat: hit.lat, lon: hit.lon, height: hit.height } : null;
 }
+
+/** いちばん近い都市・地点（maxKm より遠ければ null）。場所の名前が無いとき（「この辺り」）にライブ配信を探す言葉にする */
+export function nearestCity(lat: number, lon: number, maxKm = 80): CityPlace | null {
+  const rad = Math.PI / 180;
+  let best: { c: (typeof COMPILED)[number]; d: number } | null = null;
+  for (const c of COMPILED) {
+    const dLat = (c.lat - lat) * rad;
+    const dLon = (c.lon - lon) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat * rad) * Math.cos(c.lat * rad) * Math.sin(dLon / 2) ** 2;
+    const d = 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+    // 同じくらいの近さなら、一覧の上（細かい地点）を優先する
+    if (d <= maxKm && (!best || d < best.d - 0.5)) best = { c, d };
+  }
+  return best ? { name: best.c.name, lat: best.c.lat, lon: best.c.lon, height: best.c.height } : null;
+}

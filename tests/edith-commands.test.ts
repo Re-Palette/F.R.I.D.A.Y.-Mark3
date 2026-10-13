@@ -75,3 +75,10 @@ test("Windy の天気の地図（WEATHER）に切り替える", () => {
   assert.equal(parseEdithCommand("風が強いのはなぜ？"), null);
   assert.deepEqual(parseEdithCommand("地球儀に戻して"), { kind: "reset" });
 });
+
+test("いちばん近い街（場所の名前が無いときにライブ配信を探す言葉）", async () => {
+  const { nearestCity } = await import("../src/lib/earth/places");
+  assert.equal(nearestCity(35.659, 139.70)?.name, "渋谷");
+  assert.equal(nearestCity(34.70, 135.50)?.name, "大阪");
+  assert.equal(nearestCity(0, -150), null);
+});

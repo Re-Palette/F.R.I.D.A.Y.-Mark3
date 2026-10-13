@@ -60,8 +60,10 @@ export function EdithCamWall({ place, items, counts, fetchedAt, now, emptyText, 
   // 静止画にする（公開カメラだけ。既定は再生画面）
   const [still, setStill] = useState(false);
   const stage = useRef<HTMLDivElement>(null);
-  const selIndex = Math.max(0, items.findIndex((c) => c.key === selKey));
-  const sel = items[selIndex] ?? null;
+  // 上の大きな映像：自分で選んだもの。選んでいなければ、ライブ配信（YouTube）があればそれ、無ければ先頭のカメラ
+  //（ライブ配信が後から届いても、選んでいなければ配信に切り替わる）
+  const chosen = selKey ? items.find((c) => c.key === selKey) : undefined;
+  const sel = chosen ?? items.find((c) => c.kind === "stream") ?? items[0] ?? null;
   const camIndex = (it: WallItem) => items.filter((x) => x.kind === "cam").indexOf(it);
 
   // 場所が変わったら、先頭から

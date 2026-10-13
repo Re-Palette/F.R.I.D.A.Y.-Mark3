@@ -25,7 +25,7 @@ import { EdithEarth, type EarthFlyTo, type ImageryKind } from "./EdithEarth";
 import { gibsDate } from "@/lib/earth/imagery";
 import type { BBox } from "@/lib/earth/aircraft";
 import { TRAFFIC_MAX_VIEW_AREA, TRAFFIC_TILE_URL } from "@/lib/earth/transport";
-import { findCity } from "@/lib/earth/places";
+import { findCity, nearestCity } from "@/lib/earth/places";
 import { bboxArea, roundBBox } from "@/lib/earth/aircraft";
 import { EarthDetail, EarthLayersPanel } from "./EarthPanel";
 import { EdithCamWall, type WallItem } from "./EdithCamWall";
@@ -365,6 +365,12 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const weatherAtView = viewBox && viewCenter && viewBox.lomax - viewBox.lomin <= 120 ? { ...viewCenter, zoom: zoomForHeight(viewHeight) } : null;
   const camQuery = earth.webcams ? (camFocus ? webcamQuery(camFocus.lat, camFocus.lon, camFocus.radiusKm) : passiveCams) : null;
   const camTraffic = camFocus?.traffic ?? false;
+  const streamPlace = useMemo(() => {
+    const at = camFocus ?? (camsActive && camQuery ? { name: "この辺り", lat: camQuery.lat, lon: camQuery.lon, traffic: false } : null);
+    if (!at) return null;
+    const name = at.name !== "この辺り" ? at.name : (nearestCity(at.lat, at.lon)?.name ?? null);
+    return name ? { place: name, lat: at.lat, lon: at.lon, traffic: at.traffic } : null;
+  }, [camFocus, camsActive, camQuery?.lat, camQuery?.lon]); // eslint-disable-line react-hooks/exhaustive-deps
   const [city3d, setCity3d] = useState<{ state: "off" | "loading" | "ready" | "error"; message?: string }>({ state: "off" });
   const earthData = useEarthData({
     active: earthActive,
@@ -377,8 +383,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
     ships: earth.ships,
     viewBox,
     webcams: camQuery ? { ...camQuery, traffic: camTraffic } : null,
-    // ライブ配信（YouTube）は、場所の名前でピックアップしたときだけ探す
-    livestreams: camFocus && camFocus.name !== "この辺り" ? { place: camFocus.name, lat: camFocus.lat, lon: camFocus.lon, traffic: camFocus.traffic } : null,
+    // ライブ配信（YouTube）：LIVE を見ている間（またはピックアップした場所があるとき）。場所の名前が無ければ、いちばん近い街の名前で探す
+    livestreams: streamPlace,
     needConfig: weatherActive || camsActive,
   });
   // 渋滞：寄って見ているときだけ、見ている範囲（0.5 度刻みに広げたもの）の画像だけ取りに行く
@@ -409,7 +415,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const camItems = earth.webcams && camQuery ? (earthData.webcams.data?.items ?? NONE) : NONE;
   const selCam = earthSel?.startsWith("cam:") ? camItems.find((c) => `cam:${c.id}` === earthSel) : undefined;
   // LIVE の一覧：ライブ配信（YouTube。いま配信中の動画）を先に、続いて公開カメラ（Windy）
-  const streamItems = camFocus && camFocus.name !== "この辺り" ? (earthData.livestreams.data?.items ?? NONE) : NONE;
+  const streamItems = streamPlace ? (earthData.livestreams.data?.items ?? NONE) : NONE;
   const wallItems = useMemo<WallItem[]>(
     () => [
       ...streamItems.map((x) => ({
