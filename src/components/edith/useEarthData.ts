@@ -23,6 +23,7 @@ import { parseQuakesResponse, QUAKE_POLL_MS, QUAKE_STALE_MS, type QuakesResponse
 import { parseRadarResponse, RADAR_POLL_MS, RADAR_STALE_MS, RAINVIEWER_MAPS_URL, type RadarResponse } from "@/lib/earth/imagery";
 import { BUS_MAX_VIEW_AREA, BUS_POLL_MS, BUS_STALE_MS, bboxOverlaps, parseBusesResponse, parseShipsResponse, SHIP_MAX_AREA, SHIP_POLL_MS, SHIP_STALE_MS, TOEI_AREA, type BusesResponse, type ShipsResponse } from "@/lib/earth/transport";
 import { validWindyMapKey } from "@/lib/earth/windy-map";
+import { LIVESTREAM_POLL_MS, LIVESTREAM_STALE_MS, parseLiveStreamsResponse, type LiveStreamsResponse } from "@/lib/earth/livestreams";
 import { parseWebcamsResponse, WEBCAM_POLL_MS, WEBCAM_STALE_MS, type WebcamsResponse } from "@/lib/earth/webcams";
 import { AIRCRAFT_MAX_AREA, AIRCRAFT_POLL_MS, AIRCRAFT_STALE_MS, bboxArea, bboxKey, parseAircraftResponse, roundBBox, type AircraftResponse, type BBox } from "@/lib/earth/aircraft";
 import {
@@ -49,13 +50,14 @@ type AircraftOk = Extract<AircraftResponse, { ok: true }>;
 type BusesOk = Extract<BusesResponse, { ok: true }>;
 type ShipsOk = Extract<ShipsResponse, { ok: true }>;
 type WebcamsOk = Extract<WebcamsResponse, { ok: true }>;
+type LiveStreamsOk = Extract<LiveStreamsResponse, { ok: true }>;
 
 /** 外部サービスの設定の有無（/api/edith/earth/config）。キーは Google の 3D の街のものだけ（ブラウザが直接使うため） */
 export interface EarthConfig {
   google3dKey: string | null;
   /** Windy の天気の地図（Map Forecast API）のキー（ブラウザが直接使うため） */
   windyMapKey: string | null;
-  services: { opensky: "auth" | "anonymous"; tomtom: boolean; odpt: boolean; ais: boolean; webcams: boolean };
+  services: { opensky: "auth" | "anonymous"; tomtom: boolean; odpt: boolean; ais: boolean; webcams: boolean; youtube: boolean };
 }
 export function parseEarthConfig(raw: unknown): EarthConfig | null {
   const r = raw as { google3dKey?: unknown; windyMapKey?: unknown; services?: Record<string, unknown> } | null;
@@ -64,7 +66,7 @@ export function parseEarthConfig(raw: unknown): EarthConfig | null {
   return {
     google3dKey: typeof r.google3dKey === "string" && /^[A-Za-z0-9_-]{20,80}$/.test(r.google3dKey) ? r.google3dKey : null,
     windyMapKey: validWindyMapKey(r.windyMapKey) ? r.windyMapKey : null,
-    services: { opensky: s.opensky === "auth" ? "auth" : "anonymous", tomtom: s.tomtom === true, odpt: s.odpt === true, ais: s.ais === true, webcams: s.webcams === true },
+    services: { opensky: s.opensky === "auth" ? "auth" : "anonymous", tomtom: s.tomtom === true, odpt: s.odpt === true, ais: s.ais === true, webcams: s.webcams === true, youtube: s.youtube === true },
   };
 }
 
@@ -328,6 +330,8 @@ export function useEarthData(o: {
   viewBox?: BBox | null;
   /** ライブカメラを探す場所（null なら探さない） */
   webcams?: { lat: number; lon: number; radiusKm: number; traffic: boolean } | null;
+  /** ライブ配信のカメラ映像を探す場所（ピックアップしたときだけ。null なら探さない） */
+  livestreams?: { place: string; lat: number; lon: number; traffic: boolean } | null;
   /** EARTH を出していなくても外部サービスの設定を読む（WEATHER の地図のキーなど） */
   needConfig?: boolean;
 }) {
@@ -422,5 +426,18 @@ export function useEarthData(o: {
     online,
     paused,
   );
-  return { now, online, quakes, sats, radar, aircraft, aircraftTooWide, config, buses, busesInView, ships, shipsInView, webcams };
+  // ライブ配信（YouTube）：キーがあり、ピックアップした場所があるときだけ（1 日の枠を使い切らないよう、引いて見ているだけでは探さない）
+  const ls = o.livestreams;
+  const livestreams = useLayer<Omit<LiveStreamsOk, "ok">>(
+    (o.active || o.needConfig) && ls && config?.services.youtube
+      ? `/api/edith/earth/livestreams?place=${encodeURIComponent(ls.place)}&lat=${ls.lat}&lon=${ls.lon}${ls.traffic ? "&cat=traffic" : ""}`
+      : null,
+    LIVESTREAM_POLL_MS,
+    LIVESTREAM_STALE_MS,
+    parseLiveStreamsResponse as never,
+    now,
+    online,
+    paused,
+  );
+  return { now, online, quakes, sats, radar, aircraft, aircraftTooWide, config, buses, busesInView, ships, shipsInView, webcams, livestreams };
 }

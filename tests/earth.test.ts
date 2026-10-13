@@ -1428,13 +1428,14 @@ describe("外部サービスの設定（/api/edith/earth/config）", () => {
       process.env.ODPT_CONSUMER_KEY = "odpt-secret-value";
       process.env.AISSTREAM_API_KEY = "ais-secret-value";
       process.env.WINDY_WEBCAMS_KEY = "windy-secret-value";
+      process.env.YOUTUBE_API_KEY = "youtube-secret-value";
       process.env.OPENSKY_CLIENT_ID = "osid";
       process.env.OPENSKY_CLIENT_SECRET = "ossecret";
       const { GET } = await import("../src/app/api/edith/earth/config/route");
       const body = await (await GET()).json();
       assert.equal(body.google3dKey, "AIzaTESTKEY0123456789abcdef");
-      assert.deepEqual(body.services, { opensky: "auth", tomtom: true, odpt: true, ais: true, webcams: true });
-      assert.doesNotMatch(JSON.stringify(body), /tomtom-secret|odpt-secret|ais-secret|windy-secret|ossecret|osid/);
+      assert.deepEqual(body.services, { opensky: "auth", tomtom: true, odpt: true, ais: true, webcams: true, youtube: true });
+      assert.doesNotMatch(JSON.stringify(body), /tomtom-secret|odpt-secret|ais-secret|windy-secret|youtube-secret|ossecret|osid/);
       delete process.env.GOOGLE_MAPS_API_KEY;
       delete process.env.TOMTOM_API_KEY;
       const b2 = await (await GET()).json();

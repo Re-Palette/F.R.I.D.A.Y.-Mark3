@@ -1,5 +1,5 @@
 /**
- * GET /api/edith/earth/config → { google3dKey: string | null, windyMapKey: string | null, services: { opensky, tomtom, odpt, ais, webcams } }
+ * GET /api/edith/earth/config → { google3dKey: string | null, windyMapKey: string | null, services: { opensky, tomtom, odpt, ais, webcams, youtube } }
  * GOD'S EYE VIEW（EARTH）で使える外部サービスの設定の有無。合言葉のロック（proxy.ts）の内側。
  *   - Google の 3D の街（Photorealistic 3D Tiles）は、ブラウザが Google から直接読み込むため、キーを画面に渡す必要がある。
  *     キーは Google Cloud の設定で「このサイトからだけ使える」（HTTP リファラーの制限）と「Map Tiles API だけ」に制限しておくこと
@@ -26,6 +26,7 @@ export async function GET(): Promise<Response> {
         odpt: has(env.ODPT_CONSUMER_KEY),
         ais: has(env.AISSTREAM_API_KEY),
         webcams: has(env.WINDY_WEBCAMS_KEY),
+        youtube: has(env.YOUTUBE_API_KEY),
       },
     },
     { headers: { "Cache-Control": "private, no-store" } },

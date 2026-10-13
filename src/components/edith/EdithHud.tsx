@@ -28,7 +28,8 @@ import { TRAFFIC_MAX_VIEW_AREA, TRAFFIC_TILE_URL } from "@/lib/earth/transport";
 import { findCity } from "@/lib/earth/places";
 import { bboxArea, roundBBox } from "@/lib/earth/aircraft";
 import { EarthDetail, EarthLayersPanel } from "./EarthPanel";
-import { EdithCamWall } from "./EdithCamWall";
+import { EdithCamWall, type WallItem } from "./EdithCamWall";
+import { liveEmbedUrl, liveWatchUrl } from "@/lib/earth/livestreams";
 import { EdithWeather, type WeatherCenter } from "./EdithWeather";
 import { DEFAULT_WEATHER, parseWeatherSettings, WEATHER_SETTINGS_KEY, WINDY_OVERLAY_LABEL, WINDY_OVERLAYS, zoomForHeight, type WeatherSettings } from "@/lib/earth/windy-map";
 import { distanceKm, WEBCAM_MAX_VIEW_HEIGHT_M, WEBCAM_RADIUS_DEFAULT, WEBCAM_RADIUS_MAX, webcamQuery } from "@/lib/earth/webcams";
@@ -376,6 +377,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
     ships: earth.ships,
     viewBox,
     webcams: camQuery ? { ...camQuery, traffic: camTraffic } : null,
+    // ライブ配信（YouTube）は、場所の名前でピックアップしたときだけ探す
+    livestreams: camFocus && camFocus.name !== "この辺り" ? { place: camFocus.name, lat: camFocus.lat, lon: camFocus.lon, traffic: camFocus.traffic } : null,
     needConfig: weatherActive || camsActive,
   });
   // 渋滞：寄って見ているときだけ、見ている範囲（0.5 度刻みに広げたもの）の画像だけ取りに行く
@@ -405,6 +408,44 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const selShip = earthSel?.startsWith("ship:") ? shipItems.find((x) => `ship:${x.mmsi}` === earthSel) : undefined;
   const camItems = earth.webcams && camQuery ? (earthData.webcams.data?.items ?? NONE) : NONE;
   const selCam = earthSel?.startsWith("cam:") ? camItems.find((c) => `cam:${c.id}` === earthSel) : undefined;
+  // LIVE の一覧：ライブ配信（YouTube。いま配信中の動画）を先に、続いて公開カメラ（Windy）
+  const streamItems = camFocus && camFocus.name !== "この辺り" ? (earthData.livestreams.data?.items ?? NONE) : NONE;
+  const wallItems = useMemo<WallItem[]>(
+    () => [
+      ...streamItems.map((x) => ({
+        key: `yt:${x.id}`,
+        kind: "stream" as const,
+        title: x.title,
+        sub: x.channel,
+        lat: null,
+        lon: null,
+        thumbnail: x.thumbnail,
+        still: null,
+        player: liveEmbedUrl(x.id),
+        detail: liveWatchUrl(x.id),
+        at: x.startedAt,
+        viewers: x.viewers,
+        traffic: false,
+      })),
+      ...camItems.map((c) => ({
+        key: `cam:${c.id}`,
+        kind: "cam" as const,
+        title: c.title,
+        sub: [c.city, c.country].filter(Boolean).join(" · ") || null,
+        lat: c.lat,
+        lon: c.lon,
+        thumbnail: c.thumbnail,
+        still: c.preview,
+        player: c.player,
+        detail: c.detail,
+        at: c.updatedAt,
+        viewers: null,
+        traffic: c.traffic,
+      })),
+    ],
+    [streamItems, camItems],
+  );
+  const wallFetchedAt = [earthData.livestreams.data?.fetchedAt, earthData.webcams.data?.fetchedAt].filter((x): x is string => Boolean(x)).sort().pop();
   const flyTo = (lat: number, lon: number, height?: number) => setEarthFly((f) => ({ lat, lon, height, key: (f?.key ?? 0) + 1 }));
 
   /* ---------- 声・文字の指示（「渋谷をピックアップ」「雨雲を出して」など。src/lib/edith-commands.ts） ---------- */
@@ -467,7 +508,12 @@ export const EdithHud = memo(function EdithHud(props: Props) {
           setEarth((s) => ({ ...s, webcams: true }));
           setCamFocus({ name, lat, lon, radiusKm: c.country ? WEBCAM_RADIUS_MAX : WEBCAM_RADIUS_DEFAULT, traffic: c.traffic });
           setD("gevMode", "cams");
-          reply += keyMissing("webcams") || (c.traffic ? "近くの公開されている道路カメラを探します。" : "近くのライブカメラを探します。");
+          reply +=
+            cfg && !cfg.services.webcams && !cfg.services.youtube
+              ? "カメラ映像はキーが未設定のため表示できません。"
+              : c.traffic
+                ? "近くの公開されている道路カメラとライブ配信を探します。"
+                : "近くのライブ配信とライブカメラを探します。";
         }
         if (c.track) {
           const layer = c.track === "aircraft" ? "aircraft" : c.track === "ship" ? "ships" : "buses";
@@ -880,26 +926,38 @@ export const EdithHud = memo(function EdithHud(props: Props) {
               <div className="egev-cams">
                 <EdithCamWall
                   place={camFocus?.name ?? "この辺り"}
-                  items={camItems}
-                  fetchedAt={earthData.webcams.data?.fetchedAt}
+                  items={wallItems}
+                  counts={{ streams: streamItems.length, cams: camItems.length }}
+                  fetchedAt={wallFetchedAt}
                   now={earthData.now}
                   traffic={camTraffic}
+                  note={
+                    earthData.config && !earthData.config.services.youtube
+                      ? "ライブ配信は YOUTUBE_API_KEY が未設定"
+                      : earthData.config && !earthData.config.services.webcams
+                        ? "公開カメラは WINDY_WEBCAMS_KEY が未設定"
+                        : earthData.livestreams.fetch.lastError && !earthData.livestreams.data
+                          ? earthData.livestreams.fetch.lastError
+                          : null
+                  }
                   emptyText={
-                    earthData.config && !earthData.config.services.webcams
-                      ? "ライブカメラはキーが未設定です（Vercel の環境変数 WINDY_WEBCAMS_KEY）"
+                    earthData.config && !earthData.config.services.webcams && !earthData.config.services.youtube
+                      ? "カメラ映像のキーが未設定です（Vercel の環境変数 YOUTUBE_API_KEY・WINDY_WEBCAMS_KEY）"
                       : !camQuery
                         ? "「渋谷をピックアップ」のように場所を言うか、地球儀で街に寄ってから開いてください"
-                        : earthData.webcams.fetch.lastError && !earthData.webcams.data
+                        : earthData.webcams.fetch.lastError && !earthData.webcams.data && !earthData.livestreams.data
                           ? earthData.webcams.fetch.lastError
-                          : earthData.webcams.data
-                            ? "近くに公開されているカメラが見つかりませんでした"
-                            : "近くの公開カメラを探しています…"
+                          : earthData.webcams.data || earthData.livestreams.data
+                            ? "近くに公開されているカメラ映像が見つかりませんでした"
+                            : "近くのカメラ映像を探しています…"
                   }
-                  onShowOnEarth={(cam) => {
+                  onShowOnEarth={(it) => {
                     setD("gevMode", "earth");
                     setEarthTrack(null);
-                    setEarthSel(`cam:${cam.id}`);
-                    flyTo(cam.lat, cam.lon, 3_000);
+                    if (it.kind === "cam" && it.lat !== null && it.lon !== null) {
+                      setEarthSel(it.key);
+                      flyTo(it.lat, it.lon, 3_000);
+                    } else if (camFocus) flyTo(camFocus.lat, camFocus.lon, 20_000);
                   }}
                 />
               </div>
@@ -941,7 +999,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
           {earthActive ? (
             <span className="eview__live" data-on={earthData.quakes.status === "LIVE" || earthData.sats.status === "LIVE" || undefined}>EARTH &gt; GOD&apos;S EYE VIEW : {earthSummary}</span>
           ) : camsActive ? (
-            <span className="eview__live" data-on={camItems.length > 0 || undefined}>LIVE &gt; GOD&apos;S EYE VIEW : PICKUP {camFocus?.name ?? "この辺り"}（{camItems.length} 台）</span>
+            <span className="eview__live" data-on={wallItems.length > 0 || undefined}>LIVE &gt; GOD&apos;S EYE VIEW : PICKUP {camFocus?.name ?? "この辺り"}（{wallItems.length} 件）</span>
           ) : weatherActive ? (
             <span className="eview__live" data-on={Boolean(earthData.config?.windyMapKey) || undefined}>WEATHER &gt; GOD&apos;S EYE VIEW : {WINDY_OVERLAY_LABEL[weather.overlay]}（Windy）</span>
           ) : (
@@ -1121,7 +1179,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             {earthActive ? (
               <p>SRC: GOD&apos;S EYE VIEW (EARTH)  FEED: {earthSummary}</p>
             ) : camsActive ? (
-              <p>SRC: GOD&apos;S EYE VIEW (LIVE CAMS)  FEED: {camFocus?.name ?? "この辺り"} · {camItems.length} 台</p>
+              <p>SRC: GOD&apos;S EYE VIEW (LIVE CAMS)  FEED: {camFocus?.name ?? "この辺り"} · ライブ {streamItems.length} · カメラ {camItems.length}</p>
             ) : weatherActive ? (
               <p>SRC: GOD&apos;S EYE VIEW (WEATHER)  FEED: {WINDY_OVERLAY_LABEL[weather.overlay]}（Windy）</p>
             ) : (
@@ -1347,7 +1405,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             {earthActive ? (
               <b data-on={earthData.quakes.status === "LIVE" || earthData.sats.status === "LIVE" || undefined}>EARTH</b>
             ) : camsActive ? (
-              <b data-on={camItems.length > 0 || undefined}>LIVE CAMS</b>
+              <b data-on={wallItems.length > 0 || undefined}>LIVE CAMS</b>
             ) : weatherActive ? (
               <b data-on={Boolean(earthData.config?.windyMapKey) || undefined}>WEATHER</b>
             ) : (
