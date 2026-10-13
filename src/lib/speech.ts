@@ -4,7 +4,10 @@
  *  - 読み上げ: speechSynthesis
  */
 
-import { detectModeCommand, EDITH_NAME_SRC, getAiMode, GLOBAL_PROTOCOL_RE, type AiMode } from "./ai-mode";
+import { detectModeCommand, getAiMode, GLOBAL_PROTOCOL_RE, type AiMode } from "./ai-mode";
+import { aiCallFrom, EDITH_WAKE_RE, KAREN_WAKE_RE, WAKE_RE } from "./ai-words";
+
+export { aiCallFrom };
 
 /* ---------- 音声認識 ---------- */
 
@@ -48,30 +51,6 @@ export function getRecognitionCtor(): (new () => RecognitionLike) | null {
 /* ---------- 呼びかけ（ウェイクワード）検出 ---------- */
 
 /**
- * 音声認識での表記ゆれを拾う：フライデー / フライデイ / フライディ / ふらいでー / フライ・デー / Friday / ＦＲＩＤＡＹ、
- * 聞き間違いの多い プライデー / ブライデー（伸ばす音まであるときだけ）。
- * 発言の頭で呼んだときだけ起きる（「ねえ」「ヘイ」などは前に付いてよい）。文の途中の「ブラックフライデー」「今日はフライデー」では起きない。
- */
-const WAKE_BODY =
-  "(?:[フふ][\\s・]*[ラら][\\s・]*[イいィぃ][\\s・]*(?:ディ|でぃ|[デで])[\\s・]*[ーィぃイいエえ〜]?|[プぷブぶ][\\s・]*[ラら][\\s・]*[イい][\\s・]*[デで][\\s・]*[ーイい]|f\\s*r\\s*i\\s*d\\s*a\\s*y|ｆ\\s*ｒ\\s*ｉ\\s*ｄ\\s*ａ\\s*ｙ)";
-/** 呼びかけの前に付いてよい言葉 */
-const WAKE_LEAD = "(?:(?:ねえ|ねぇ|ねー|ヘイ|へい|hey|おい|あの|えっと|えーと|ちょっと|ok|オッケー)[\\s、。,.!！ー〜]*)?";
-const WAKE_TAIL = "[\\s、。,.!！?？ー〜]*";
-const WAKE_RE = new RegExp(`^[\\s、。「]*${WAKE_LEAD}${WAKE_BODY}${WAKE_TAIL}`, "i");
-
-/** K.A.R.E.N. の呼び方（カレン / K.A.R.E.N.）。「カレンダー」「カレント」は呼びかけではない。これも発言の頭で呼んだときだけ */
-const KAREN_WAKE_RE = new RegExp(
-  `^[\\s、。「]*${WAKE_LEAD}(?:[カか]\\s*[レれ]\\s*[ンん](?![ダだトとシし])|(?:可憐|花蓮|華蓮|夏蓮|佳蓮)(?!な)|k\\.?\\s*a\\.?\\s*r\\.?\\s*e\\.?\\s*n\\.?(?![a-z]))${WAKE_TAIL}`,
-  "i",
-);
-
-/** E.D.I.T.H. の呼び方（イーディス / エディス / E.D.I.T.H.）。これも発言の頭で呼んだときだけ */
-const EDITH_WAKE_RE = new RegExp(
-  `^[\\s、。「]*${WAKE_LEAD}(?:${EDITH_NAME_SRC})${WAKE_TAIL}`,
-  "i",
-);
-
-/**
  * 呼びかけを見分ける。いまのモードの AI の名前で呼んだときだけ起きて、名前を取り除いた用件を返す。
  * ほかの AI の名前で呼んだら、そのモードに切り替えるために名前ごと渡す（答えるのはいまの AI ではなく、切り替えた先の AI）。
  * 名前が文の途中にあるだけでは起きない（発言の頭で呼んだときだけ）。
@@ -92,17 +71,7 @@ export function splitWake(text: string): { woke: boolean; command: string } {
  * 呼んでいれば、切り替える先のモードと、名前のあとの用件を返す。
  */
 export function aiCall(text: string): { mode: AiMode; rest: string } | null {
-  const mode = getAiMode();
-  for (const [m, re] of [
-    ["friday", WAKE_RE],
-    ["karen", KAREN_WAKE_RE],
-    ["edith", EDITH_WAKE_RE],
-  ] as const) {
-    if (m === mode) continue;
-    const hit = re.exec(text);
-    if (hit) return { mode: m, rest: text.slice(hit[0].length).trim() };
-  }
-  return null;
+  return aiCallFrom(text, getAiMode());
 }
 
 /** 発言の先頭に付いた呼びかけを取り除く（「フライデー、今日の予定は？」→「今日の予定は？」） */

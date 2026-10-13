@@ -108,6 +108,63 @@ describe("LINE：答える", () => {
     assert.deepEqual(seenHistory.map((m) => m.content), ["明日の会議を入れて", "**明日は** 10時から会議です。", "それ何時まで？"]);
     assert.ok([...files.keys()].some((k) => k.startsWith(".friday/line/")));
   });
+  it("切り替え：イーディス・カレン・フライデーで AI が切り替わり、選んだ AI が続く", async () => {
+    const { files, brain } = fakeBrain();
+    const seen: string[] = [];
+    const deps = {
+      env,
+      brain,
+      recall: async () => [],
+      save: async () => {},
+      converse: async function* (_h: unknown, _s: AbortSignal, onTurn: (t: never) => void, persona: string) {
+        seen.push(persona);
+        yield { type: "delta", text: "はい。" } as never;
+        onTurn({ user: "u", assistant: "a" } as never);
+      },
+    };
+    const ask = async (text: string) => (await line.answerLine({ kind: "text", userId: USER, replyToken: "r", text }, deps as never)).join("\n");
+    const stored = () => JSON.parse([...files.entries()].find(([k]) => k.startsWith(".friday/line/"))![1]);
+
+    // 名前で呼ぶだけ：切り替えの知らせ（会話はしない）
+    assert.match(await ask("イーディスを呼んで"), /E\.D\.I\.T\.H\..*起動/);
+    assert.equal(stored().persona, "edith");
+    assert.deepEqual(seen, []);
+    // 次からは E.D.I.T.H. が答える
+    assert.match(await ask("世界のニュースは？"), /^【E\.D\.I\.T\.H\.】/);
+    assert.deepEqual(seen, ["edith"]);
+    // 名前に続けて頼むと、その AI でそのまま答える（K.A.R.E.N. の 3D 制作はパソコンへ案内）
+    const k = await ask("カレン、ロボットを作って");
+    assert.match(k, /^【K\.A\.R\.E\.N\.】/);
+    assert.match(k, /パソコンの K\.A\.R\.E\.N\. の画面/);
+    assert.equal(seen.at(-1), "karen");
+    assert.equal(stored().persona, "karen");
+    // 戻す
+    assert.match(await ask("フライデーに戻して"), /F\.R\.I\.D\.A\.Y\./);
+    const f = await ask("ありがとう");
+    assert.doesNotMatch(f, /【/);
+    assert.equal(seen.at(-1), "friday");
+    assert.equal(stored().persona, "friday");
+    assert.ok(stored().turns.length > 0);
+  });
+  it("切り替え：前の形の会話の記録（配列）も読める", async () => {
+    const { files, brain } = fakeBrain();
+    let hist: { content: string }[] = [];
+    const deps = {
+      env,
+      brain,
+      recall: async () => [],
+      save: async () => {},
+      converse: async function* (h: { content: string }[]) {
+        hist = h;
+        yield { type: "delta", text: "はい。" } as never;
+      },
+    };
+    await line.answerLine({ kind: "text", userId: USER, replyToken: "r", text: "こんにちは" }, deps as never);
+    const key = [...files.keys()].find((k) => k.startsWith(".friday/line/"))!;
+    files.set(key, JSON.stringify([{ role: "user", content: "前の質問", at: Date.now() }, { role: "assistant", content: "前の答え", at: Date.now() }]));
+    await line.answerLine({ kind: "text", userId: USER, replyToken: "r", text: "続き" }, deps as never);
+    assert.deepEqual(hist.map((m) => m.content), ["前の質問", "前の答え", "続き"]);
+  });
   it("声：LINE から受け取って文字にし、聞き取った文を添える", async () => {
     const { brain } = fakeBrain();
     const fetchImpl = (async (url: string) => {

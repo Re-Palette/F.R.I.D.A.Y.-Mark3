@@ -5,6 +5,8 @@
  *   - 会話は脳（Obsidian）の会話ログに残り、関連する脳のノートを探して答える。使ったノートの名前を返事の最後に添える（引用）
  *   - 「メモ：〜」は AI を通さず、脳の「メモ/LINE/YYYY-MM-DD.md」に書く
  *   - 直前の会話（16 件）は脳の .friday/line/ に置く（Obsidian には出てこない）。続けて話しても話が通じる
+ *   - 「イーディス、〜」「カレンを呼んで」「フライデーに戻して」で、答える AI（F.R.I.D.A.Y.・E.D.I.T.H.・K.A.R.E.N.）を切り替える。
+ *     切り替えた AI は、戻すまでこのトークで続く（パソコンの画面のモードとは別）
  *   - キー：LINE_CHANNEL_SECRET（通知の署名を確かめる）・LINE_CHANNEL_ACCESS_TOKEN（返事を送る）。画面・ログには出さない
  */
 import { createHash } from "node:crypto";
@@ -14,6 +16,7 @@ import { CalendarAccess, getCalendarConfig, hasComposeScope, isCalendarConfigure
 import { createDraft, recentMail, unreadMail } from "@/integrations/gmail";
 import { getTimezone } from "@/lib/config";
 import { allowedLineUsers, parseMemoCommand, plainForLine, splitForLine, type LineIncoming } from "@/lib/line";
+import { aiCallFrom, detectModeCommand, type AiMode } from "@/lib/ai-words";
 import { isBrainConfigured, readFresh, updateNote } from "@/memory/github-brain";
 import { getLongTermMemory, type SaveTurnInput } from "@/memory/long-term";
 
@@ -111,17 +114,39 @@ interface StoredTurn {
 }
 const historyPath = (userId: string) => `.friday/line/${createHash("sha256").update(userId).digest("hex").slice(0, 16)}.json`;
 
-function parseHistory(raw: string | null): StoredTurn[] {
+/** このトークの状態：答える AI と直前の会話（前の版は会話の配列だけを置いていた） */
+interface LineStore {
+  persona: AiMode;
+  turns: StoredTurn[];
+}
+
+function parseStore(raw: string | null): LineStore {
   try {
     const j = JSON.parse(raw ?? "[]") as unknown;
-    if (!Array.isArray(j)) return [];
-    return j
-      .filter((t): t is StoredTurn => !!t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string" && typeof t.at === "number")
-      .slice(-HISTORY_MAX);
+    const o = (Array.isArray(j) ? { turns: j } : j) as { persona?: unknown; turns?: unknown } | null;
+    const turns = Array.isArray(o?.turns)
+      ? (o.turns as unknown[])
+          .filter((t): t is StoredTurn => {
+            const x = t as StoredTurn | null;
+            return !!x && (x.role === "user" || x.role === "assistant") && typeof x.content === "string" && typeof x.at === "number";
+          })
+          .slice(-HISTORY_MAX)
+      : [];
+    const persona: AiMode = o?.persona === "edith" || o?.persona === "karen" ? o.persona : "friday";
+    return { persona, turns };
   } catch {
-    return [];
+    return { persona: "friday", turns: [] };
   }
 }
+
+/* ---------- 答える AI の切り替え ---------- */
+
+const PERSONA_LABEL: Record<AiMode, string> = { friday: "F.R.I.D.A.Y.", edith: "E.D.I.T.H.", karen: "K.A.R.E.N." };
+const SWITCHED: Record<AiMode, string> = {
+  friday: "通常モード（F.R.I.D.A.Y.）に戻りました。",
+  edith: "【E.D.I.T.H.】グローバルインテリジェンスモードを起動しました。調べもの・分析を、出典付きでお答えします。\n地球儀・カメラ映像など画面の機能は、パソコンの E.D.I.T.H. でどうぞ。「フライデー」で戻ります。",
+  karen: "【K.A.R.E.N.】クリエイティブモードを起動しました。アイデアやデザイン・制作の相談に乗ります。\n3D ホログラムの制作・編集は、パソコンの K.A.R.E.N. の画面で頼んでください。「フライデー」で戻ります。",
+};
 
 /* ---------- 脳へのメモ ---------- */
 
@@ -139,7 +164,7 @@ export interface LineDeps {
   now?: () => Date;
   env?: Record<string, string | undefined>;
   /** 会話（テスト用に差し替える） */
-  converse?: (history: ChatMessage[], signal: AbortSignal, onTurn: (t: SaveTurnInput | null) => void) => AsyncGenerator<StreamEvent>;
+  converse?: (history: ChatMessage[], signal: AbortSignal, onTurn: (t: SaveTurnInput | null) => void, persona: AiMode) => AsyncGenerator<StreamEvent>;
   brain?: { configured: boolean; read: (path: string) => Promise<string | null>; update: (path: string, f: (cur: string | null) => string, message: string) => Promise<void> };
   recall?: (query: string, history: ChatMessage[]) => Promise<{ source: string; title?: string }[]>;
   save?: (turn: SaveTurnInput) => Promise<void>;
@@ -205,9 +230,33 @@ export async function answerLine(ev: LineIncoming, deps: LineDeps = {}): Promise
   }
   if (ev.kind === "other") return ["文字・声（ボイスメッセージ）・写真で話しかけてください。"];
 
+  // このトークの状態（答える AI・直前の会話）
+  const path = historyPath(ev.userId);
+  const store = brain.configured ? parseStore(await brain.read(path).catch(() => null)) : { persona: "friday" as AiMode, turns: [] };
+  let persona = store.persona;
+
+  // 答える AI の切り替え（「イーディス、〜」「カレンを呼んで」「フライデーに戻して」）
+  let text = ev.kind === "text" ? ev.text : "";
+  if (ev.kind === "text") {
+    const cmd = detectModeCommand(text);
+    const call = cmd ? null : aiCallFrom(text, persona);
+    const target: AiMode | null = cmd === "to-edith" ? "edith" : cmd === "to-karen" ? "karen" : cmd === "to-friday" ? "friday" : (call?.mode ?? null);
+    if (target) {
+      const changed = target !== persona;
+      persona = target;
+      if (changed && brain.configured) {
+        await brain.update(path, (cur) => JSON.stringify({ ...parseStore(cur), persona: target }), "FRIDAY: LINE の AI の切り替え").catch(() => undefined);
+      }
+      const rest = call?.rest ?? "";
+      // 名前のあとに用件があれば、切り替えた AI がそのまま答える（「イーディス、今日の世界のニュースは」）
+      if (rest.replace(/[、。,.!！?？\s]/g, "").length >= 2) text = rest;
+      else return [changed ? SWITCHED[target] : `いまは ${PERSONA_LABEL[target]} がお答えしています。`];
+    }
+  }
+
   // 届いたもの → 会話の最後の発言
   let user: ChatMessage;
-  if (ev.kind === "text") user = { role: "user", content: ev.text };
+  if (ev.kind === "text") user = { role: "user", content: text };
   else {
     const content = cfg ? await lineContent(cfg.token, ev.messageId, fetchImpl) : null;
     if (!content) return [ev.kind === "audio" ? "声を受け取れませんでした（長すぎる・形式が違う）。もう一度送ってください。" : "写真を受け取れませんでした。もう一度送ってください。"];
@@ -219,18 +268,17 @@ export async function answerLine(ev: LineIncoming, deps: LineDeps = {}): Promise
   }
 
   // 直前の会話
-  const path = historyPath(ev.userId);
-  const past = brain.configured ? parseHistory(await brain.read(path).catch(() => null)) : [];
-  const history: ChatMessage[] = [...past.map((t) => ({ role: t.role, content: t.content })), user];
+  const history: ChatMessage[] = [...store.turns.map((t) => ({ role: t.role, content: t.content })), user];
 
   // 答える（予定・メールは、全端末共通の Google の接続があれば使える）
   const converse =
     deps.converse ??
-    ((h: ChatMessage[], signal: AbortSignal, onTurn: (t: SaveTurnInput | null) => void) => {
+    ((h: ChatMessage[], signal: AbortSignal, onTurn: (t: SaveTurnInput | null) => void, who: AiMode) => {
       const c = getCalendarConfig();
       const refresh = isCalendarConfigured(c) ? c.refreshToken : undefined;
       return handleConversation(h, signal, {
         onTurn,
+        persona: who === "friday" ? undefined : who,
         calendar: refresh ? new CalendarAccess(refresh, tz) : undefined,
         mail: refresh ? () => unreadMail(refresh) : undefined,
         mailRecent: refresh ? () => recentMail(refresh) : undefined,
@@ -246,7 +294,7 @@ export async function answerLine(ev: LineIncoming, deps: LineDeps = {}): Promise
   let failed: string | null = null;
   const signal = AbortSignal.timeout(ANSWER_TIMEOUT_MS);
   try {
-    for await (const e of converse(history, signal, (t) => (turn = t))) {
+    for await (const e of converse(history, signal, (t) => (turn = t), persona)) {
       if (e.type === "delta") answer += e.text;
       else if (e.type === "transcript") heard = e.text;
       else if (e.type === "sources") webSources.push(...e.sources);
@@ -280,13 +328,25 @@ export async function answerLine(ev: LineIncoming, deps: LineDeps = {}): Promise
   if (brain.configured && answer) {
     const at = now.getTime();
     await brain
-      .update(path, (cur) => JSON.stringify([...parseHistory(cur), { role: "user", content: userText, at }, { role: "assistant", content: answer.slice(0, 4000), at }].slice(-HISTORY_MAX)), "FRIDAY: LINE の会話")
+      .update(
+        path,
+        (cur) => {
+          const st = parseStore(cur);
+          return JSON.stringify({ persona: st.persona, turns: [...st.turns, { role: "user", content: userText, at }, { role: "assistant", content: answer.slice(0, 4000), at }].slice(-HISTORY_MAX) });
+        },
+        "FRIDAY: LINE の会話",
+      )
       .catch(() => undefined);
   }
 
   const parts: string[] = [];
   if (heard) parts.push(`🎤 聞き取り：${heard}`);
-  parts.push(answer ? plainForLine(answer) : (failed ?? "答えを作れませんでした。"));
+  const body = answer ? plainForLine(answer) : (failed ?? "答えを作れませんでした。");
+  parts.push(persona === "friday" ? body : `【${PERSONA_LABEL[persona]}】${body}`);
+  // K.A.R.E.N. に制作を頼まれたとき：LINE では作れないことを添える
+  if (persona === "karen" && /(作って|つくって|作成|生成|モデル|ホログラム|3d|３ｄ|編集)/i.test(userText)) {
+    notes.push("🛠 3D の制作・編集は、パソコンの K.A.R.E.N. の画面で頼んでください（LINE では作れません）");
+  }
   if (notes.length) parts.push(notes.join("\n"));
   if (cited.length) parts.push(`📝 脳の関連ノート：\n${cited.map((s) => `・${s.replace(/\.md$/, "")}`).join("\n")}`);
   if (webSources.length) parts.push(`🔗 出典：\n${webSources.slice(0, 3).map((s) => `・${s.title} ${s.uri}`).join("\n")}`);
