@@ -22,6 +22,7 @@ import { useProjects } from "@/lib/karen-projects";
 import { answerExit, cancelCreation, exportGlb, openProject, renderPng, runKarenOp, saveCurrent, useExitAsk, workspaceThumbnail, type KarenIo } from "@/lib/karen-controller";
 import type { Shape } from "@/lib/karen-intent";
 import { useAiRoute } from "@/lib/ai-router";
+import { gpuName } from "@/lib/webgl";
 
 /** 球が消えて制作の画面になるまでの演出の長さ */
 const TRANSITION_MS = 1500;
@@ -81,18 +82,8 @@ function useBattery(): number | null {
 /** GPU の名前（WebGL が教えてくれる場合だけ）。使用率はブラウザから測れない */
 function useGpuName(): string | null {
   const [name, setName] = useState<string | null>(null);
-  useEffect(() => {
-    try {
-      const c = document.createElement("canvas");
-      const gl = c.getContext("webgl");
-      const ext = gl?.getExtension("WEBGL_debug_renderer_info");
-      const raw = ext && gl ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : null;
-      setName(raw ? raw.replace(/ANGLE \(|\)$|Direct3D.*$|vs_\d.*$/g, "").replace(/,.*$/, "").trim().slice(0, 28) : null);
-      gl?.getExtension("WEBGL_lose_context")?.loseContext();
-    } catch {
-      setName(null);
-    }
-  }, []);
+  // 調べるのはページの中で 1 回だけ（WebGL の場所を作るのは重いので、開くたびには作らない）
+  useEffect(() => setName(gpuName()), []);
   return name;
 }
 

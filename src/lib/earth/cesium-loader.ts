@@ -35,13 +35,5 @@ export function loadCesium(): Promise<CesiumModule> {
   return loading;
 }
 
-/** WebGL が使えるか（使えなければ地球儀を作らず、理由を出す） */
-export function webglAvailable(): boolean {
-  if (typeof document === "undefined") return false;
-  try {
-    const c = document.createElement("canvas");
-    return Boolean(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
+/** WebGL が使えるか（ページの中で 1 回だけ調べる） */
+export { webglAvailable } from "@/lib/webgl";

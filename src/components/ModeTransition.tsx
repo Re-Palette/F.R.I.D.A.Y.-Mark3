@@ -14,7 +14,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { createPortal, flushSync } from "react-dom";
 import type { AiMode } from "@/lib/ai-mode";
 import { bootGreeting } from "@/lib/boot-line";
-import { setScreenCovered } from "@/lib/screen-cover";
+import { setScreenCovered, whenRevealReady } from "@/lib/screen-cover";
 
 const META: Record<AiMode, { name: string; sub: string; caption: string }> = {
   friday: { name: "F.R.I.D.A.Y.", sub: "STANDARD PROTOCOL", caption: "通常モードに復帰" },
@@ -31,6 +31,8 @@ const META: Record<AiMode, { name: string; sub: string; caption: string }> = {
 const SAFETY_MS = 10_000;
 /** 開いた直後のモードの読み込み（保存していたモードに戻る）は演出しない */
 const BOOT_QUIET_MS = 1200;
+/** 新しい画面の重い準備（3D を作る）を幕の裏で待つ上限。これを過ぎたら準備の途中でも幕を開ける */
+const PREPARE_WAIT_MAX_MS = 2500;
 
 type Phase = "cover" | "reveal" | "reduced";
 interface Run {
@@ -92,19 +94,31 @@ export function useModeTransition(mode: AiMode): { shown: AiMode; overlay: React
     );
   }, []);
 
-  // 新しい画面ができて、名前を見せる時間も過ぎたら：下の画面を描き始め（幕の裏で 2 フレーム描かせてから）、幕を開ける
+  // 新しい画面ができて、名前を見せる時間も過ぎて、重い準備（3D を作る）も済んだら：
+  // 下の画面を描き始め（幕の裏で 2 フレーム描かせてから）、幕を開ける（準備が長引いても上限で開ける）
   useEffect(() => {
     if (!run || run.phase !== "cover" || !run.held || shown !== run.to) return;
     const ids: number[] = [];
+    let started = false;
     const after = (n: number, f: () => void) => {
       if (n <= 0) return f();
       ids.push(requestAnimationFrame(() => after(n - 1, f)));
     };
-    after(2, () => {
-      setScreenCovered(false);
-      after(2, () => setRun((r) => (r && r.key === run.key ? { ...r, phase: "reveal" } : r)));
-    });
-    return () => ids.forEach(cancelAnimationFrame);
+    const open = () => {
+      if (started) return;
+      started = true;
+      after(2, () => {
+        setScreenCovered(false);
+        after(2, () => setRun((r) => (r && r.key === run.key ? { ...r, phase: "reveal" } : r)));
+      });
+    };
+    const cap = window.setTimeout(open, PREPARE_WAIT_MAX_MS);
+    const cancelWait = whenRevealReady(open);
+    return () => {
+      cancelWait();
+      clearTimeout(cap);
+      ids.forEach(cancelAnimationFrame);
+    };
   }, [run, shown]);
 
   // 演出が終わったら（どんな終わり方でも）、下の画面を必ず描くように戻す

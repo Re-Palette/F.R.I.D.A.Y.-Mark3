@@ -51,6 +51,9 @@ import { EDITH_TOOL, FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT } from "@/lib/live-vo
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
 import { EdithHud } from "./edith/EdithHud";
+import { webglAvailable } from "@/lib/webgl";
+import { loadCesium } from "@/lib/earth/cesium-loader";
+import { DEFAULT_DISPLAY, EDITH_DISPLAY_KEY, parseDisplay } from "@/lib/edith-display";
 import { useModeTransition } from "./ModeTransition";
 
 const CALENDAR_NOTICE: Record<string, string> = {
@@ -245,6 +248,28 @@ export function Dashboard() {
   const aiMode = useAiMode();
   // 見せる画面のモード：切り替えの演出で画面が覆われてから変わる（会話・声の行き先は aiMode ですぐ変わる）
   const { shown: shownMode, overlay: modeOverlay, playBoot } = useModeTransition(aiMode);
+  // E.D.I.T.H. に切り替え始めたら（幕が閉じる間に）、3D 地球儀の部品の読み込みを先に始める（EARTH を映す設定のときだけ）
+  useEffect(() => {
+    if (aiMode !== "edith" || shownMode === "edith") return;
+    let earth = DEFAULT_DISPLAY.gevMode === "earth";
+    try {
+      const raw = localStorage.getItem(EDITH_DISPLAY_KEY);
+      if (raw) earth = parseDisplay(JSON.parse(raw)).gevMode === "earth";
+    } catch {
+      /* 読めなければ既定のまま */
+    }
+    if (earth && webglAvailable()) void loadCesium().catch(() => {});
+  }, [aiMode, shownMode]);
+  // WebGL が使えるかを、手が空いたときに先に調べておく（E.D.I.T.H.・K.A.R.E.N. に切り替えた瞬間に調べると重いので）
+  useEffect(() => {
+    const w = window as Window & { requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(() => webglAvailable(), { timeout: 5000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(() => webglAvailable(), 3000);
+    return () => clearTimeout(t);
+  }, []);
   const playBootRef = useRef(playBoot);
   playBootRef.current = playBoot;
   /** 会話とは別に一言話す（音声会話の間だけ。下で定義する sayAloud を使う） */

@@ -32,7 +32,7 @@ import { useEarthData } from "./useEarthData";
 import { DEFAULT_EARTH, EARTH_SETTINGS_KEY, parseEarthSettings, type EarthSettings } from "@/lib/earth/settings";
 import { findPlaces } from "@/lib/edith-geo";
 import { splitTables } from "@/lib/edith-text";
-import { applyPreset, DEFAULT_DISPLAY, nextPreset, parseDisplay, PRESETS, solarElevation, type DisplaySettings, type PresetKey } from "@/lib/edith-display";
+import { applyPreset, DEFAULT_DISPLAY, EDITH_DISPLAY_KEY, nextPreset, parseDisplay, PRESETS, solarElevation, type DisplaySettings, type PresetKey } from "@/lib/edith-display";
 import {
   ago,
   regionCounts,
@@ -120,7 +120,7 @@ const two = (n: number) => String(n).padStart(2, "0");
 /** 起点（東京）。地図の「東京（起点）」と同じ場所 */
 const HOME = { name: "TOKYO", lat: 35.6812, lon: 139.7671 };
 
-const DISPLAY_KEY = "friday.edith-display.v1";
+const DISPLAY_KEY = EDITH_DISPLAY_KEY;
 const PAGE_KEY = "friday.edith-page.v1";
 
 /** 接続（オンラインか）・通信の種類・電池（取れるブラウザだけ） */

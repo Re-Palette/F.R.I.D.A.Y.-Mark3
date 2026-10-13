@@ -19,6 +19,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type * as CesiumNS from "cesium";
 import { loadCesium, webglAvailable, type CesiumModule } from "@/lib/earth/cesium-loader";
+import { holdReveal } from "@/lib/screen-cover";
 import { magBand, type QuakePoint } from "@/lib/earth/quakes";
 import { makeSatrec, satPosition, SAT_TICK_MS, type OrbitElement } from "@/lib/earth/satellites";
 import { GIBS_CREDIT, GIBS_MAX_LEVEL, gibsUrl, RADAR_CREDIT, RADAR_MAX_LEVEL, S2_CREDIT, S2_MAX_LEVEL, S2_URL, type ImageryCredit } from "@/lib/earth/imagery";
@@ -158,6 +159,8 @@ function EdithEarthImpl(p: Props) {
       return;
     }
     report("loading");
+    // モード切り替えの幕は、地球儀を作って初めて描き終わるまで開けずに待ってもらう（開く途中で止まらないように）
+    const release = holdReveal();
     let handler: CesiumNS.ScreenSpaceEventHandler | null = null;
     const offs: (() => void)[] = [];
     void loadCesium()
@@ -189,6 +192,7 @@ function EdithEarthImpl(p: Props) {
             contextOptions: { webgl: { alpha: true } },
           });
         } catch {
+          release();
           report("error", "3D 地球儀を作れませんでした（WebGL の初期化に失敗）。");
           return;
         }
@@ -240,13 +244,23 @@ function EdithEarthImpl(p: Props) {
         reportView();
         setReady(true);
         report("ready");
+        // 初めて描き終わったら幕を開けてよい（隠れていて描かないときは、すぐ）
+        if (propsRef.current.active) {
+          const off = scene.postRender.addEventListener(() => {
+            off();
+            release();
+          });
+          offs.push(off);
+        } else release();
         scene.requestRender();
       })
       .catch((err: unknown) => {
+        release();
         if (!disposed) report("error", err instanceof Error ? err.message : "3D 地球儀を読み込めませんでした。");
       });
     return () => {
       disposed = true;
+      release();
       offs.splice(0).forEach((f) => f());
       handler?.destroy();
       const v = viewerRef.current;

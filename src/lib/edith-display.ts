@@ -44,6 +44,9 @@ export interface DisplaySettings {
   gevMode: GevMode;
 }
 
+/** 表示の設定を保存する場所（この端末） */
+export const EDITH_DISPLAY_KEY = "friday.edith-display.v1";
+
 export const DEFAULT_DISPLAY: DisplaySettings = {
   hud: true,
   layout: "tactical",

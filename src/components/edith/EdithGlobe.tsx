@@ -12,7 +12,8 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type * as T from "three";
 import { domeY, fromPlane, landDots, landRings, MAP_H, MAP_W, toPlane, type LonLat } from "@/lib/edith-globe-data";
-import { isScreenCovered } from "@/lib/screen-cover";
+import { holdReveal, isScreenCovered } from "@/lib/screen-cover";
+import { webglAvailable } from "@/lib/webgl";
 
 export interface GlobePoint {
   id: string;
@@ -60,15 +61,6 @@ async function loadLand() {
   return landCache;
 }
 
-function webglOk(): boolean {
-  try {
-    const c = document.createElement("canvas");
-    return Boolean(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
-
 /** 光る点の絵（中心が明るく、外へぼける） */
 function dotTexture(THREE: typeof T): T.Texture {
   const c = document.createElement("canvas");
@@ -108,7 +100,7 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
   latest.current = { points, selectedId, onSelect, onView, autoRotate };
 
   useEffect(() => {
-    if (!webglOk()) {
+    if (!webglAvailable()) {
       setFallback(true);
       return;
     }
@@ -116,6 +108,8 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
     if (!el) return;
     let disposed = false;
     let cleanup = () => {};
+    // モード切り替えの幕は、地図を作って初めて描き終わるまで開けずに待ってもらう（開く途中で止まらないように）
+    const release = holdReveal();
     void (async () => {
       const [THREE, { OrbitControls }, land] = await Promise.all([
         import("three"),
@@ -460,6 +454,14 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
         }
       };
       raf = requestAnimationFrame(tick);
+      // 幕の裏で 1 度だけ描いておく（初めて描くときの準備＝描き方の組み立てが重いので、見える前に済ませる）
+      try {
+        controls.update();
+        renderer.render(scene, camera);
+      } catch {
+        /* 描けなくても、いつもの描画で出す */
+      }
+      release();
 
       cleanup = () => {
         cancelAnimationFrame(raf);
@@ -474,9 +476,13 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
         renderer.domElement.remove();
         api.current = null;
       };
-    })().catch(() => setFallback(true));
+    })().catch(() => {
+      release();
+      setFallback(true);
+    });
     return () => {
       disposed = true;
+      release();
       cleanup();
     };
   }, []);

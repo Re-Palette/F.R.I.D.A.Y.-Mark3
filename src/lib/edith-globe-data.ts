@@ -32,14 +32,30 @@ interface Ring {
   maxLat: number;
 }
 
-function inRing(lon: number, lat: number, pts: LonLat[]): boolean {
-  let inside = false;
+/**
+ * 緯度 lat の横線が輪の辺と交わる経度（小さい順）。点 (lon, lat) が輪の内側か＝ lon より東の交点の数が奇数か。
+ * 点ごとに全部の辺を調べ直すと重い（地図を作るたびに 1 秒近くかかる）ので、横 1 行ぶんをまとめて求める。
+ */
+function crossings(lat: number, pts: LonLat[]): number[] {
+  const xs: number[] = [];
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
     const [xi, yi] = pts[i];
     const [xj, yj] = pts[j];
-    if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+    if (yi > lat !== yj > lat) xs.push(((xj - xi) * (lat - yi)) / (yj - yi) + xi);
   }
-  return inside;
+  return xs.sort((a, b) => a - b);
+}
+
+/** 小さい順の xs のうち、lon より大きいものの数 */
+function countAbove(xs: number[], lon: number): number {
+  let lo = 0;
+  let hi = xs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= lon) lo = mid + 1;
+    else hi = mid;
+  }
+  return xs.length - lo;
 }
 
 /**
@@ -62,10 +78,12 @@ export function landDots(rings: LonLat[][], step = 1.4, flat = false): LonLat[] 
     const cos = Math.max(0.15, Math.cos((lat * Math.PI) / 180));
     // 平面の地図は経度を等間隔に（球では緯度に合わせて間隔を広げる）
     const lonStep = (lat < -60 ? step * 2.2 : step) / (flat ? 1 : cos);
+    // この行にかかる輪だけ、交点をまとめて求めておく
+    const row = boxes.filter((b) => lat >= b.minLat && lat <= b.maxLat).map((b) => ({ b, xs: crossings(lat, b.pts) }));
     for (let lon = -180; lon < 180; lon += lonStep) {
-      for (const b of boxes) {
-        if (lon < b.minLon || lon > b.maxLon || lat < b.minLat || lat > b.maxLat) continue;
-        if (inRing(lon, lat, b.pts)) {
+      for (const { b, xs } of row) {
+        if (lon < b.minLon || lon > b.maxLon) continue;
+        if (countAbove(xs, lon) % 2 === 1) {
           out.push([lon, lat]);
           break;
         }
