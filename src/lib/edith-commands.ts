@@ -4,10 +4,12 @@
  *   - 「新宿を3Dで見せて」：写真のような 3D の街を斜めから見せる
  *   - 「近くの飛行機を追って」「羽田の飛行機をピックアップ」：一番近い飛行機（船・バス）を選んで追いかける
  *   - 「雨雲を出して」「渋滞を消して」「地球全体に戻して」「追跡をやめて」：表示の切り替え
+ *   - 「風の流れを見せて」「東京の気温を見せて」「天気図を出して」：Windy の天気の地図（WEATHER）に切り替える
  * 質問・調べもの（教えて・天気・ニュース・検索など）は見分けず、これまでどおり AI に渡す。
  */
 import { findCity, type CityPlace } from "@/lib/earth/places";
 import { findPlaces } from "@/lib/edith-geo";
+import type { WindyOverlay } from "@/lib/earth/windy-map";
 
 export type EarthLayerKey = "quakes" | "sats" | "aircraft" | "traffic" | "buses" | "ships" | "radar" | "clouds" | "detail" | "city3d" | "webcams";
 export type TrackTarget = "aircraft" | "ship" | "bus";
@@ -18,7 +20,8 @@ export type EdithCommand =
   | { kind: "track"; target: TrackTarget }
   | { kind: "untrack" }
   | { kind: "layer"; layer: EarthLayerKey; on: boolean }
-  | { kind: "reset" };
+  | { kind: "reset" }
+  | { kind: "weather"; overlay: WindyOverlay | null; place: CityPlace | null };
 
 export const LAYER_LABEL: Record<EarthLayerKey, string> = {
   quakes: "地震",
@@ -47,7 +50,20 @@ const NEAR = /(近く|ちかく|この辺|このへん|このあたり|周り|�
 const AIR = /(飛行機|ひこうき|航空機|旅客機|機体|フライト)/;
 const SHIP = /(船|ふね|タンカー)/;
 const BUS = /バス/;
-const RESET = /(地球(の)?全体|全体(を|に|表示)|初期(の)?(視点|位置|画面)|最初の(視点|位置)|元の(視点|位置)|リセット)/;
+const RESET = /(地球(の)?全体|全体(を|に|表示)|初期(の)?(視点|位置|画面)|最初の(視点|位置)|元の(視点|位置)|リセット|地球儀に|earthに)/;
+// Windy の天気の地図（上ほど優先）。「雨雲」は雨雲レーダー（地球儀の重ね）なので、ここでは「雨の予報」だけ
+const WEATHER_OVERLAYS: [WindyOverlay, RegExp][] = [
+  ["gust", /突風/],
+  ["temp", /(気温|温度)/],
+  ["pressure", /(気圧|天気図)/],
+  ["rh", /湿度/],
+  ["waves", /(波|波浪)/],
+  ["rain", /(雨の予報|降水(量)?の?予報|雨量|雷)/],
+  ["clouds", /雲の予報/],
+  ["wind", /(風|台風)/],
+];
+const WEATHER_MAP = /(天気図|天気の地図|気象(図|の地図)|weather|ウェザー|windy|天気を(見せ|みせ|映|表示|出))/;
+const WEATHER_GUARD = /(教えて|おしえて|調べ|しらべ|検索|ニュース|なぜ|どうして|[?？]$)/;
 const UNTRACK = /(追跡|追従|追尾|追いかけ|追う|ついせき).{0,3}(やめ|止め|とめ|解除|終了|おわり|終わり)/;
 
 // 上ほど優先（「衛星写真」は「衛星」より、「雨雲」は「雲」より先）
@@ -71,6 +87,16 @@ const trackTarget = (t: string): TrackTarget | null => (AIR.test(t) ? "aircraft"
 export function parseEdithCommand(text: string): EdithCommand | null {
   const t = text.normalize("NFKC").toLowerCase().replace(/[\s　、。,.!！]/g, "");
   if (!t || t.length > 60) return null;
+  // Windy の天気の地図（「風の流れを見せて」「東京の気温を見せて」「天気図を出して」）。質問・調べものは AI に渡す
+  if (!WEATHER_GUARD.test(t) && !HIDE.test(t) && (SHOW.test(t) || /切り替/.test(t))) {
+    const ov = WEATHER_OVERLAYS.find(([, re]) => re.test(t))?.[0] ?? null;
+    if (WEATHER_MAP.test(t) || (ov && !/雨雲/.test(t))) {
+      const city = findCity(t);
+      const country = city ? null : (findPlaces(t, 1)[0] ?? null);
+      const place: CityPlace | null = city ?? (country ? { name: country.name, lat: country.lat, lon: country.lon, height: 1_500_000 } : null);
+      return { kind: "weather", overlay: ov, place };
+    }
+  }
   if (QUESTION.test(t)) return null;
   if (UNTRACK.test(t)) return { kind: "untrack" };
   if (RESET.test(t) && /(戻|もど|見せ|みせ|表示|リセット|にして)/.test(t)) return { kind: "reset" };

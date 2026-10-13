@@ -22,6 +22,7 @@ import { EMPTY_FETCH, layerStatus, type LayerFetchState, type LayerStatus } from
 import { parseQuakesResponse, QUAKE_POLL_MS, QUAKE_STALE_MS, type QuakesResponse } from "@/lib/earth/quakes";
 import { parseRadarResponse, RADAR_POLL_MS, RADAR_STALE_MS, RAINVIEWER_MAPS_URL, type RadarResponse } from "@/lib/earth/imagery";
 import { BUS_MAX_VIEW_AREA, BUS_POLL_MS, BUS_STALE_MS, bboxOverlaps, parseBusesResponse, parseShipsResponse, SHIP_MAX_AREA, SHIP_POLL_MS, SHIP_STALE_MS, TOEI_AREA, type BusesResponse, type ShipsResponse } from "@/lib/earth/transport";
+import { validWindyMapKey } from "@/lib/earth/windy-map";
 import { parseWebcamsResponse, WEBCAM_POLL_MS, WEBCAM_STALE_MS, type WebcamsResponse } from "@/lib/earth/webcams";
 import { AIRCRAFT_MAX_AREA, AIRCRAFT_POLL_MS, AIRCRAFT_STALE_MS, bboxArea, bboxKey, parseAircraftResponse, roundBBox, type AircraftResponse, type BBox } from "@/lib/earth/aircraft";
 import {
@@ -52,14 +53,17 @@ type WebcamsOk = Extract<WebcamsResponse, { ok: true }>;
 /** 外部サービスの設定の有無（/api/edith/earth/config）。キーは Google の 3D の街のものだけ（ブラウザが直接使うため） */
 export interface EarthConfig {
   google3dKey: string | null;
+  /** Windy の天気の地図（Map Forecast API）のキー（ブラウザが直接使うため） */
+  windyMapKey: string | null;
   services: { opensky: "auth" | "anonymous"; tomtom: boolean; odpt: boolean; ais: boolean; webcams: boolean };
 }
 export function parseEarthConfig(raw: unknown): EarthConfig | null {
-  const r = raw as { google3dKey?: unknown; services?: Record<string, unknown> } | null;
+  const r = raw as { google3dKey?: unknown; windyMapKey?: unknown; services?: Record<string, unknown> } | null;
   if (!r || typeof r !== "object" || !r.services || typeof r.services !== "object") return null;
   const s = r.services;
   return {
     google3dKey: typeof r.google3dKey === "string" && /^[A-Za-z0-9_-]{20,80}$/.test(r.google3dKey) ? r.google3dKey : null,
+    windyMapKey: validWindyMapKey(r.windyMapKey) ? r.windyMapKey : null,
     services: { opensky: s.opensky === "auth" ? "auth" : "anonymous", tomtom: s.tomtom === true, odpt: s.odpt === true, ais: s.ais === true, webcams: s.webcams === true },
   };
 }
@@ -324,6 +328,8 @@ export function useEarthData(o: {
   viewBox?: BBox | null;
   /** ライブカメラを探す場所（null なら探さない） */
   webcams?: { lat: number; lon: number; radiusKm: number; traffic: boolean } | null;
+  /** EARTH を出していなくても外部サービスの設定を読む（WEATHER の地図のキーなど） */
+  needConfig?: boolean;
 }) {
   const now = useTick();
   const { online, visible } = useOnlineVisible();
@@ -396,7 +402,7 @@ export function useEarthData(o: {
   const box = o.viewBox ? roundBBox(o.viewBox) : null;
   const aircraftUrl = o.active && o.aircraft && box && bboxArea(box) <= AIRCRAFT_MAX_AREA ? `/api/edith/earth/aircraft?bbox=${bboxKey(box)}` : null;
   const aircraft = useLayer<Omit<AircraftOk, "ok">>(aircraftUrl, AIRCRAFT_POLL_MS, AIRCRAFT_STALE_MS, parseAircraftResponse as never, now, online, paused);
-  const config = useEarthConfig(o.active);
+  const config = useEarthConfig(o.active || Boolean(o.needConfig));
   /** 飛行機を出すには広すぎる範囲を見ている */
   const aircraftTooWide = Boolean(o.aircraft && (!box || bboxArea(box) > AIRCRAFT_MAX_AREA));
   // 都営バス：キーがあり、東京のあたりに寄って見ているときだけ

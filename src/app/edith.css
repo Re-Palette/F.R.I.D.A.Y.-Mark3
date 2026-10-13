@@ -2373,13 +2373,17 @@
   clip-path: inherit;
 }
 .egev-feed[hidden],
-.egev-earth[hidden] {
+.egev-earth[hidden],
+.egev-weather[hidden] {
   display: none !important;
 }
 /* 地球儀には映像の効果（filter・3D の傾き）をかけない（重くなる・クリックの位置がずれるため） */
 .eview__slot > .egev-earth,
 .eview[data-bloom] .eview__slot > .egev-earth,
-.eview[data-3d] .eview__slot > .egev-earth {
+.eview[data-3d] .eview__slot > .egev-earth,
+.eview__slot > .egev-weather,
+.eview[data-bloom] .eview__slot > .egev-weather,
+.eview[data-3d] .eview__slot > .egev-weather {
   filter: none;
   transform: none;
 }
@@ -2739,6 +2743,65 @@
 }
 
 /* ---------- 小さめのノート PC ---------- */
+/* WEATHER：Windy の天気の地図 */
+.egev-weather,
+.eweather {
+  position: absolute;
+  inset: 0;
+}
+.eweather {
+  background: #05020f;
+}
+.eweather__map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.eweather__msg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  max-width: 80%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  color: var(--e-dim);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+.eweather__msg--err {
+  color: #ff8fb3;
+}
+.eweather-bar {
+  position: absolute;
+  left: 50%;
+  top: 17%;
+  z-index: 8;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  max-width: 94%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+.eweather-bar button {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(6, 3, 18, 0.82);
+  color: var(--e-text);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.eweather-bar button[data-on] {
+  border-color: var(--e-glow);
+  background: var(--e-fill);
+  color: #fff;
+}
+
 /* ライブカメラ：詳細の静止画・ピックアップの一覧 */
 .ecam__img {
   display: block;

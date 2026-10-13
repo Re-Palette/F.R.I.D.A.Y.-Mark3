@@ -60,3 +60,18 @@ test("受け口：画面が開いていなければ null（AI に渡す）・開
   off();
   assert.equal(runEdithCommand("雨雲を出して"), null);
 });
+
+test("Windy の天気の地図（WEATHER）に切り替える", () => {
+  assert.deepEqual(parseEdithCommand("風の流れを見せて"), { kind: "weather", overlay: "wind", place: null });
+  const a = parseEdithCommand("東京の気温を見せて");
+  assert.ok(a?.kind === "weather" && a.overlay === "temp" && a.place?.name === "東京");
+  assert.deepEqual(parseEdithCommand("天気図を出して"), { kind: "weather", overlay: "pressure", place: null });
+  assert.deepEqual(parseEdithCommand("台風の様子を見せて"), { kind: "weather", overlay: "wind", place: null });
+  assert.deepEqual(parseEdithCommand("雨の予報を見せて"), { kind: "weather", overlay: "rain", place: null });
+  assert.deepEqual(parseEdithCommand("天気を見せて"), { kind: "weather", overlay: null, place: null });
+  // 雨雲は地球儀の雨雲レーダー・質問は AI
+  assert.deepEqual(parseEdithCommand("雨雲を出して"), { kind: "layer", layer: "radar", on: true });
+  assert.equal(parseEdithCommand("明日の気温を教えて"), null);
+  assert.equal(parseEdithCommand("風が強いのはなぜ？"), null);
+  assert.deepEqual(parseEdithCommand("地球儀に戻して"), { kind: "reset" });
+});

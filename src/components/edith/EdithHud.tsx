@@ -28,6 +28,8 @@ import { TRAFFIC_MAX_VIEW_AREA, TRAFFIC_TILE_URL } from "@/lib/earth/transport";
 import { findCity } from "@/lib/earth/places";
 import { bboxArea, roundBBox } from "@/lib/earth/aircraft";
 import { CamGrid, EarthDetail, EarthLayersPanel } from "./EarthPanel";
+import { EdithWeather, type WeatherCenter } from "./EdithWeather";
+import { DEFAULT_WEATHER, parseWeatherSettings, WEATHER_SETTINGS_KEY, WINDY_OVERLAY_LABEL, WINDY_OVERLAYS, zoomForHeight, type WeatherSettings } from "@/lib/earth/windy-map";
 import { distanceKm, WEBCAM_MAX_VIEW_HEIGHT_M, WEBCAM_RADIUS_DEFAULT, WEBCAM_RADIUS_MAX, webcamQuery } from "@/lib/earth/webcams";
 import { aircraftPositionAt } from "@/lib/earth/aircraft";
 import { LAYER_LABEL, setEdithCommandHandler, type EdithCommand, type TrackTarget } from "@/lib/edith-commands";
@@ -324,10 +326,20 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   // GOD'S EYE VIEW に映すもの：EARTH（3D 地球儀。円の枠）か LOCAL FEED。LOCAL FEED の映像は EARTH の間も止めない（隠すだけ）
   const gevMode = display.gevMode;
   const earthActive = gevMode === "earth";
-  const shape = earthActive ? "circle" : feedOn ? display.feedShape : "circle";
+  const weatherActive = gevMode === "weather";
+  const feedActive = gevMode === "feed";
+  // WEATHER は横長の枠（Windy の地図の操作・時間の帯が円で切れないように）
+  const shape = weatherActive ? "wide" : feedActive && feedOn ? display.feedShape : "circle";
   const [earth, setEarth] = useStored<EarthSettings>(EARTH_SETTINGS_KEY, parseEarthSettings, DEFAULT_EARTH);
   // 地球儀は、初めて EARTH を開いたときに作り、その後は LOCAL FEED にしても作り直さない（隠して描画を止める）
   const [earthMounted, setEarthMounted] = useState(earthActive);
+  // WEATHER（Windy の天気の地図）：初めて開いたときに作り、その後は外さない（Windy の地図はページの中で 1 回しか作れない）
+  const [weatherMounted, setWeatherMounted] = useState(weatherActive);
+  useEffect(() => {
+    if (weatherActive) setWeatherMounted(true);
+  }, [weatherActive]);
+  const [weather, setWeather] = useStored<WeatherSettings>(WEATHER_SETTINGS_KEY, parseWeatherSettings, DEFAULT_WEATHER);
+  const [weatherCenter, setWeatherCenter] = useState<WeatherCenter | null>(null);
   useEffect(() => {
     if (earthActive) setEarthMounted(true);
   }, [earthActive]);
@@ -346,6 +358,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
     viewBox && viewCenter && viewHeight !== null && viewHeight <= WEBCAM_MAX_VIEW_HEIGHT_M
       ? webcamQuery(viewCenter.lat, viewCenter.lon, Math.min(WEBCAM_RADIUS_MAX, distanceKm(viewBox.lamin, viewBox.lomin, viewBox.lamax, viewBox.lomax) / 2))
       : null;
+  /** 地球儀で見ている所（天気の地図を開く場所）。地球全体を見ているときは決めない（既定の場所で開く） */
+  const weatherAtView = viewBox && viewCenter && viewBox.lomax - viewBox.lomin <= 120 ? { ...viewCenter, zoom: zoomForHeight(viewHeight) } : null;
   const camQuery = earth.webcams ? (camFocus ? webcamQuery(camFocus.lat, camFocus.lon, camFocus.radiusKm) : passiveCams) : null;
   const camTraffic = camFocus?.traffic ?? false;
   const [city3d, setCity3d] = useState<{ state: "off" | "loading" | "ready" | "error"; message?: string }>({ state: "off" });
@@ -360,6 +374,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
     ships: earth.ships,
     viewBox,
     webcams: camQuery ? { ...camQuery, traffic: camTraffic } : null,
+    needConfig: weatherActive,
   });
   // 渋滞：寄って見ているときだけ、見ている範囲（0.5 度刻みに広げたもの）の画像だけ取りに行く
   const trafficRect = viewBox && bboxArea(viewBox) <= TRAFFIC_MAX_VIEW_AREA ? roundBBox(viewBox) : null;
@@ -411,6 +426,16 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const runCmdRef = useRef<(c: EdithCommand) => string>(() => "");
   runCmdRef.current = (c) => {
     const cfg = earthData.config;
+    if (c.kind === "weather") {
+      setD("gevMode", "weather");
+      if (c.overlay) setWeather((w) => ({ ...w, overlay: c.overlay! }));
+      const at = c.place ? { lat: c.place.lat, lon: c.place.lon, zoom: zoomForHeight(c.place.height) } : weatherAtView;
+      if (at) setWeatherCenter((w) => ({ ...at, key: (w?.key ?? 0) + 1 }));
+      const label = WINDY_OVERLAY_LABEL[c.overlay ?? weather.overlay];
+      note(`WEATHER: ${label}${c.place ? ` · ${c.place.name}` : ""}`);
+      const missing = cfg && !cfg.windyMapKey ? "Windy の天気の地図はキーが未設定のため表示できません。" : "";
+      return missing || `${c.place ? `${c.place.name}の` : ""}${label}を表示します。`;
+    }
     if (!earthActive) setD("gevMode", "earth");
     const keyMissing = (layer: string) => {
       if (!cfg) return "";
@@ -812,10 +837,10 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             data-allocation={display.allocation}
             data-outside={display.outside}
             role="region"
-            aria-label={earthActive ? `God's Eye View の 3D 地球儀（${earthSummary}）` : `God's Eye View の映像（${feedSum.status}）`}
+            aria-label={earthActive ? `God's Eye View の 3D 地球儀（${earthSummary}）` : weatherActive ? `God's Eye View の天気の地図（${WINDY_OVERLAY_LABEL[weather.overlay]}）` : `God's Eye View の映像（${feedSum.status}）`}
           >
             {/* LOCAL FEED：EARTH の間も外さない（カメラ・画面共有を止めない。見えないようにするだけ） */}
-            <div className="egev-feed" hidden={earthActive}>
+            <div className="egev-feed" hidden={!feedActive}>
               <EdithFeedView shape={shape} />
             </div>
             {earthMounted && (
@@ -851,13 +876,32 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                 />
               </div>
             )}
+            {weatherMounted && (
+              <div className="egev-weather" hidden={!weatherActive}>
+                <EdithWeather active={weatherActive} apiKey={earthData.config?.windyMapKey ?? null} configLoading={!earthData.config} overlay={weather.overlay} center={weatherCenter} />
+              </div>
+            )}
           </div>
-          {/* EARTH / LOCAL FEED の切り替え */}
+          {/* EARTH / WEATHER / LOCAL FEED の切り替え */}
           <div className="egev-mode" role="tablist" aria-label="GOD'S EYE VIEW に映すもの">
             <button type="button" role="tab" aria-selected={earthActive} data-on={earthActive || undefined} onClick={() => setD("gevMode", "earth")}>
               EARTH
             </button>
-            <button type="button" role="tab" aria-selected={!earthActive} data-on={!earthActive || undefined} onClick={() => setD("gevMode", "feed")} title={feed.status === "live" ? "LOCAL FEED は接続中です（EARTH の間も止めていません）" : "Web カメラ・画面共有"}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={weatherActive}
+              data-on={weatherActive || undefined}
+              onClick={() => {
+                // 地球儀で見ていた場所の天気の地図を開く
+                if (!weatherActive && weatherAtView) setWeatherCenter((w) => ({ ...weatherAtView, key: (w?.key ?? 0) + 1 }));
+                setD("gevMode", "weather");
+              }}
+              title="Windy の天気の地図（風・雨・気温・雲・気圧・波）"
+            >
+              WEATHER
+            </button>
+            <button type="button" role="tab" aria-selected={feedActive} data-on={feedActive || undefined} onClick={() => setD("gevMode", "feed")} title={feed.status === "live" ? "LOCAL FEED は接続中です（EARTH の間も止めていません）" : "Web カメラ・画面共有"}>
               {feed.status === "live" && <i className="egev-mode__rec" aria-label="接続中" />}
               LOCAL FEED
             </button>
@@ -865,13 +909,24 @@ export const EdithHud = memo(function EdithHud(props: Props) {
           <span className="eview__link" aria-hidden="true"><I n="link" s={20} /></span>
           {earthActive ? (
             <span className="eview__live" data-on={earthData.quakes.status === "LIVE" || earthData.sats.status === "LIVE" || undefined}>EARTH &gt; GOD&apos;S EYE VIEW : {earthSummary}</span>
+          ) : weatherActive ? (
+            <span className="eview__live" data-on={Boolean(earthData.config?.windyMapKey) || undefined}>WEATHER &gt; GOD&apos;S EYE VIEW : {WINDY_OVERLAY_LABEL[weather.overlay]}（Windy）</span>
           ) : (
             <span className="eview__live" data-on={feed.status === "live" || undefined}>LIVE &gt; GOD&apos;S EYE VIEW : {feedSum.status}</span>
           )}
-          {!earthActive && <EdithFeedBar shape={display.feedShape} onShape={(v) => setD("feedShape", v)} focus={display.clean} onFocus={(v) => setD("clean", v)} />}
+          {weatherActive && (
+            <div className="eweather-bar" role="toolbar" aria-label="天気の地図に出すもの">
+              {WINDY_OVERLAYS.map((o) => (
+                <button key={o.key} type="button" aria-pressed={weather.overlay === o.key} data-on={weather.overlay === o.key || undefined} onClick={() => setWeather((w) => ({ ...w, overlay: o.key }))} title={o.label}>
+                  {o.short}
+                </button>
+              ))}
+            </div>
+          )}
+          {feedActive && <EdithFeedBar shape={display.feedShape} onShape={(v) => setD("feedShape", v)} focus={display.clean} onFocus={(v) => setD("clean", v)} />}
         </div>
 
-        {earthActive && cmdNote && (
+        {(earthActive || weatherActive) && cmdNote && (
           <p key={cmdNote.key} className="ecmd-note" role="status">
             {cmdNote.text}
           </p>
@@ -1052,6 +1107,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             <p><span className="ectl__dot" />UTC {utc}</p>
             {earthActive ? (
               <p>SRC: GOD&apos;S EYE VIEW (EARTH)  FEED: {earthSummary}</p>
+            ) : weatherActive ? (
+              <p>SRC: GOD&apos;S EYE VIEW (WEATHER)  FEED: {WINDY_OVERLAY_LABEL[weather.overlay]}（Windy）</p>
             ) : (
               <p>SRC: GOD&apos;S EYE VIEW{feed.kind && feed.status !== "idle" ? ` (${feedSum.src})` : ""}  FEED: {feedSum.status}</p>
             )}
@@ -1087,7 +1144,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
                   setEarthTrack(null);
                   setEarthReset((k) => k + 1);
                 }}
-                viewStatus={earthActive ? `VIEW: ${earthView}` : "VIEW: LOCAL FEED 表示中"}
+                viewStatus={earthActive ? `VIEW: ${earthView}` : weatherActive ? "VIEW: WEATHER 表示中" : "VIEW: LOCAL FEED 表示中"}
                 radar={earthData.radar}
                 aircraft={earthData.aircraft}
                 aircraftTooWide={earthData.aircraftTooWide}
@@ -1274,6 +1331,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             <p className="echart__head"><span>GEV LINK</span></p>
             {earthActive ? (
               <b data-on={earthData.quakes.status === "LIVE" || earthData.sats.status === "LIVE" || undefined}>EARTH</b>
+            ) : weatherActive ? (
+              <b data-on={Boolean(earthData.config?.windyMapKey) || undefined}>WEATHER</b>
             ) : (
               <b data-on={feed.status === "live" || undefined}>{feed.status === "live" ? feedSum.src : feedSum.status}</b>
             )}
