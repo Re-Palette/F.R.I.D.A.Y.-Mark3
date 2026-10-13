@@ -4,6 +4,7 @@
  *   2. ニュースの時間を過ぎていて、今日まだ送っていなければ、今日のニュースの見出しを通知する
  *   3. 日曜の夜なら、週の振り返りを作って通知する（週 1 回。通知の設定が無くてもノートは作る）
  *   4. 場所の入った予定の前に「そろそろ出る時間です」（全端末共通のカレンダー接続 GOOGLE_REFRESH_TOKEN があるとき）
+ *   リマインダーと出発の知らせは、LINE の設定（LINE_CHANNEL_ACCESS_TOKEN・LINE_ALLOWED_USER_IDS）があれば LINE にも送る
  */
 import { getPushConfig, listSubscriptions, readPushState, sendPush, writePushState } from "@/integrations/push";
 import { listReminders, markReminderDone } from "@/integrations/reminders";
@@ -17,6 +18,7 @@ import { CalendarAccess, getCalendarConfig } from "@/integrations/google-calenda
 import { getTasksOverview } from "@/integrations/tasks";
 import { getWeather } from "@/integrations/weather";
 import { isBrainConfigured } from "@/memory/github-brain";
+import { canNotifyLine, notifyLine } from "@/integrations/line";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,16 +31,24 @@ export async function GET(req: Request): Promise<Response> {
   }
   // 週の振り返り（通知の設定が無くても作る）
   const weekly = await runWeeklyIfDue().catch((err: unknown) => ({ status: "skipped" as const, reason: err instanceof Error ? err.message : "failed" }));
-  if (!getPushConfig().configured || !isBrainConfigured()) return Response.json({ ok: true, weekly, skipped: "push or brain not configured" });
-  if (!(await listSubscriptions()).length) return Response.json({ ok: true, weekly, skipped: "no devices" });
+  // 知らせる先：この端末の通知（Web プッシュ）と LINE。どちらも無ければ何もしない
+  const line = canNotifyLine();
+  const webPush = getPushConfig().configured && (await listSubscriptions().catch(() => [])).length > 0;
+  if (!isBrainConfigured()) return Response.json({ ok: true, weekly, skipped: "brain not configured" });
+  if (!webPush && !line) return Response.json({ ok: true, weekly, skipped: "no devices" });
+  /** 端末の通知と LINE の両方に送る（LINE はリマインダー・出発の知らせだけ） */
+  const notify = async (p: { title: string; body: string; tag: string }, toLine: boolean) => {
+    if (webPush) await sendPush({ ...p, url: "/" }).catch(() => undefined);
+    if (toLine && line) await notifyLine(p.title, p.body).catch(() => 0);
+  };
 
-  const result: { reminders: number; news: boolean | string; depart: number } = { reminders: 0, news: false, depart: 0 };
+  const result: { reminders: number; news: boolean | string; depart: number; line: boolean } = { reminders: 0, news: false, depart: 0, line };
 
   // 1. リマインダー（閉じている間に来たもの。12 時間より前のものは送らずに完了だけにする）
   const now = Date.now();
   for (const r of (await listReminders()).filter((r) => r.at <= now)) {
     if (now - r.at < 12 * 60 * 60_000) {
-      await sendPush({ title: `⏰ ${r.label.split(" ")[1] ?? ""} リマインダー`, body: r.text, tag: `reminder-${r.id}`, url: "/" });
+      await notify({ title: `⏰ ${r.label.split(" ")[1] ?? ""} リマインダー`, body: r.text, tag: `reminder-${r.id}` }, true);
       result.reminders++;
     }
     await markReminderDone(r.id);
@@ -48,7 +58,7 @@ export async function GET(req: Request): Promise<Response> {
   const settings = await readNewsSettings();
   const { date, time } = localNow(getTimezone());
   const state = await readPushState();
-  if (settings.time !== "off" && time >= settings.time && state.newsDate !== date) {
+  if (webPush && settings.time !== "off" && time >= settings.time && state.newsDate !== date) {
     await writePushState({ ...state, newsDate: date }); // 失敗しても何度も送らないよう先に記録
     try {
       const lines = await newsHeadlines(settings.topics);
@@ -78,7 +88,7 @@ export async function GET(req: Request): Promise<Response> {
         const day = weather?.days.find((d) => d.date === date);
         const dueToday = (tasks?.todos ?? []).filter((t) => t.due === date).map((t) => t.text);
         for (const ev of fresh) {
-          await sendPush({ title: "🚶 そろそろ出発", body: departText(ev, { rain: day?.rain, snow: day?.label.includes("雪"), dueToday }), tag: `depart-${ev.id}`, url: "/" });
+          await notify({ title: "🚶 そろそろ出発", body: departText(ev, { rain: day?.rain, snow: day?.label.includes("雪"), dueToday }), tag: `depart-${ev.id}` }, true);
           result.depart++;
         }
       }

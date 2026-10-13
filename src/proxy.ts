@@ -12,6 +12,8 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/manifest.webmanifest" || pathname === "/sw.js" || pathname.startsWith("/icons/")) return NextResponse.next();
   // 自動実行（Vercel Cron）は合言葉の代わりに CRON_SECRET で確かめる（各ルートで検証）
   if (pathname.startsWith("/api/cron/")) return NextResponse.next();
+  // LINE からの通知は合言葉の代わりに、チャネルシークレットの署名で確かめる（ルートで検証）
+  if (pathname === "/api/line/webhook") return NextResponse.next();
 
   const mode = getAuthMode();
   if (mode === "open") return NextResponse.next();
