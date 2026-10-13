@@ -13,6 +13,7 @@ import type * as T from "three";
 import { buildAsset, buildModel, holoMaterial } from "../hologram-visuals";
 import { registerWorkspace } from "@/lib/karen-controller";
 import { isScreenCovered } from "@/lib/screen-cover";
+import { tooSoon } from "@/lib/frame-cap";
 import { getScene, selectObject, updateObject, useScene, type SceneObject, type Vec3 } from "@/lib/karen-scene";
 import type { Shape } from "@/lib/karen-intent";
 
@@ -355,6 +356,8 @@ export const KarenWorkspace = memo(function KarenWorkspace({ active, mode }: { a
           last = now;
           return;
         }
+        // 更新の速い画面でも 1 秒 60 回ほどまで（src/lib/frame-cap.ts）
+        if (tooSoon(now, last)) return;
         const dt = Math.min(0.1, (now - last) / 1000);
         last = now;
         time.value += dt;

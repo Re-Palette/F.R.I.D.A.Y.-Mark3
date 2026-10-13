@@ -14,6 +14,7 @@ import type * as T from "three";
 import { domeY, fromPlane, landDots, landRings, MAP_H, MAP_W, toPlane, type LonLat } from "@/lib/edith-globe-data";
 import { holdReveal, isScreenCovered } from "@/lib/screen-cover";
 import { webglAvailable } from "@/lib/webgl";
+import { tooSoon } from "@/lib/frame-cap";
 
 export interface GlobePoint {
   id: string;
@@ -418,6 +419,8 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
           last = now;
           return;
         }
+        // 更新の速い画面でも 1 秒 60 回ほどまで（src/lib/frame-cap.ts）
+        if (tooSoon(now, last)) return;
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
         if (flight) {

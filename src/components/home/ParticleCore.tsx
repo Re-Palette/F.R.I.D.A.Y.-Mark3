@@ -13,6 +13,7 @@ import { memo, useEffect, useRef } from "react";
 import { voiceLevel } from "@/lib/voice-level";
 import { resizeWorthIt, settled } from "@/lib/settle";
 import { isScreenCovered } from "@/lib/screen-cover";
+import { tooSoon } from "@/lib/frame-cap";
 
 export type CoreMode = "idle" | "listening" | "connect" | "think" | "search" | "create" | "speaking";
 
@@ -414,7 +415,7 @@ export const ParticleCore = memo(function ParticleCore({
       // ローカル AI（PC の CPU）が答えを作っている間は、1 秒 30 回に抑えて CPU を空ける（それ以上減らすとカクついて見える）
       // 画面の更新の間隔（約 16.7ms）より少し短く比べて、更新 1 回分の誤差でコマを飛ばさないようにする
       const wait = document.body.dataset.localBusy !== undefined ? 32 : gap;
-      if (wait && now - last < wait - 4) return;
+      if (wait ? now - last < wait - 4 : tooSoon(now, last)) return; // 何も無ければ、更新の速い画面でも 1 秒 60 回ほどまで
       const t0 = performance.now();
       draw(now);
       drawAvg = drawAvg * 0.95 + (performance.now() - t0) * 0.05;

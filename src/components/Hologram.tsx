@@ -17,6 +17,7 @@ import { buildAsset, buildModel, dotTexture, holoMaterial } from "./hologram-vis
 import { toggleHand, useHandStatus, warmHands } from "./HandControl";
 import { resizeWorthIt, settled } from "@/lib/settle";
 import { isScreenCovered } from "@/lib/screen-cover";
+import { tooSoon } from "@/lib/frame-cap";
 
 const ORANGE = 0xff8a1f;
 const AMBER = 0xffb45a;
@@ -397,6 +398,8 @@ export const Hologram = memo(function Hologram({
           last = now;
           return;
         }
+        // 更新の速い画面でも 1 秒 60 回ほどまで（src/lib/frame-cap.ts）
+        if (tooSoon(now, last)) return;
         const raw = (now - last) / 1000;
         const dt = Math.min(0.05, raw);
         last = now;

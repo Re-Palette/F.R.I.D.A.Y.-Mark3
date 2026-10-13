@@ -201,6 +201,8 @@ function EdithEarthImpl(p: Props) {
           return;
         }
         viewerRef.current = viewer;
+        // 操作中に描き直すのも 1 秒 60 回まで（更新の速い画面で 2 倍以上描かないように。src/lib/frame-cap.ts と同じ考え）
+        viewer.targetFrameRate = 60;
         const scene = viewer.scene;
         scene.backgroundColor = C.Color.TRANSPARENT;
         if (scene.sun) scene.sun.show = false;
