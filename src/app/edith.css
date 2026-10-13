@@ -2300,6 +2300,36 @@
 .ewin {
   transition: opacity 0.25s;
 }
+/* LIVE（ライブカメラ）・WEATHER の間は、左右のパネルを細くして、真ん中の映像を大きく */
+@media (min-width: 1081px) {
+  .edith[data-gev="cams"],
+  .edith[data-gev="weather"] {
+    grid-template-columns: minmax(262px, 18.5%) minmax(0, 1fr) minmax(272px, 19%);
+  }
+  .edith[data-gev="weather"] .eview[data-shape="wide"] {
+    width: min(100%, calc((100dvh - 400px) * 16 / 9));
+  }
+  /* 右上の ACTIVE STYLE は、真ん中にはみ出さない（大きくした映像と重なるため） */
+  .edith[data-gev="cams"] .estyle,
+  .edith[data-gev="weather"] .estyle {
+    grid-template-columns: minmax(0, 1fr) 118px;
+    margin-left: -12px;
+  }
+  .edith[data-gev="cams"] .ebrand__motto,
+  .edith[data-gev="weather"] .ebrand__motto {
+    letter-spacing: 0.3em;
+  }
+  .edith[data-gev="cams"] .edial,
+  .edith[data-gev="weather"] .edial {
+    width: 118px;
+    height: 118px;
+  }
+  .edith[data-gev="cams"] .estyle__coord,
+  .edith[data-gev="weather"] .estyle__coord {
+    padding-left: 22px;
+    white-space: nowrap;
+  }
+}
 /* FOCUS（CLEAN UI）：左右のパネルの場所も中央に渡して、映像をできるだけ大きく */
 @media (min-width: 1081px) {
   .edith[data-clean] {
@@ -2330,6 +2360,22 @@
   }
 }
 @media (max-width: 640px) {
+  .eview[data-gev="cams"] {
+    height: max(460px, calc(100dvh - 300px));
+  }
+  .ecamwall {
+    padding: 8px;
+    gap: 6px;
+  }
+  .ecamwall__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ecamwall__grid li:nth-child(n + 5) {
+    display: none;
+  }
+  .ecamwall__tools button:not(:first-of-type) {
+    display: none;
+  }
   .ecams {
     top: auto;
     bottom: 12%;
@@ -2383,7 +2429,10 @@
 .eview[data-3d] .eview__slot > .egev-earth,
 .eview__slot > .egev-weather,
 .eview[data-bloom] .eview__slot > .egev-weather,
-.eview[data-3d] .eview__slot > .egev-weather {
+.eview[data-3d] .eview__slot > .egev-weather,
+.eview__slot > .egev-cams,
+.eview[data-bloom] .eview__slot > .egev-cams,
+.eview[data-3d] .eview__slot > .egev-cams {
   filter: none;
   transform: none;
 }
@@ -2800,6 +2849,269 @@
   border-color: var(--e-glow);
   background: var(--e-fill);
   color: #fff;
+}
+
+/* LIVE：ピックアップした場所のライブカメラ（GOD'S EYE VIEW いっぱい。上：大きな映像 / 中：一覧 / 下：最新の更新） */
+.eview[data-gev="cams"] {
+  width: 100%;
+  height: max(380px, calc(100dvh - 300px));
+  aspect-ratio: auto;
+  margin-bottom: 110px;
+}
+.eview[data-gev="cams"] .eview__slot {
+  background: rgba(8, 5, 24, 0.92);
+  box-shadow: inset 0 0 0 1px var(--e-line-dim);
+}
+.egev-cams {
+  position: absolute;
+  inset: 0;
+}
+/* 上の見出し（LIVE CAM / カメラの名前）と重なるので、円の上の印・状態の行は出さない */
+.eview[data-gev="cams"] .eview__link,
+.eview[data-gev="cams"] .eview__live {
+  display: none;
+}
+.ecamwall {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  padding: 12px 14px;
+  color: var(--e-text);
+  font-size: 12px;
+}
+.ecamwall__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(12, 6, 30, 0.75);
+  letter-spacing: 0.06em;
+}
+.ecamwall__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4f6d;
+  box-shadow: 0 0 8px #ff4f6d;
+  flex: none;
+}
+.ecamwall__head b {
+  letter-spacing: 0.14em;
+}
+.ecamwall__sep {
+  color: var(--e-dim);
+}
+.ecamwall__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.ecamwall__tag {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--e-line);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--e-accent);
+}
+.ecamwall__stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--e-line);
+  background: #05020f;
+  box-shadow: 0 0 18px rgba(139, 53, 255, 0.25);
+}
+.ecamwall__stage img,
+.ecamwall__stage iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: cover;
+}
+.ecamwall__noimg {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--e-dim);
+}
+.ecamwall__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  gap: 2px;
+  padding: 26px 14px 10px;
+  background: linear-gradient(transparent, rgba(4, 2, 12, 0.88));
+  pointer-events: none;
+}
+.ecamwall__caption b {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+.ecamwall__caption span {
+  font-size: 11px;
+  color: var(--e-dim);
+}
+.ecamwall__tools {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ecamwall__tools button,
+.ecamwall__no {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--e-line);
+  background: rgba(9, 5, 26, 0.85);
+  color: var(--e-text);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  display: inline-flex;
+  align-items: center;
+}
+.ecamwall__tools button {
+  cursor: pointer;
+}
+.ecamwall__tools button:hover,
+.ecamwall__tools button[aria-pressed="true"] {
+  border-color: var(--e-glow);
+  background: var(--e-fill);
+}
+.ecamwall__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ecamwall__grid button {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 6.5;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--e-line-dim);
+  background: #05020f;
+  color: var(--e-text);
+  cursor: pointer;
+}
+.ecamwall__grid button[data-on] {
+  border-color: var(--e-glow);
+  box-shadow: 0 0 12px rgba(139, 53, 255, 0.55);
+}
+.ecamwall__grid img,
+.ecamwall__thumbnone {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ecamwall__thumbnone {
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  color: var(--e-dim);
+}
+.ecamwall__label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 14px 7px 5px;
+  background: linear-gradient(transparent, rgba(4, 2, 12, 0.9));
+  text-align: left;
+}
+.ecamwall__label b {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ecamwall__label i {
+  flex: none;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  color: var(--e-dim);
+}
+.ecamwall__grid button[data-on] .ecamwall__label i {
+  color: var(--e-online);
+}
+.ecamwall__empty {
+  grid-row: 2 / 4;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--e-line-dim);
+  color: var(--e-dim);
+  text-align: center;
+  padding: 16px;
+}
+.ecamwall__foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--e-line-dim);
+  background: rgba(12, 6, 30, 0.75);
+}
+.ecamwall__chip {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--e-fill);
+  font-size: 11px;
+}
+.ecamwall__status {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.ecamwall__status b {
+  font-weight: 500;
+}
+.ecamwall__status small {
+  overflow: hidden;
+  font-size: 10px;
+  color: var(--e-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ecamwall a {
+  color: var(--e-accent);
+}
+.ecamwall__more {
+  flex: none;
+  padding: 6px 12px;
+  border: 1px solid var(--e-line);
+  color: var(--e-text) !important;
+  text-decoration: none;
+  font-size: 11px;
+}
+.ecamwall__more:hover {
+  border-color: var(--e-glow);
 }
 
 /* ライブカメラ：詳細の静止画・ピックアップの一覧 */

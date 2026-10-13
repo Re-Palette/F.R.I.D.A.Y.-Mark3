@@ -9,7 +9,7 @@ export type DisplayAllocation = "elastic" | "weighted";
 /** 映像が映っているときの枠の形：wide＝横長 16:9（既定）／ circle＝円 */
 export type FeedShape = "wide" | "circle";
 /** GOD'S EYE VIEW に映すもの：earth＝3D 地球儀（既定）／ feed＝LOCAL FEED（Web カメラ・画面共有） */
-export type GevMode = "earth" | "feed" | "weather";
+export type GevMode = "earth" | "feed" | "weather" | "cams";
 
 export interface DisplaySettings {
   /** 円のまわりの計器（目盛り・光る弧・LIVE 表示） */
@@ -107,7 +107,7 @@ export function parseDisplay(raw: unknown): DisplaySettings {
     // 前の版で保存した設定には無い：既定（横長）にする
     feedShape: o.feedShape === "circle" || o.feedShape === "wide" ? o.feedShape : d.feedShape,
     // 前の版で保存した設定には無い：既定（3D 地球儀）にする
-    gevMode: o.gevMode === "feed" || o.gevMode === "earth" || o.gevMode === "weather" ? o.gevMode : d.gevMode,
+    gevMode: o.gevMode === "feed" || o.gevMode === "earth" || o.gevMode === "weather" || o.gevMode === "cams" ? o.gevMode : d.gevMode,
   };
 }
 

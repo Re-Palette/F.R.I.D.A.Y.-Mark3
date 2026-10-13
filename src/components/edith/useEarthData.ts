@@ -414,7 +414,7 @@ export function useEarthData(o: {
   // ライブカメラ：キーがあり、探す場所が決まっているときだけ（静止画の URL が切れる前に取り直す）
   const w = o.webcams;
   const webcams = useLayer<Omit<WebcamsOk, "ok">>(
-    o.active && w && config?.services.webcams ? `/api/edith/earth/webcams?lat=${w.lat}&lon=${w.lon}&r=${w.radiusKm}${w.traffic ? "&cat=traffic" : ""}` : null,
+    (o.active || o.needConfig) && w && config?.services.webcams ? `/api/edith/earth/webcams?lat=${w.lat}&lon=${w.lon}&r=${w.radiusKm}${w.traffic ? "&cat=traffic" : ""}` : null,
     WEBCAM_POLL_MS,
     WEBCAM_STALE_MS,
     parseWebcamsResponse as never,
