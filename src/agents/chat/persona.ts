@@ -34,6 +34,8 @@ export interface PersonaInput {
   search?: boolean;
   /** ニュースの設定と、今回まとめて伝えるか */
   news?: AgentContext["news"];
+  /** 今日のニュースの記事（FreeNewsApi。まとめて伝えるときだけ。あればこれからまとめる） */
+  newsArticles?: string | null;
   /** プロジェクトと未完了の ToDo（脳が無ければ null） */
   tasks?: TasksOverview | null;
   /** これからのリマインダー */
@@ -102,6 +104,7 @@ export function buildSystemInstruction({
   weather,
   search,
   news,
+  newsArticles,
   tasks,
   reminders,
   company,
@@ -214,7 +217,7 @@ F.R.I.D.A.Y.：FRIDAY-Mark3 は会話基盤が見えてきています。次は�
   if (replyLength === "long") out += "\n\n# ユーザーの好み\n- 返答は詳しめに。理由・具体例・次の一手まで丁寧に説明する。";
   if (weather) out += `\n\n# 天気（Open-Meteo）\n${weatherSummary(weather)}`;
   out += BROWSER_RULES;
-  if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone);
+  if (news) out += newsSection(news, Boolean(search), Boolean(voice), now, timezone, newsArticles ?? null);
   if (memoryConnected) out += tasksSection(tasks ?? null, reminders ?? null, now, timezone);
   if (camera) out += CAMERA_RULES;
   if (files) out += FILE_RULES;
@@ -321,7 +324,7 @@ ${list}
 
 
 /** ニュースのまとめと、ニュース設定の変え方 */
-function newsSection(news: NonNullable<AgentContext["news"]>, search: boolean, voice: boolean, now: Date, timezone: string): string {
+function newsSection(news: NonNullable<AgentContext["news"]>, search: boolean, voice: boolean, now: Date, timezone: string, articles: string | null): string {
   const { settings, deliver, canSave } = news;
   const topics = settings.topics.length ? settings.topics.join("、") : "（未設定。プロフィールや脳の記憶から興味を推測してよい）";
   const today = new Intl.DateTimeFormat("ja-JP", { timeZone: timezone, month: "long", day: "numeric", weekday: "short" }).format(now);
@@ -340,13 +343,23 @@ function newsSection(news: NonNullable<AgentContext["news"]>, search: boolean, v
 
 # 今日のニュースのまとめ方（今回実行する・${today}）
 - ${intro}
-- ${search ? "必ず Google 検索で今日・昨日の最新ニュースを調べてから答える。" : "今回は検索が使えない。最新ニュースは分からないと正直に伝え、作り話はしない。"}
+- ${
+      articles
+        ? "下の「今日のニュースの記事（FreeNewsApi）」から選んでまとめる（Google 検索は使わない）。記事に書かれていないことは足さない。"
+        : search
+          ? "必ず Google 検索で今日・昨日の最新ニュースを調べてから答える。"
+          : "今回は検索が使えない。最新ニュースは分からないと正直に伝え、作り話はしない。"
+    }
 - 構成：
   1. 主なニュース 3 本（国内・国際・経済などから重要なもの）
   2. 興味のある分野（${topics}）ごとに 1〜2 本。その分野で目立つニュースが無ければ「特に大きな動きはなし」と一言
 - 1 本につき「何が起きたか」を 1〜2 文で。ユーザーの取り組み（脳のプロジェクト・目標）に関係しそうなら一言添える。
 - 日付がはっきりしない古い話題は今日のニュースとして扱わない。推測で数字や固有名詞を作らない。
 - ${voice ? "音声なので、見出しや記号は使わず、全体で 6〜10 文の話し言葉にまとめる。" : "見出しと短い箇条書きで読みやすくまとめる。URL は書かない（出典は画面に表示される）。"}`;
+    if (articles) out += `
+
+# 今日のニュースの記事（FreeNewsApi。ここ 24 時間）
+${articles}`;
   }
 
   out += canSave

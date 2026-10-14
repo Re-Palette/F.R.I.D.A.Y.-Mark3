@@ -130,6 +130,8 @@ describe("世界地図のデータ（Natural Earth）", () => {
 });
 
 describe("REAL-TIME NEWS の取得（模擬の Gemini。本物の Google は使わない）", async () => {
+  // FreeNewsApi は使わず、Google 検索で調べる道筋を確かめる（FreeNewsApi の道筋は free-news.test.ts）
+  process.env.FREENEWSAPI = "off";
   const http = await import("node:http");
   const { getEdithNews } = await import("../src/integrations/edith-news");
   it("Google 検索の出典が付いた話題だけを返し、地点も付ける", async () => {

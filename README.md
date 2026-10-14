@@ -48,6 +48,7 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `LANGSEARCH_API_KEY` | | | 調べものを [LangSearch](https://langsearch.com/)（無料・1 日の上限あり）で行う（F.R.I.D.A.Y. は検索結果を要約して答える）。無ければ Gemini の Google 検索 |
 | `BRAVE_SEARCH_API_KEY` | | | LangSearch の代わりに Brave Search API を使う（`LANGSEARCH_API_KEY` が無いときだけ） |
 | `NEWS_TIME` / `NEWS_TOPICS` | | `07:00` / なし | 毎日のニュースの時間と興味のある分野（脳の「ニュース」ノートが優先） |
+| `FREENEWSAPI` | | （使う） | ニュースの記事を [FreeNewsApi](https://freenewsapi.ai/)（キー不要）から持ってくる。`off` で使わない（Google 検索でまとめる） |
 | `CRON_SECRET` | | — | 毎夜の自動日記・プッシュ通知の定期実行用の合言葉 |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | | — | プッシュ通知の鍵（SETTINGS → PUSH の「鍵を作る」で作成） |
 | `VAPID_SUBJECT` | | `mailto:friday@example.com` | プッシュ通知の送り主（`mailto:自分のメール`） |
@@ -157,7 +158,7 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
 - `LANGSEARCH_API_KEY` を設定すると、検索が要るときだけ **LangSearch** で検索し、F.R.I.D.A.Y. はその検索結果（見出し・本文の抜き出し・日付）を読んで要約して答えます（結果に無いことは足さない）。
   ふだんの会話（検索が要らない発言）はこれまでどおりです。`BRAVE_SEARCH_API_KEY` だけがあるときは Brave Search を使います。
   文字の会話・LINE・E.D.I.T.H. の調べもの・リアルタイム音声会話（`web_search` の道具 → `/api/search`）のすべてで使います。
-  検索 API が失敗・0 件・時間切れのときは、Gemini の Google 検索に戻します。朝のニュースのまとめは Gemini の Google 検索のままです。
+  検索 API が失敗・0 件・時間切れのときは、Gemini の Google 検索に戻します。ニュース（E.D.I.T.H. の NEWS・朝のまとめ・通知の見出し）は下の FreeNewsApi の記事から作ります。
 - 参照したページは返答の下にリンクで表示します（読み上げはしません）。
 - 検索が使えない・検索の無料枠を使い切ったときは、自動で検索なしで答えます。
 
@@ -512,6 +513,10 @@ FRIDAY ── AI Router ─┬─ ONLINE  → Gemini（Vercel のサーバーの
 - 幅 1000px 未満では、天気・予定・プロジェクトを HUB のカードの下に並べます。
 
 ### 毎日のニュース
+
+- ニュースの記事は **FreeNewsApi**（https://freenewsapi.ai 。キー・登録不要）から持ってきます（`src/integrations/free-news.ts`）。
+  E.D.I.T.H. の NEWS・朝のニュースのまとめ・通知の見出しの 3 つで使い、Gemini は記事を選んで日本語で要約するだけです（記事に無いことは足さない）。
+  出典は記事そのものの URL です。記事が取れない・少ないときは、これまでどおり Gemini の Google 検索でまとめます。`FREENEWSAPI=off` で使いません。
 
 - 設定した時間（既定 7:00）を過ぎてから **その日最初に話しかけたとき**、まず発言に答えてから、今日の主なニュース 3 本と「興味のある分野」ごとのニュースを検索してまとめて伝えます。
   その日に伝えたかは Cookie（端末ごと）で覚えます。「今日のニュースは？」と聞けばいつでもまとめます。

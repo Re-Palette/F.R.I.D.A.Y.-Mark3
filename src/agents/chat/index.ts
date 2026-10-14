@@ -6,6 +6,7 @@ import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
 import { asksForSns, asksForTrend, needsSearch } from "@/agents/search/needs-search";
 import { getWeather, type WeatherReport } from "@/integrations/weather";
 import { searchProvider, searchQuery, searchSection, webSearch, type WebSearch } from "@/integrations/web-search";
+import { articleLines, dailyNews, freeNewsEnabled, type NewsArticle } from "@/integrations/free-news";
 import { readNewsSettings } from "@/integrations/news";
 import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
 import {
@@ -63,6 +64,9 @@ async function calendarForTurn(ctx: AgentContext, latest: string, budget: number
 
 /** 検索 API（LangSearch・Brave）の結果を待てる時間。間に合わなければ Gemini の Google 検索で答える */
 const SEARCH_BUDGET_MS = { text: 3000, voice: 2000 };
+
+/** ニュースのまとめのとき、FreeNewsApi の記事を待てる時間。間に合わなければ Google 検索でまとめる */
+const NEWS_BUDGET_MS = { text: 4000, voice: 3000 };
 
 /** 振り返り・日記の材料集めに待てる時間（頼まれたときだけなので長め） */
 const REVIEW_BUDGET_MS = 3000;
@@ -204,6 +208,16 @@ export const chatAgent: Agent = {
             "web-search",
           )
         : Promise.resolve(null);
+    // ニュースをまとめるときは、FreeNewsApi から今日の記事を持ってくる（準備と同時に始める）
+    const newsTask: Promise<NewsArticle[] | null> =
+      briefing && mode !== "off" && freeNewsEnabled()
+        ? within(
+            dailyNews(ctx.news?.settings.topics ?? [], { signal: ctx.signal }).then((d) => [...d.main.slice(0, 8), ...d.byTopic.flatMap((t) => t.articles.slice(0, 3))]),
+            ctx.voice ? NEWS_BUDGET_MS.voice : NEWS_BUDGET_MS.text,
+            null,
+            "free-news",
+          )
+        : Promise.resolve(null);
 
     const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company, lectureDocs, usage] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
@@ -230,6 +244,9 @@ export const chatAgent: Agent = {
     // 検索 API の結果（あれば、それを読んで要約して答える。無ければ Gemini の Google 検索）
     // 0 件・失敗・間に合わないときは Gemini の Google 検索に戻す
     const found = await searchTask.then((b) => (b?.results.length ? b : null));
+    // 記事が 3 本以上あれば、それからまとめる（Google 検索は使わない）
+    const newsArticles = await newsTask.then((a) => (a && a.length >= 3 ? a : null));
+    if (newsArticles) yield { text: "", sources: newsArticles.map((a) => ({ title: a.title, uri: a.url })) };
     if (found) yield { text: "", sources: found.results.map((r) => ({ title: r.title, uri: r.url })) };
 
     // カメラの映像（最新の発言にだけ付く）は、文字の前に画像として渡す
@@ -277,6 +294,7 @@ export const chatAgent: Agent = {
         weather,
         search,
         news,
+        newsArticles: newsArticles ? articleLines(newsArticles, ctx.timezone) : null,
         tasks,
         reminders,
         mail,
@@ -300,7 +318,7 @@ export const chatAgent: Agent = {
     // Gemini が使えなければ、ローカル AI（Ollama）で答える（サーバーが PC 上で動いているときだけ）。
     // Ollama が読める長さ（num_ctx 2048）に収まるよう、人格の要点・記憶の一部・直近の会話だけを渡す
     for await (const chunk of withLocalFallback(
-      streamGemini({ config: runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search && !found }),
+      streamGemini({ config: runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search && !found && !newsArticles }),
       () => ({
         system: `${buildCompactInstruction({
           now: ctx.now,

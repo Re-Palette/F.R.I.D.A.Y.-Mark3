@@ -7,6 +7,7 @@ import { getGeminiConfig, getTimezone } from "@/lib/config";
 import { streamGemini, type GeminiChunk, type GeminiSource } from "@/llm/gemini";
 import { findPlaces, type Place } from "@/lib/edith-geo";
 import { FridayError } from "@/lib/errors";
+import { articleLines, freeNews, freeNewsEnabled, type NewsArticle } from "@/integrations/free-news";
 
 export const EDITH_CATEGORIES = ["news", "research", "market", "travel", "culture", "tech", "education", "more"] as const;
 export type EdithCategory = (typeof EDITH_CATEGORIES)[number];
@@ -96,8 +97,20 @@ export function sourcesForLine(line: string, grounding: GeminiChunk["grounding"]
   return out.slice(0, 3);
 }
 
-/** 1 回の取得で Google 検索を使うので、無料枠を減らさないよう 1 時間は覚えておく */
-const CACHE_MS = 60 * 60_000;
+/** 分野ごとに FreeNewsApi で探す言葉（世界のニュースなので英語で） */
+const FREE_QUERY: Record<EdithCategory, string> = {
+  news: "world news politics",
+  research: "scientific research study",
+  market: "markets economy stocks",
+  travel: "travel tourism",
+  culture: "culture entertainment",
+  tech: "technology AI",
+  education: "education university",
+  more: "climate space health",
+};
+
+/** 一度作った一覧を覚えておく時間（Gemini で要約するので、開くたびには作らない） */
+const CACHE_MS = 20 * 60_000;
 const cache = new Map<EdithCategory, { at: number; value: Promise<EdithNews> }>();
 
 export function getEdithNews(category: EdithCategory, signal?: AbortSignal): Promise<EdithNews> {
@@ -126,7 +139,60 @@ function mergeGrounding(prev: GeminiChunk["grounding"], next: NonNullable<Gemini
   return { chunks: prev.chunks, supports: [...prev.supports, ...next.supports] };
 }
 
+/**
+ * FreeNewsApi の記事から一覧を作る。Gemini は記事を選んで日本語の見出し・要約を書くだけ（検索はしない）。
+ * 出典は選んだ記事そのもの（URL は FreeNewsApi が返した本物）。記事が取れなければ null（Google 検索に戻す）
+ */
+export async function newsFromArticles(category: EdithCategory, articles: NewsArticle[], signal?: AbortSignal): Promise<EdithNews | null> {
+  if (articles.length < 3) return null;
+  const list = articles.slice(0, 20);
+  const config = getGeminiConfig();
+  const ask = `次は「${TOPIC[category]}」についての、ここ 24 時間のニュース記事の一覧です。
+重要で互いに違う話題を最大 6 件選び、1 行 1 件、次の形だけで書いてください（前置き・URL は書かない）：
+・[記事の番号] 見出し（日本語 30 字以内）｜要約（日本語 60 字以内）｜主な国・地域（日本語の国名か都市名。世界全体なら「世界」）
+記事に書かれた事実だけを書き、記事に無いことは足さないでください。
+
+${articleLines(list, getTimezone())}`;
+  let text = "";
+  for await (const chunk of streamGemini({
+    config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500 },
+    systemInstruction: "あなたは世界のニュースを正確に短くまとめる係。渡された記事に書かれた事実だけを書く。",
+    contents: [{ role: "user", parts: [{ text: ask }] }],
+    signal,
+  })) {
+    text += chunk.text;
+  }
+  const items: EdithNewsItem[] = [];
+  for (const raw of text.split("\n")) {
+    const m = raw.trim().match(/^[・\-*•]?\s*\[(\d{1,2})\]\s*(.+)$/);
+    const a = m ? list[Number(m[1]) - 1] : undefined;
+    if (!m || !a) continue;
+    const [l] = parseNewsLines(`・${m[2]}`);
+    if (!l || items.some((i) => i.sources[0]?.uri === a.url)) continue;
+    items.push({
+      title: l.title,
+      summary: l.summary,
+      region: l.region,
+      place: findPlaces(`${l.region} ${l.title}`, 1)[0] ?? null,
+      sources: [{ title: a.source, uri: a.url }],
+    });
+  }
+  console.info(`[edith-news] ${category}: free-news articles=${list.length} shown=${items.length}`);
+  return items.length ? { category, items: items.slice(0, 6), refs: [], fetchedAt: new Date().toISOString() } : null;
+}
+
 async function fetchNews(category: EdithCategory, signal?: AbortSignal): Promise<EdithNews> {
+  // まず FreeNewsApi の記事から。取れなければ、これまでどおり Google 検索で調べる
+  if (freeNewsEnabled()) {
+    try {
+      const articles = await freeNews({ q: FREE_QUERY[category], date: "24h", size: 20, sort: "relevance" }, { signal });
+      const fromArticles = await newsFromArticles(category, articles, signal);
+      if (fromArticles) return fromArticles;
+    } catch (err) {
+      if (err instanceof FridayError && err.code === "RATE_LIMITED") throw err;
+      console.warn("[edith-news] free-news failed:", err instanceof Error ? err.message : err);
+    }
+  }
   const config = getGeminiConfig();
   const today = new Intl.DateTimeFormat("ja-JP", { timeZone: getTimezone(), year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date());
   const ask = `今日は${today}。「${TOPIC[category]}」の、ここ数日の最新の話題を 6 件、Google 検索で調べてください。
