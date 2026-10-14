@@ -1589,3 +1589,46 @@
   font-size: 13px;
   color: var(--k-dim);
 }
+
+/* BGM の設定 */
+.khead__bgm[data-playing] svg {
+  filter: drop-shadow(0 0 4px rgba(46, 230, 255, 0.9));
+  color: var(--k-cyan);
+}
+.kpop--bgm {
+  width: min(320px, calc(100vw - 32px));
+}
+.kbgm__title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--k-cyan);
+}
+.kbgm__track {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--k-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kbgm__vol {
+  display: grid;
+  grid-template-columns: auto 1fr 28px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--k-dim);
+}
+.kbgm__vol input {
+  width: 100%;
+  accent-color: var(--k-cyan);
+}
+.kbgm__vol b {
+  text-align: right;
+  color: var(--k-text);
+}
+.kbgm__note {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--k-dim);
+}

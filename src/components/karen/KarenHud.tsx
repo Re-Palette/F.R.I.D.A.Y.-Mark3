@@ -24,6 +24,7 @@ import type { Shape } from "@/lib/karen-intent";
 import { useAiRoute } from "@/lib/ai-router";
 import { gpuName } from "@/lib/webgl";
 import { IMPORT_ACCEPT, IMPORT_JOB_TITLE, registerImportPicker } from "@/lib/karen-import";
+import { chooseBgm, setBgmActive, setBgmDucked, setBgmOn, setBgmVolume, useBgm } from "@/lib/karen-bgm";
 
 /** 球が消えて制作の画面になるまでの演出の長さ */
 const TRANSITION_MS = 1500;
@@ -116,6 +117,13 @@ const Icon = {
       <path d="M12 2c.6 4.6 2.4 7.4 8 10-5.6 2.6-7.4 5.4-8 10-.6-4.6-2.4-7.4-8-10 5.6-2.6 7.4-5.4 8-10z" />
     </svg>
   ),
+  music: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 18V5l11-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+    </svg>
+  ),
   gear: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="3.2" />
@@ -166,7 +174,18 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
   const metrics = useDeviceMetrics(active);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<TransformMode>("translate");
-  const [panel, setPanel] = useState<null | "projects" | "scene" | "add">(null);
+  const [panel, setPanel] = useState<null | "projects" | "scene" | "add" | "bgm">(null);
+  // BGM：K.A.R.E.N. を開いている間だけ流す。声を聞いている・話している間は小さく
+  const bgm = useBgm();
+  const bgmRef = useRef<HTMLInputElement>(null);
+  const [bgmNote, setBgmNote] = useState<string | null>(null);
+  useEffect(() => {
+    setBgmActive(active);
+    return () => setBgmActive(false);
+  }, [active]);
+  useEffect(() => {
+    setBgmDucked(voiceState === "listening" || voiceState === "speaking");
+  }, [voiceState]);
   const [entering, setEntering] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   /** 外部の 3D モデルを取り込むファイル選択（隠してある） */
@@ -376,6 +395,16 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
         <button type="button" title="シーン設定" aria-pressed={panel === "scene"} onClick={() => setPanel((p) => (p === "scene" ? null : "scene"))}>
           {Icon.gear}
         </button>
+        <button
+          type="button"
+          className="khead__bgm"
+          title="BGM（K.A.R.E.N. を開いている間に流す音楽）"
+          aria-pressed={panel === "bgm"}
+          data-playing={bgm.playing || undefined}
+          onClick={() => setPanel((p) => (p === "bgm" ? null : "bgm"))}
+        >
+          {Icon.music}
+        </button>
       </nav>
 
       {/* ---------- 左 ---------- */}
@@ -503,6 +532,37 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
             <button type="button" disabled={!hasObjects} onClick={() => void renderPng(io)}>PNG で書き出す</button>
             <button type="button" disabled={!hasObjects} onClick={() => runKarenOp({ kind: "clear" }, io)}>シーンを空にする</button>
             <button type="button" onClick={() => runKarenOp({ kind: "idle" }, io)}>待機に戻る</button>
+          </div>
+        )}
+        {panel === "bgm" && (
+          <div className="kpop kpop--bgm" role="dialog" aria-label="BGM">
+            <b className="kbgm__title">BGM</b>
+            <span className="kbgm__track">{bgm.hasTrack ? `♪ ${bgm.name ?? "karen-bgm.mp3"}` : "曲がまだありません。MP3 を選んでください。"}</span>
+            <button type="button" onClick={() => bgmRef.current?.click()}>
+              {bgm.hasTrack ? "曲を変える（MP3）" : "曲を選ぶ（MP3）"}
+            </button>
+            <button type="button" disabled={!bgm.hasTrack} onClick={() => setBgmOn(!bgm.on)}>
+              BGM：{bgm.on ? "ON" : "OFF"}
+            </button>
+            <label className="kbgm__vol">
+              <span>音量</span>
+              <input type="range" min={0} max={1} step={0.05} value={bgm.volume} disabled={!bgm.hasTrack} onChange={(e) => setBgmVolume(Number(e.target.value))} />
+              <b>{Math.round(bgm.volume * 100)}</b>
+            </label>
+            {bgm.blocked && <small className="kbgm__note">画面のどこかを押すと流れ始めます（ブラウザが自動再生を止めています）。</small>}
+            {bgmNote && <small className="kbgm__note">{bgmNote}</small>}
+            <small className="kbgm__note">K.A.R.E.N. を開いている間だけループで流れます。声で話している間は小さくなります。</small>
+            <input
+              ref={bgmRef}
+              type="file"
+              accept="audio/*,.mp3"
+              hidden
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                e.currentTarget.value = "";
+                if (f) void chooseBgm(f).then(setBgmNote);
+              }}
+            />
           </div>
         )}
         {panel === "projects" && (
