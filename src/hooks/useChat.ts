@@ -616,6 +616,16 @@ export function useChat() {
 
         if (!switchToLocal && !settled) {
           let res: Response | null = null;
+          // サーバーが返事を始めない（つながったまま止まる）ときも待ち続けない
+          //（古いブラウザでも動くよう、AbortSignal.any は使わずに 2 つの止め方をまとめる）
+          const headerCtl = new AbortController();
+          const passAbort = () => headerCtl.abort();
+          controller.signal.addEventListener("abort", passAbort);
+          let headerTimedOut = false;
+          const headerTimer = window.setTimeout(() => {
+            headerTimedOut = true;
+            headerCtl.abort();
+          }, STALL_MS.first);
           try {
             res = await fetch("/api/chat", {
               method: "POST",
@@ -629,12 +639,18 @@ export function useChat() {
                 // K.A.R.E.N. のモードなら、クリエイティブ担当として答えてもらう
                 ...(getAiMode() !== "friday" ? { persona: getAiMode() } : {}),
               }),
-              signal: controller.signal,
+              signal: headerCtl.signal,
             });
           } catch (err) {
             if (controller.signal.aborted) throw err;
-            switchToLocal = true; // サーバーに届かない（ネットが切れた）
-            markGeminiFailed("network");
+            if (headerTimedOut) {
+              fail({ code: "TIMEOUT", message: "返事が届きませんでした（時間切れ）。もう一度試してください。", retryable: true });
+            } else {
+              switchToLocal = true; // サーバーに届かない（ネットが切れた）
+              markGeminiFailed("network");
+            }
+          } finally {
+            clearTimeout(headerTimer);
           }
           if (res && (!res.ok || !res.body)) {
             let err: UiError = {
@@ -740,7 +756,8 @@ export function useChat() {
         const previous = runningRef.current;
         if (previous) {
           abortRef.current?.abort();
-          await previous;
+          // 前の返事が止めても終わらないとき（何かで詰まったとき）も、次のメッセージを待たせ続けない
+          await Promise.race([previous, new Promise((r) => window.setTimeout(r, 3000))]);
         }
         const history = build(store.current);
         if (!history) return opts.onDone?.(null);
