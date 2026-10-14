@@ -5,7 +5,8 @@
  */
 import { after } from "next/server";
 import { CalendarAccess, refreshTokenFrom } from "@/integrations/google-calendar";
-import { readNewsSettings } from "@/integrations/news";
+import { peekNewsSettings, readNewsSettings } from "@/integrations/news";
+import { dailyNews, freeNewsEnabled } from "@/integrations/free-news";
 import { getWeather } from "@/integrations/weather";
 import { getTimezone } from "@/lib/config";
 import { warmGemini } from "@/llm/health";
@@ -20,6 +21,8 @@ export function POST(req: Request): Response {
   warmGemini();
   warmTts();
   const tasks: Promise<unknown>[] = [getWeather()];
+  // 今日のニュースの記事を先に取っておく（「今日のニュースは？」にすぐ答えられるように。10 分は覚えておく）
+  if (freeNewsEnabled()) tasks.push(dailyNews(peekNewsSettings().topics));
   // 脳の読み込みのあと、意味で探すための索引を少しずつ作る（10 分に 1 回まで）
   if (isBrainConfigured()) tasks.push(warmBrain().then(() => refreshMemoryIndex()), readNewsSettings());
   const refresh = refreshTokenFrom(req);

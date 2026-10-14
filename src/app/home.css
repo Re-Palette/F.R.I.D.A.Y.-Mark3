@@ -1624,16 +1624,20 @@ li[data-lamp="online"] .roster__state i { box-shadow: 0 0 5px currentColor; }
   opacity: 0.5;
 }
 
+/* 処理中の光の流れ：光る短い線を横に動かす（背景の位置を動かすと毎フレーム描き直すので、移動だけで動かす） */
 .rpanel[data-busy]::after {
   opacity: 1;
-  background-size: 40% 100%;
-  background-repeat: no-repeat;
+  right: auto;
+  width: 40%;
+  will-change: transform;
   animation: busy-line 1.4s linear infinite;
 }
 
 @keyframes busy-line {
-  from { background-position: -40% 0; }
-  to { background-position: 140% 0; }
+  from { transform: translateX(0); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  to { transform: translateX(150%); opacity: 0; }
 }
 
 .rpanel[data-busy] .rpanel__state {

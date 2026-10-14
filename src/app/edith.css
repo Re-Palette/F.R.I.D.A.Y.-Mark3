@@ -1117,8 +1117,10 @@
   stroke: var(--e-glow);
   stroke-width: 0.7;
 }
+/* 回る弧は 1 枚の層として回す（GPU が回すだけで、描き直さない） */
 .eb-spin {
-  transform-origin: 100px 100px;
+  transform-origin: 50% 50%;
+  will-change: transform;
   animation: edith-spin 60s linear infinite;
 }
 .eb-arc {

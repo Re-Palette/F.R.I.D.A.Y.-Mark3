@@ -22,7 +22,7 @@ const articles = {
 };
 
 /** 模擬の Gemini（答えを決めておき、届いた頼みを残す） */
-async function fakeGemini(answer: string) {
+async function fakeGemini(answer: string | ((body: string) => string)) {
   const asked: string[] = [];
   const server = http.createServer((req, res) => {
     let body = "";
@@ -30,7 +30,8 @@ async function fakeGemini(answer: string) {
     req.on("end", () => {
       asked.push(body);
       res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: answer }] }, finishReason: "STOP" }] })}\n\n`);
+      const text = typeof answer === "string" ? answer : answer(body);
+      res.end(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }] })}\n\n`);
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -38,7 +39,7 @@ async function fakeGemini(answer: string) {
 }
 
 /** 模擬の Gemini と模擬の FreeNewsApi の中で動かす */
-async function withFakes<T>(answer: string, news: (url: string) => Response, run: (g: { asked: string[]; newsAsked: string[] }) => Promise<T>): Promise<T> {
+async function withFakes<T>(answer: string | ((body: string) => string), news: (url: string) => Response, run: (g: { asked: string[]; newsAsked: string[] }) => Promise<T>): Promise<T> {
   const g = await fakeGemini(answer);
   const realFetch = globalThis.fetch;
   const newsAsked: string[] = [];
@@ -170,6 +171,147 @@ describe("FreeNewsApi：通知の見出し・朝のニュースのまとめ", ()
       assert.match(body, /今日のニュースの記事（FreeNewsApi/);
       assert.match(body, /日銀、金利を据え置き/);
       assert.ok(chunks.some((c) => c.sources?.some((s) => s.uri === "https://news.example.jp/a")));
+    });
+  });
+});
+
+/** 会話を 1 回進める（模擬の Gemini・FreeNewsApi の中で） */
+async function talk(messages: { role: "user" | "assistant"; content: string }[], extra: Record<string, unknown> = {}) {
+  const { chatAgent } = await import("../src/agents/chat/index");
+  const chunks: { text: string; sources?: { title: string; uri: string }[] }[] = [];
+  for await (const c of chatAgent.run({
+    messages,
+    memory: { connected: false, recall: async () => [], save: async () => {} } as never,
+    now: new Date(),
+    timezone: "Asia/Tokyo",
+    voice: false,
+    ...extra,
+  } as never))
+    chunks.push(c);
+  return chunks;
+}
+
+describe("話題のニュースの質問（FreeNewsApi で探す。Google 検索は使わない）", () => {
+  it("質問から話題を取り出す。全般のニュース・設定の変更は話題にしない", async () => {
+    const { newsTopic } = await import("../src/integrations/news");
+    assert.equal(newsTopic("アメリカでのニュースは？"), "アメリカ");
+    assert.equal(newsTopic("AI関連のニュース教えて"), "AI");
+    assert.equal(newsTopic("大谷翔平の最新ニュース"), "大谷翔平");
+    assert.equal(newsTopic("フライデー、ウクライナ情勢のニュースを教えて"), "ウクライナ情勢");
+    assert.equal(newsTopic("今日のニュースは？"), null);
+    assert.equal(newsTopic("最新のニュースを調べて"), null);
+    assert.equal(newsTopic("ニュースまとめて"), null);
+    assert.equal(newsTopic("ニュースの時間を7時半にして"), null);
+    assert.equal(newsTopic("明日の天気は？"), null);
+  });
+  it("続きの質問は、直前がニュースの話のときだけ", async () => {
+    const { newsAsk } = await import("../src/agents/search/news-search");
+    assert.deepEqual(newsAsk("これの詳細は？", "今日のニュースは？", "日銀は金利を据え置きました。"), { kind: "detail" });
+    assert.deepEqual(newsAsk("もっと詳しく", "アメリカのニュースは？", "…"), { kind: "detail" });
+    assert.deepEqual(newsAsk("ニュースの詳細を教えて"), { kind: "detail" }, "「の詳細」を話題にしない");
+    assert.deepEqual(newsAsk("そのニュースの詳細は？"), { kind: "detail" });
+    assert.equal(newsAsk("これの詳細は？", "この資料を見て", "資料の要点です。"), null, "ニュースの話でなければ探さない");
+    assert.deepEqual(newsAsk("トヨタのニュースある？"), { kind: "topic", topic: "トヨタ", detail: false });
+    assert.deepEqual(newsAsk("トヨタのニュースの詳細を教えて"), { kind: "topic", topic: "トヨタ", detail: true });
+  });
+  it("「アメリカでのニュースは？」：FreeNewsApi で「アメリカ」を探し、記事から答える（Google 検索は使わない）。出典を返す", async () => {
+    await withFakes("アメリカでは…", () => Response.json(articles), async ({ asked, newsAsked }) => {
+      const chunks = await talk([{ role: "user", content: `アメリカでのニュースは？${"　".repeat(Math.floor(Math.random() * 3))}` }]);
+      assert.ok(newsAsked.some((u) => new URL(u).searchParams.get("q") === "アメリカ"));
+      const body = asked.at(-1)!;
+      assert.doesNotMatch(body, /googleSearch|google_search/);
+      assert.match(body, /ニュースの記事（FreeNewsApi。検索語「アメリカ」）/);
+      assert.match(body, /日銀、金利を据え置き/);
+      assert.ok(chunks.some((c) => c.sources?.some((s) => s.uri === "https://news.example.jp/a")));
+    });
+  });
+  it("「ニュースの詳細を教えて」：前の返事に出た記事を（AI に聞き直さずに）見つけ、本文を FreeNewsApi から持ってきて詳しく答える", async () => {
+    const withBody = { articles: [{ ...articles.articles[0], full_text: "日本銀行は13日の金融政策決定会合で、政策金利を0.5%に据え置くことを決めた。植田総裁は会見で、物価の動向を見極める考えを示した。".repeat(2) }] };
+    // 本文は full_text=true で頼んだときだけ返す（本物の FreeNewsApi と同じ）
+    await withFakes("詳しくは…", (u) => Response.json(u.includes("full_text=true") ? withBody : articles), async ({ asked, newsAsked }) => {
+      // 前に「日銀、金利を据え置き」の記事を見せておく（ニュースの質問で記事を取ってくる）
+      await talk([{ role: "user", content: `日銀${Math.random().toString(36).slice(2, 5)}のニュースは？` }]);
+      asked.length = 0;
+      newsAsked.length = 0;
+      await talk([
+        { role: "user", content: "今日のニュースは？" },
+        { role: "assistant", content: "今日のニュースです。日銀、金利を据え置きの話題があります。" },
+        { role: "user", content: "ニュースの詳細を教えて" },
+      ]);
+      assert.ok(!asked.some((b) => b.includes("検索語を作る係")), "記事が分かっているので AI に検索語を作らせない（速い）");
+      const detailCall = newsAsked.map((u) => new URL(u)).find((u) => u.searchParams.get("full_text") === "true");
+      assert.ok(detailCall, "本文を頼む");
+      assert.equal(detailCall.searchParams.get("q"), "日銀、金利を据え置き");
+      const body = asked.at(-1)!;
+      assert.doesNotMatch(body, /googleSearch|google_search/);
+      assert.match(body, /詳細を聞かれている/);
+      assert.match(body, /本文：日本銀行は13日の金融政策決定会合で/);
+    });
+  });
+  it("「これの詳細は？」で前の返事の記事が分からないときは、会話の流れから検索語を作って探す", async () => {
+    const answer = (b: string) => (b.includes("検索語を作る係") ? "宇宙ステーション 計画" : "詳しくは…");
+    await withFakes(answer, () => Response.json(articles), async ({ asked, newsAsked }) => {
+      await talk([
+        { role: "user", content: "今日のニュースは？" },
+        { role: "assistant", content: "今日のニュースです。新しい宇宙ステーションの建設計画が発表されました。" },
+        { role: "user", content: "これの詳細は？" },
+      ]);
+      assert.ok(newsAsked.some((u) => new URL(u).searchParams.get("q") === "宇宙ステーション 計画"), newsAsked.join("\n"));
+      assert.match(asked.at(-1)!, /検索語「宇宙ステーション 計画」/);
+    });
+  });
+  it("ニュースのときは、考える量を最小にして速く答える", async () => {
+    await withFakes("…", () => Response.json(articles), async ({ asked }) => {
+      await talk([{ role: "user", content: `カナダ${Math.random().toString(36).slice(2, 5)}のニュースは？` }]);
+      assert.match(asked.at(-1)!, /"thinkingLevel":"minimal"|"thinkingLevel":"MINIMAL"/i);
+    });
+  });
+  it("記事が見つからなくても、ニュースの質問では検索しない（取れなかったと正直に伝える）", async () => {
+    await withFakes("…", () => Response.json({ articles: [] }), async ({ asked }) => {
+      await talk([{ role: "user", content: `ゼロ件テスト${Math.random().toString(36).slice(2, 6)}のニュースは？` }]);
+      const body = asked.at(-1)!;
+      assert.doesNotMatch(body, /googleSearch|google_search/);
+      assert.match(body, /ニュースの記事が取れなかった/);
+    });
+  });
+  it("F.R.I.D.A.Y. で（ニュースのまとめの設定が渡らない LINE などでも）「今日のニュースは？」は FreeNewsApi の記事から（検索しない）", async () => {
+    await withFakes("今日のニュースです。", () => Response.json(articles), async ({ asked }) => {
+      // （今日の記事は前のテストで取って覚えているので、ここでは問い合わせないこともある）
+      const chunks = await talk([{ role: "user", content: "今日のニュースは？" }]);
+      const body = asked.at(-1)!;
+      assert.doesNotMatch(body, /googleSearch|google_search/);
+      assert.match(body, /検索語「今日のニュース」/);
+      assert.ok(chunks.some((c) => c.sources?.length));
+    });
+  });
+  it("Web 検索をオフにしていても、ニュースは FreeNewsApi から（検索ではないので）", async () => {
+    await withFakes("…", () => Response.json(articles), async ({ asked, newsAsked }) => {
+      process.env.FRIDAY_SEARCH = "off";
+      try {
+        await talk([{ role: "user", content: `イギリス${Math.random().toString(36).slice(2, 5)}のニュースは？` }]);
+      } finally {
+        delete process.env.FRIDAY_SEARCH;
+      }
+      assert.ok(newsAsked.length > 0);
+      assert.match(asked.at(-1)!, /ニュースの記事（FreeNewsApi/);
+    });
+  });
+  it("E.D.I.T.H. でも、調べものでない発言では検索しない", async () => {
+    await withFakes("こんにちは。", () => Response.json(articles), async ({ asked, newsAsked }) => {
+      await talk([{ role: "user", content: "こんにちは、調子はどう？" }], { persona: "edith" });
+      assert.doesNotMatch(asked.at(-1)!, /googleSearch|google_search/);
+      assert.equal(newsAsked.length, 0);
+    });
+  });
+  it("/api/search（声の会話）：ニュースの検索は FreeNewsApi の記事を返す", async () => {
+    await withFakes("", () => Response.json(articles), async ({ newsAsked }) => {
+      const route = await import("../src/app/api/search/route");
+      const res = await route.GET(new Request(`http://x/api/search?q=${encodeURIComponent("トヨタのニュース")}`));
+      const json = (await res.json()) as { ok: boolean; kind?: string; results: { url: string }[] };
+      assert.equal(json.ok, true);
+      assert.equal(json.kind, "news");
+      assert.equal(json.results[0].url, "https://news.example.jp/a");
+      assert.ok(newsAsked.some((u) => new URL(u).searchParams.get("q") === "トヨタ"));
     });
   });
 });

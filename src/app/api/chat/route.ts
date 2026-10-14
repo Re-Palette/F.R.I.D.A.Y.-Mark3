@@ -10,7 +10,7 @@ import { parseCalendarSnapshot, type CalendarSnapshot } from "@/integrations/cal
 import { createDraft, recentMail, unreadMail } from "@/integrations/gmail";
 import { isSpotifyConfigured, SpotifyAccess, spotifyTokenFrom } from "@/integrations/spotify";
 import type { AmazonMusicState } from "@/lib/music";
-import { asksForNews, localNow, NEWS_COOKIE, peekNewsSettings } from "@/integrations/news";
+import { asksForNews, asksForNewsDetail, localNow, NEWS_COOKIE, newsTopic, peekNewsSettings } from "@/integrations/news";
 import { isBrainConfigured } from "@/memory/github-brain";
 import { warmBrain } from "@/memory/obsidian";
 import { getTasksOverview } from "@/integrations/tasks";
@@ -156,7 +156,12 @@ function newsPlan(req: Request, latest: string) {
   const settings = peekNewsSettings();
   const { date, time } = localNow(getTimezone());
   const deliveredToday = readCookie(req, NEWS_COOKIE) === date;
-  const deliver: false | "scheduled" | "asked" = asksForNews(latest)
+  // 「アメリカのニュースは？」のように話題を決めた質問は、まとめではなく、その話題の記事を探して答える（チャットの側で）
+  // 「ニュースの詳細を教えて」も同じ（前の返事のニュースの記事から答える）
+  const topic = newsTopic(latest) ?? (asksForNewsDetail(latest) ? "detail" : null);
+  const deliver: false | "scheduled" | "asked" = topic
+    ? false
+    : asksForNews(latest)
     ? "asked"
     : settings.time !== "off" && time >= settings.time && !deliveredToday
       ? "scheduled"

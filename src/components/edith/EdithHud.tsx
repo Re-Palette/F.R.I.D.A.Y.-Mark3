@@ -1496,6 +1496,7 @@ function Bezel() {
     return <line key={i} x1={100 + Math.cos(a) * r1} y1={100 + Math.sin(a) * r1} x2={100 + Math.cos(a) * 91.6} y2={100 + Math.sin(a) * 91.6} className={long ? "eb-tick eb-tick--long" : "eb-tick"} />;
   });
   return (
+    <>
     <svg className="eview__bezel" viewBox="0 0 200 200" aria-hidden="true">
       <defs>
         <filter id="edith-glow" x="-10%" y="-10%" width="120%" height="120%">
@@ -1514,10 +1515,12 @@ function Bezel() {
         <circle cx="100" cy="100" r="92.4" className="eb-inner" />
       </g>
       <g className="eb-ticks">{ticks}</g>
-      <g className="eb-spin">
-        <circle cx="100" cy="100" r="86.5" className="eb-arc" />
-      </g>
     </svg>
+    {/* 回る弧は別の層にする（ぼかしの付いた円の中で回すと、毎フレーム円全体をぼかし付きで描き直して画面が重くなる） */}
+    <svg className="eview__bezel eb-spin" viewBox="0 0 200 200" aria-hidden="true">
+      <circle cx="100" cy="100" r="86.5" className="eb-arc" />
+    </svg>
+    </>
   );
 }
 
