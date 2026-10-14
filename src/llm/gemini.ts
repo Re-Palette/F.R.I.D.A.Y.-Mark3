@@ -315,18 +315,63 @@ async function connectModel(opts: GeminiStreamOptions, model: string): Promise<R
   }
 }
 
+/* ---- 設定したモデルがどれも無いとき：Google の一覧から使えるモデルを選ぶ ---- */
+
+/** 一覧から選んだモデル（1 時間覚えておく） */
+let discovered: { at: number; key: string; models: string[] } | null = null;
+const DISCOVER_TTL_MS = 60 * 60_000;
+/** 「見つからない」モデルを試さない時間（ずっと使えない扱いにすると、一時的な 404 で文字の会話が止まり続けるため） */
+const NOT_FOUND_COOLDOWN = 30 * 60_000;
+
+/**
+ * 文字の会話に使えるモデルを一覧から選ぶ（Google がモデルの名前を変えたり提供をやめたりしても、動き続けるように）。
+ * 文章を作れる（generateContent）Flash 系だけ。無料枠の多い Flash-Lite・新しい版・正式版を優先。最大 3 つ
+ */
+export function pickTextModels(models: { name: string; supportedGenerationMethods?: string[] }[]): string[] {
+  const usable = models
+    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+    .map((m) => m.name.replace(/^models\//, ""))
+    .filter((n) => /flash/i.test(n) && !/tts|image|embed|audio|live|transcri|music|lyria|veo|imagen|aqa|gemma|robotics|computer|thinking-exp/i.test(n));
+  const version = (n: string) => Number(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
+  const score = (n: string) => version(n) * 10 + (/lite/i.test(n) ? 1000 : 0) + (/preview|exp/i.test(n) ? 0 : 2) + (/latest/i.test(n) ? 1 : 0);
+  return [...new Set(usable)].sort((a, b) => score(b) - score(a)).slice(0, 3);
+}
+
+async function discoverModels(config: GeminiConfig, signal?: AbortSignal): Promise<string[]> {
+  const key = config.apiKey ?? "";
+  if (discovered && discovered.key === key && Date.now() - discovered.at < DISCOVER_TTL_MS) return discovered.models;
+  try {
+    const res = await fetch(`${config.baseUrl}/models?pageSize=1000`, { headers: { "x-goog-api-key": key }, signal, cache: "no-store" });
+    if (!res.ok) return [];
+    const json = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
+    const models = pickTextModels(json.models ?? []);
+    discovered = { at: Date.now(), key, models };
+    console.info(`[friday] gemini: configured models not found; using ${models.join(", ") || "(none)"}`);
+    return models;
+  } catch {
+    return [];
+  }
+}
+
 /**
  * 候補モデルを優先順に試す。使い切り（429）や未提供（404）なら次の候補へ自動で切り替える。
+ * 設定したモデルがどれも「見つからない」ときは、Google の一覧から使えるモデルを選んで試す。
  */
 async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; model: string }> {
   const candidates = opts.config.models.filter(isAvailable);
   // すべて使えない状態なら、念のため全候補をもう一度試す
-  const order = candidates.length ? candidates : opts.config.models;
+  const order = candidates.length ? candidates : [...opts.config.models];
+  // 前に一覧から選んだモデルがあれば、最後に足しておく
+  if (discovered && discovered.key === (opts.config.apiKey ?? "") && Date.now() - discovered.at < DISCOVER_TTL_MS) {
+    for (const m of discovered.models) if (!order.includes(m) && isAvailable(m)) order.push(m);
+  }
   let lastError: FridayError | undefined;
+  let allNotFound = true;
 
-  for (const model of order) {
+  /** 1 つのモデルで試す。つながれば Response、次の候補へ進むなら null */
+  const attempt = async (model: string): Promise<Response | null> => {
     try {
-      return { res: await connectModel(opts, model), model };
+      return await connectModel(opts, model);
     } catch (err) {
       if (!(err instanceof FridayError)) throw err;
       if (err.code === "RATE_LIMITED") {
@@ -335,11 +380,26 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
         // 混雑（5xx）が続くモデルはしばらく避け、次の候補で答える
         unavailableUntil.set(model, Date.now() + CONGESTION_COOLDOWN);
       } else if (err.code === "MODEL_NOT_FOUND") {
-        unavailableUntil.set(model, Number.POSITIVE_INFINITY);
+        unavailableUntil.set(model, Date.now() + NOT_FOUND_COOLDOWN);
       } else {
         throw err;
       }
+      if (err.code !== "MODEL_NOT_FOUND") allNotFound = false;
       lastError = err;
+      return null;
+    }
+  };
+
+  for (const model of order) {
+    const res = await attempt(model);
+    if (res) return { res, model };
+  }
+  // 設定したモデルがどれも「見つからない」：Google の一覧から使えるモデルを選んで試す
+  if (allNotFound) {
+    for (const model of await discoverModels(opts.config, opts.signal)) {
+      if (order.includes(model)) continue;
+      const res = await attempt(model);
+      if (res) return { res, model };
     }
   }
 
@@ -386,6 +446,8 @@ export async function pingGemini(config: GeminiConfig, signal?: AbortSignal): Pr
       return new FridayError("NETWORK_ERROR", "Gemini に接続できませんでした。", 503, true);
     }
   }
+  // 設定したモデルがどれも見つからない：Google の一覧に使えるモデルがあれば、それで答えられる（つながっている扱い）
+  if (lastError?.code === "MODEL_NOT_FOUND" && (await discoverModels(config, signal)).length) return null;
   return config.models.length > 1
     ? new FridayError(
         "MODEL_NOT_FOUND",
