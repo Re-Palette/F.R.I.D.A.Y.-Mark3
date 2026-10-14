@@ -24,7 +24,7 @@ import type { Shape } from "@/lib/karen-intent";
 import { useAiRoute } from "@/lib/ai-router";
 import { gpuName } from "@/lib/webgl";
 import { IMPORT_ACCEPT, IMPORT_JOB_TITLE, registerImportPicker } from "@/lib/karen-import";
-import { chooseBgm, setBgmActive, setBgmDucked, setBgmOn, setBgmVolume, useBgm } from "@/lib/karen-bgm";
+import { chooseBgm, setBgmDucked, setBgmOn, setBgmVolume, useBgm } from "@/lib/karen-bgm";
 
 /** 球が消えて制作の画面になるまでの演出の長さ */
 const TRANSITION_MS = 1500;
@@ -175,14 +175,10 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
   const [text, setText] = useState("");
   const [mode, setMode] = useState<TransformMode>("translate");
   const [panel, setPanel] = useState<null | "projects" | "scene" | "add" | "bgm">(null);
-  // BGM：K.A.R.E.N. を開いている間だけ流す。声を聞いている・話している間は小さく
+  // BGM：K.A.R.E.N. に切り替えたらすぐ流す（流し始め・止めるのは Dashboard）。声を聞いている・話している間は小さく
   const bgm = useBgm();
   const bgmRef = useRef<HTMLInputElement>(null);
   const [bgmNote, setBgmNote] = useState<string | null>(null);
-  useEffect(() => {
-    setBgmActive(active);
-    return () => setBgmActive(false);
-  }, [active]);
   useEffect(() => {
     setBgmDucked(voiceState === "listening" || voiceState === "speaking");
   }, [voiceState]);

@@ -1,7 +1,8 @@
 /**
  * K.A.R.E.N. を開いている間に流す BGM（自分で用意した MP3 をループ再生）。画面側だけで動く。
  *   曲：K.A.R.E.N. の画面で選んだファイル（この端末の IndexedDB にしまう）。無ければ public/karen-bgm.mp3（置いてあれば）。
- *   開いたらふわっと流し始め、閉じたら（F.R.I.D.A.Y. に戻ったら）ふわっと止める。タブが裏の間は止める。
+ *   K.A.R.E.N. に切り替えたらすぐ（切り替えの演出を待たずに）流し、F.R.I.D.A.Y. に戻したらすぐ止める。タブが裏の間は止める。
+ *   曲は画面を開いたときに先に読み込んでおくので、切り替えた瞬間に鳴る。
  *   声で話しかけている間・返事を読み上げている間は小さくする（声が聞き取りにくくならないように）。
  *   ブラウザが勝手な再生を止めたとき（声で開いたときなど）は、次に画面を触ったときに流し始める。
  */
@@ -14,7 +15,8 @@ const PREF_KEY = "karen.bgm.prefs.v1";
 const DEFAULT_URL = "/karen-bgm.mp3";
 /** 曲の大きさの上限（大きすぎると端末の保存場所を圧迫する） */
 const MAX_BYTES = 40 * 1024 * 1024;
-const FADE_MS = 1200;
+/** 声に合わせて小さくする・戻すときだけ、少しなめらかに変える */
+const DUCK_FADE_MS = 300;
 /** 声を聞いている・話している間の音量の割合 */
 const DUCK = 0.2;
 
@@ -109,38 +111,41 @@ const clamp = (v: number) => Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0.
 const target = () => (wanted && state.on && !document.hidden ? state.volume * (ducked ? DUCK : 1) : 0);
 
 /** 今の状態に合わせて、なめらかに音量を変える（0 になったら止める） */
-function apply() {
+function apply(fade = false) {
   if (!state.hasTrack || typeof document === "undefined") return;
   const a = el();
   const goal = target();
+  cancelAnimationFrame(fadeRaf);
+  // 切り替え・ON/OFF・音量はすぐに反映する（ふわっとさせない）
+  if (!fade || document.hidden || a.paused) {
+    a.volume = goal;
+    if (goal === 0) {
+      if (!a.paused) a.pause();
+      return;
+    }
+  }
   if (goal > 0 && a.paused) {
-    a.volume = 0; // 鳴り始めはふわっと
     a.play().then(
       () => set({ blocked: false }),
       () => set({ blocked: true }), // 画面を触るまで待つ
     );
   }
-  cancelAnimationFrame(fadeRaf);
+  if (!fade || a.paused) return;
   const from = a.volume;
   const start = performance.now();
   const step = (now: number) => {
-    const k = Math.min(1, (now - start) / FADE_MS);
+    const k = Math.min(1, (now - start) / DUCK_FADE_MS);
     a.volume = clamp(from + (goal - from) * k);
     if (k < 1) fadeRaf = requestAnimationFrame(step);
-    else if (goal === 0 && !a.paused) a.pause();
   };
-  // タブが裏のときは画面の更新が止まるので、すぐに合わせる
-  if (document.hidden) {
-    a.volume = goal;
-    if (goal === 0) a.pause();
-  } else fadeRaf = requestAnimationFrame(step);
+  fadeRaf = requestAnimationFrame(step);
 }
 
 let hooked = false;
 function hookPage() {
   if (hooked || typeof document === "undefined") return;
   hooked = true;
-  document.addEventListener("visibilitychange", apply);
+  document.addEventListener("visibilitychange", () => apply());
   // 勝手な再生を止められていたら、画面を触ったときに流し始める
   const retry = () => {
     if (state.blocked && wanted) apply();
@@ -149,18 +154,28 @@ function hookPage() {
   window.addEventListener("keydown", retry, true);
 }
 
-/** K.A.R.E.N. を開いた・閉じた */
+/** 画面を開いたときに曲を先に読み込んでおく（K.A.R.E.N. に切り替えた瞬間に鳴らすため） */
+export function preloadBgm(): void {
+  hookPage();
+  void load().then(() => {
+    if (state.hasTrack) el().load();
+  });
+}
+
+/** K.A.R.E.N. に切り替えた・戻した */
 export function setBgmActive(active: boolean): void {
+  if (wanted === active) return;
   wanted = active;
   hookPage();
-  void load().then(apply);
+  if (loaded && state.hasTrack) apply();
+  else void load().then(() => apply());
 }
 
 /** 声を聞いている・話している間は小さくする */
 export function setBgmDucked(v: boolean): void {
   if (ducked === v) return;
   ducked = v;
-  apply();
+  apply(true);
 }
 
 async function savePrefs() {
@@ -177,8 +192,7 @@ export function setBgmVolume(volume: number): void {
   set({ volume: clamp(volume) });
   void savePrefs();
   // 音量の操作はすぐに反映する（フェードしない）
-  if (audio && !audio.paused) audio.volume = target();
-  else apply();
+  apply();
 }
 
 /** 曲を選ぶ（MP3 など）。この端末にしまって、次から K.A.R.E.N. を開くたびに流す。うまくいかなければ理由 */

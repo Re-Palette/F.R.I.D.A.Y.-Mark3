@@ -55,6 +55,7 @@ import { EdithHud } from "./edith/EdithHud";
 import { webglAvailable } from "@/lib/webgl";
 import { loadCesium } from "@/lib/earth/cesium-loader";
 import { DEFAULT_DISPLAY, EDITH_DISPLAY_KEY, parseDisplay } from "@/lib/edith-display";
+import { preloadBgm, setBgmActive } from "@/lib/karen-bgm";
 import { useModeTransition } from "./ModeTransition";
 
 const CALENDAR_NOTICE: Record<string, string> = {
@@ -265,6 +266,9 @@ export function Dashboard() {
   const aiMode = useAiMode();
   // 見せる画面のモード：切り替えの演出で画面が覆われてから変わる（会話・声の行き先は aiMode ですぐ変わる）
   const { shown: shownMode, overlay: modeOverlay, playBoot } = useModeTransition(aiMode);
+  // K.A.R.E.N. の BGM：曲を先に読み込んでおき、切り替えた瞬間に（演出を待たずに）流す・戻したらすぐ止める
+  useEffect(() => preloadBgm(), []);
+  useEffect(() => setBgmActive(aiMode === "karen"), [aiMode]);
   // 一度開いた E.D.I.T.H. の画面は取っておく（KeptEdith）
   const [edithKept, setEdithKept] = useState(false);
   useEffect(() => {
