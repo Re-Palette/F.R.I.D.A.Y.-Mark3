@@ -79,7 +79,7 @@ async function probeGemini(config: ReturnType<typeof getGeminiConfig>) {
     .map((m) => m.name.replace(/^models\//, ""));
   const picked = pickTextModels(all);
   const tries = [];
-  for (const model of [...new Set([config.models[0], ...picked])].filter(Boolean).slice(0, 4)) {
+  for (const model of [...new Set([...config.models, ...picked])].filter(Boolean).slice(0, 8)) {
     const res = await fetch(`${config.baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers,
@@ -90,7 +90,7 @@ async function probeGemini(config: ReturnType<typeof getGeminiConfig>) {
     tries.push(
       res instanceof Error
         ? { model, error: String(res) }
-        : { model, status: res.status, body: res.ok ? "OK" : (await res.text()).slice(0, 300) },
+        : { model, status: res.status, body: res.ok ? "OK" : (await res.text()).slice(0, 900) },
     );
   }
   return {

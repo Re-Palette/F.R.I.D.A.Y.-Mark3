@@ -334,7 +334,7 @@ export function pickTextModels(models: { name: string; supportedGenerationMethod
     .filter((n) => /flash/i.test(n) && !/tts|image|embed|audio|live|transcri|music|lyria|veo|imagen|aqa|gemma|robotics|computer|thinking-exp/i.test(n));
   const version = (n: string) => Number(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
   const score = (n: string) => version(n) * 10 + (/lite/i.test(n) ? 1000 : 0) + (/preview|exp/i.test(n) ? 0 : 2) + (/latest/i.test(n) ? 1 : 0);
-  return [...new Set(usable)].sort((a, b) => score(b) - score(a)).slice(0, 3);
+  return [...new Set(usable)].sort((a, b) => score(b) - score(a)).slice(0, 6);
 }
 
 async function discoverModels(config: GeminiConfig, signal?: AbortSignal): Promise<string[]> {
@@ -346,7 +346,7 @@ async function discoverModels(config: GeminiConfig, signal?: AbortSignal): Promi
     const json = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
     const models = pickTextModels(json.models ?? []);
     discovered = { at: Date.now(), key, models };
-    console.info(`[friday] gemini: configured models not found; using ${models.join(", ") || "(none)"}`);
+    console.info(`[friday] gemini: fallback models from the list: ${models.join(", ") || "(none)"}`);
     return models;
   } catch {
     return [];
@@ -366,7 +366,7 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
     for (const m of discovered.models) if (!order.includes(m) && isAvailable(m)) order.push(m);
   }
   let lastError: FridayError | undefined;
-  let allNotFound = true;
+  let limited = false;
 
   /** 1 つのモデルで試す。つながれば Response、次の候補へ進むなら null */
   const attempt = async (model: string): Promise<Response | null> => {
@@ -384,7 +384,7 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
       } else {
         throw err;
       }
-      if (err.code !== "MODEL_NOT_FOUND") allNotFound = false;
+      if (err.code === "RATE_LIMITED") limited = true;
       lastError = err;
       return null;
     }
@@ -394,17 +394,18 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
     const res = await attempt(model);
     if (res) return { res, model };
   }
-  // 設定したモデルがどれも「見つからない」：Google の一覧から使えるモデルを選んで試す
-  if (allNotFound) {
-    for (const model of await discoverModels(opts.config, opts.signal)) {
-      if (order.includes(model)) continue;
-      const res = await attempt(model);
-      if (res) return { res, model };
-    }
+  // 設定したモデルがどれも使えない（見つからない・無料枠切れ・混雑）：
+  // Google の一覧から、まだ試していない使えるモデルを選んで試す（Flash-Lite が先、無ければ Flash）
+  let tried = 0;
+  for (const model of await discoverModels(opts.config, opts.signal)) {
+    if (order.includes(model) || !isAvailable(model) || tried >= 3) continue;
+    tried++;
+    const res = await attempt(model);
+    if (res) return { res, model };
   }
 
-  if (lastError?.code === "UPSTREAM_ERROR") throw lastError;
-  if (lastError?.code === "RATE_LIMITED") {
+  // どれか 1 つでも無料枠切れなら、それを伝える（最後のモデルの「見つからない」で隠さない）
+  if (limited) {
     throw new FridayError(
       "RATE_LIMITED",
       "今日の無料枠を使い切りました。日本時間の夕方（16〜17時ごろ）にリセットされます。",
@@ -412,6 +413,7 @@ async function connect(opts: GeminiStreamOptions): Promise<{ res: Response; mode
       true,
     );
   }
+  if (lastError?.code === "UPSTREAM_ERROR") throw lastError;
   throw new FridayError(
     "MODEL_NOT_FOUND",
     `利用できるモデルが見つかりません（${opts.config.models.join(", ")}）。GEMINI_MODEL を確認してください。`,
