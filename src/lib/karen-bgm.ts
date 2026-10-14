@@ -2,7 +2,7 @@
  * K.A.R.E.N. を開いている間に流す BGM（自分で用意した MP3 をループ再生）。画面側だけで動く。
  *   曲：K.A.R.E.N. の画面で選んだファイル（この端末の IndexedDB にしまう）。無ければ public/karen-bgm.mp3（置いてあれば）。
  *   K.A.R.E.N. に切り替えたらすぐ（切り替えの演出を待たずに）流し、F.R.I.D.A.Y. に戻したらすぐ止める。タブが裏の間は止める。
- *   曲は画面を開いたときに先に読み込んでおくので、切り替えた瞬間に鳴る。
+ *   曲は画面を開いたときに先に読み込んでおくので、切り替えた瞬間に鳴る。開き直すたびに曲の初めから流す。
  *   声で話しかけている間・返事を読み上げている間は小さくする（声が聞き取りにくくならないように）。
  *   ブラウザが勝手な再生を止めたとき（声で開いたときなど）は、次に画面を触ったときに流し始める。
  */
@@ -167,6 +167,8 @@ export function setBgmActive(active: boolean): void {
   if (wanted === active) return;
   wanted = active;
   hookPage();
+  // K.A.R.E.N. を開き直すたびに、曲の初めから流す
+  if (active && audio) audio.currentTime = 0;
   if (loaded && state.hasTrack) apply();
   else void load().then(() => apply());
 }
