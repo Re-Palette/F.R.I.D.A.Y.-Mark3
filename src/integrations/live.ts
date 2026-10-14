@@ -13,6 +13,7 @@ import type { CalendarEvent } from "@/integrations/google-calendar";
 import type { TasksOverview } from "@/integrations/tasks";
 import type { Reminder } from "@/integrations/reminders";
 import { weatherSummary, type WeatherReport } from "@/integrations/weather";
+import { PROVIDER_LABEL, searchProvider } from "@/integrations/web-search";
 
 /** 使い捨ての鍵で新しい会話を始められる時間 */
 const NEW_SESSION_MS = 2 * 60_000;
@@ -93,7 +94,19 @@ export interface LiveContext {
   recent: { role: "user" | "assistant"; content: string }[];
   /** K.A.R.E.N.（クリエイティブ AI）として話す */
   persona?: "karen" | "edith";
+  /** Web 検索を検索 API（LangSearch・Brave。web_search）で行う（既定：キーがあれば） */
+  searchApi?: "langsearch" | "brave" | null;
 }
+
+/** Web 検索を画面に頼む道具の名前（画面の live-voice.ts と同じ）。画面がサーバーの /api/search（LangSearch・Brave）を呼ぶ */
+export const WEB_SEARCH_TOOL = "web_search";
+
+const WEB_SEARCH_LIVE = `
+
+# Web 検索
+- 最新の情報・ニュース・出来事・値段・営業時間など、上に無いことや確かめが要ることを聞かれたら、「調べますね」と一言だけ言ってから ${WEB_SEARCH_TOOL} を呼ぶ（query には検索の言葉を日本語で短く入れる）。
+- 返ってきた results（title・snippet・age）を読んで、いつもの話し方のまま、分かったことを短く要約して声で答える。日付・数字・名前は結果のとおりに言う。
+- results に書かれていないことは足さない・推測しない。結果どうしが食い違う・情報が古いときは、そう伝える。ok が false や 0 件なら「検索では見つかりませんでした」と正直に言う。URL は読み上げない。`;
 
 /** E.D.I.T.H. のリアルタイム会話の声（GEMINI_LIVE_VOICE_EDITH で変えられる） */
 const EDITH_VOICE = "Kore";
@@ -169,6 +182,9 @@ export function buildLiveInstruction(ctx: LiveContext): string {
 - 予定・天気・ToDo は上の情報から答える。上に無い最新情報は、Google 検索が使えるときは調べて答え、使えなければ「分からない」と正直に言う。
 `;
   out += ctx.persona === "karen" ? KAREN_SECTION + KAREN_LIVE : ctx.persona === "edith" ? EDITH_SECTION + EDITH_LIVE + FRIDAY_LIVE : FRIDAY_LIVE;
+  // 検索は検索 API（LangSearch・Brave）で（Google 検索の道具は渡さない）
+  const api = ctx.searchApi === undefined ? searchProvider() : ctx.searchApi;
+  if (api) out = out.replace(/Google 検索/g, `${WEB_SEARCH_TOOL}（${PROVIDER_LABEL[api]}）`) + WEB_SEARCH_LIVE;
   return out;
 }
 
@@ -178,15 +194,20 @@ export interface LiveSetup {
   model: string;
   systemInstruction: string;
   voiceName: string | null;
+  /** Web 検索を web_search（LangSearch・Brave）で行う（画面は Google 検索の道具の代わりにこれを渡す） */
+  webSearch: boolean;
 }
 
 export async function prepareLive(ctx: LiveContext, signal?: AbortSignal): Promise<LiveSetup> {
   const [token, model] = await Promise.all([createToken(signal), liveModel(signal)]);
   const ws = apiOrigin().replace(/^http/, "ws");
+  const searchApi = ctx.searchApi === undefined ? searchProvider() : ctx.searchApi;
+  const webSearch = Boolean(searchApi);
   return {
+    webSearch,
     url: `${ws}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`,
     model,
-    systemInstruction: buildLiveInstruction(ctx),
+    systemInstruction: buildLiveInstruction({ ...ctx, searchApi }),
     // K.A.R.E.N. は F.R.I.D.A.Y. と違う声で話す（誰が話しているか分かるように）
     voiceName:
       ctx.persona === "karen"

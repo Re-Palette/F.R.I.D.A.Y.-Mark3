@@ -5,6 +5,7 @@
 import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
 import { asksForSns, asksForTrend, needsSearch } from "@/agents/search/needs-search";
 import { getWeather, type WeatherReport } from "@/integrations/weather";
+import { searchProvider, searchQuery, searchSection, webSearch, type WebSearch } from "@/integrations/web-search";
 import { readNewsSettings } from "@/integrations/news";
 import { asksForMail, asksForMailDraft } from "@/integrations/gmail";
 import {
@@ -59,6 +60,9 @@ async function calendarForTurn(ctx: AgentContext, latest: string, budget: number
   if (snap) return snapshotEvents(snap, ctx.now, ctx.timezone);
   return live?.events ?? null;
 }
+
+/** 検索 API（LangSearch・Brave）の結果を待てる時間。間に合わなければ Gemini の Google 検索で答える */
+const SEARCH_BUDGET_MS = { text: 5000, voice: 3000 };
 
 /** 振り返り・日記の材料集めに待てる時間（頼まれたときだけなので長め） */
 const REVIEW_BUDGET_MS = 3000;
@@ -178,6 +182,29 @@ export const chatAgent: Agent = {
         }))
       : Promise.resolve(null);
 
+    // Web 検索: 最新情報が必要そうな発言だけ（無料枠の回数を節約）
+    const settings = peekAppSettings();
+    const mode = settings.search ?? getSearchMode();
+    // ニュースをまとめるときは検索する（FRIDAY_SEARCH=off のときだけは検索しない）
+    const sns = asksForSns(latest);
+    // カメラの映像を見せたときは、画像から答える（「調べて」と言われたときだけ検索する）
+    // 添えたファイルを読んで答えるときも同じ（中身はファイルにあるので、検索しない）
+    const reading = ctx.messages.some((m) => m.files?.length);
+    const looking = Boolean(ctx.messages[ctx.messages.length - 1]?.image) || Boolean(ctx.messages[ctx.messages.length - 1]?.files?.length);
+    const search =
+      mode !== "off" &&
+      (mode === "always" || briefing || ctx.persona === "edith" || (looking ? /調べ|検索|ググ/.test(latest) : needsSearch(latest) || asksForTrend(latest)));
+    // 検索は LangSearch・Brave（キーがあれば）。準備（脳・予定など）と同時に始める。ニュースのまとめは Gemini の Google 検索のまま
+    const searchTask: Promise<WebSearch | null> =
+      search && !briefing && searchProvider()
+        ? within(
+            webSearch(searchQuery(latest, [...ctx.messages].reverse().find((m, i) => i > 0 && m.role === "user")?.content), { signal: ctx.signal }),
+            ctx.voice ? SEARCH_BUDGET_MS.voice : SEARCH_BUDGET_MS.text,
+            null,
+            "web-search",
+          )
+        : Promise.resolve(null);
+
     const [memories, events, weather, newsSettings, tasks, reminders, mail, reviewMaterial, mailCanDraft, music, lectures, quiz, company, lectureDocs, usage] = await Promise.all([
       ctx.memory.connected ? within(ctx.memory.recall(latest, ctx.messages), budget, [] as MemoryRecord[], "recall") : [],
       calendarForTurn(ctx, latest, budget, morning),
@@ -199,20 +226,11 @@ export const chatAgent: Agent = {
     const prepMs = Date.now() - prepStart;
     const news = ctx.news && newsSettings ? { ...ctx.news, settings: newsSettings } : ctx.news;
 
-    // Web 検索: 最新情報が必要そうな発言だけ（無料枠の回数を節約）
-    const settings = peekAppSettings();
-    const mode = settings.search ?? getSearchMode();
-    // ニュースをまとめるときは検索する（FRIDAY_SEARCH=off のときだけは検索しない）
-    const sns = asksForSns(latest);
-    // カメラの映像を見せたときは、画像から答える（「調べて」と言われたときだけ検索する）
-    // 添えたファイルを読んで答えるときも同じ（中身はファイルにあるので、検索しない）
-    const reading = ctx.messages.some((m) => m.files?.length);
-    const looking = Boolean(ctx.messages[ctx.messages.length - 1]?.image) || Boolean(ctx.messages[ctx.messages.length - 1]?.files?.length);
-    const search =
-      mode !== "off" &&
-      (mode === "always" || briefing || ctx.persona === "edith" || (looking ? /調べ|検索|ググ/.test(latest) : needsSearch(latest) || asksForTrend(latest)));
-
     yield { text: "", stage: search ? "search" : "think" };
+    // 検索 API の結果（あれば、それを読んで要約して答える。無ければ Gemini の Google 検索）
+    // 0 件・失敗・間に合わないときは Gemini の Google 検索に戻す
+    const found = await searchTask.then((b) => (b?.results.length ? b : null));
+    if (found) yield { text: "", sources: found.results.map((r) => ({ title: r.title, uri: r.url })) };
 
     // カメラの映像（最新の発言にだけ付く）は、文字の前に画像として渡す
     const camera = Boolean(ctx.messages[ctx.messages.length - 1]?.image);
@@ -278,11 +296,11 @@ export const chatAgent: Agent = {
         lectureDocs,
         usage,
         voice: ctx.voice,
-      }) + (ctx.persona === "karen" ? KAREN_SECTION : ctx.persona === "edith" ? EDITH_SECTION : "");
+      }) + (ctx.persona === "karen" ? KAREN_SECTION : ctx.persona === "edith" ? EDITH_SECTION : "") + (found ? searchSection(found) : "");
     // Gemini が使えなければ、ローカル AI（Ollama）で答える（サーバーが PC 上で動いているときだけ）。
     // Ollama が読める長さ（num_ctx 2048）に収まるよう、人格の要点・記憶の一部・直近の会話だけを渡す
     for await (const chunk of withLocalFallback(
-      streamGemini({ config: runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search }),
+      streamGemini({ config: runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search && !found }),
       () => ({
         system: `${buildCompactInstruction({
           now: ctx.now,

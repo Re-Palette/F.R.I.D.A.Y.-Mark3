@@ -52,6 +52,22 @@ const EDITH_TOOL_DECL = {
   ],
 };
 
+/** Web 検索（LangSearch・Brave。サーバーの /api/search が調べる。サーバーの integrations/live.ts と同じ名前） */
+export const WEB_SEARCH_TOOL = "web_search";
+const WEB_SEARCH_DECL = {
+  functionDeclarations: [
+    {
+      name: WEB_SEARCH_TOOL,
+      description: "Web を検索し、検索結果（見出し・説明・日付・出典）を返す。最新の情報・ニュース・事実確認が必要な質問に使い、結果を要約して答える。",
+      parameters: {
+        type: "OBJECT",
+        properties: { query: { type: "STRING", description: "検索の言葉（日本語で短く。例：今日の日経平均 終値）" } },
+        required: ["query"],
+      },
+    },
+  ],
+};
+
 /** E.D.I.T.H. の GOD'S EYE VIEW の操作（場所のピックアップ・3D・ライブカメラ・追跡・表示の切り替え） */
 export const EDITH_VIEW_TOOL = "edith_view";
 const EDITH_VIEW_DECL = {
@@ -111,6 +127,8 @@ interface LivePrep {
   model?: string;
   systemInstruction?: string;
   voiceName?: string | null;
+  /** Web 検索を検索 API（LangSearch・Brave。web_search）で行う */
+  webSearch?: boolean;
   error?: string;
   /** 画面が古い版（読み込み直す） */
   stale?: boolean;
@@ -140,10 +158,12 @@ export function buildSetup(
   prep: Required<Pick<LivePrep, "model" | "systemInstruction">> & { voiceName?: string | null },
   full: boolean,
   persona?: "karen" | "edith",
+  webSearch = false,
 ) {
   // 操作の道具は、細かい設定を受け付けないモデル向けの最小の設定にも入れる（無いと操作ができない）
   const own = persona === "karen" ? [KAREN_TOOL_DECL] : persona === "edith" ? [{ functionDeclarations: [...FRIDAY_TOOL_DECL.functionDeclarations, ...EDITH_TOOL_DECL.functionDeclarations, EDITH_VIEW_DECL] }] : [FRIDAY_TOOL_DECL];
-  const tools = full ? [{ googleSearch: {} }, ...own] : own;
+  // 検索は検索 API（web_search）があればそれだけ。無ければ Gemini の Google 検索
+  const tools = webSearch ? [...own, WEB_SEARCH_DECL] : full ? [{ googleSearch: {} }, ...own] : own;
   return {
     setup: {
       model: prep.model.startsWith("models/") ? prep.model : `models/${prep.model}`,
@@ -356,7 +376,7 @@ export class LiveSession {
           /* noop */
         }
       }, CONNECT_MS);
-      ws.onopen = () => ws.send(JSON.stringify(buildSetup({ model: prep.model!, systemInstruction: prep.systemInstruction!, voiceName: prep.voiceName }, full, opts.persona)));
+      ws.onopen = () => ws.send(JSON.stringify(buildSetup({ model: prep.model!, systemInstruction: prep.systemInstruction!, voiceName: prep.voiceName }, full, opts.persona, prep.webSearch)));
       ws.onerror = () => {
         clearTimeout(timer);
         reject(new Error("リアルタイム会話につながりませんでした。"));
