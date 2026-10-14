@@ -26,6 +26,8 @@ export type KarenOp =
   | { kind: "export" }
   | { kind: "render" }
   | { kind: "turntable"; on: boolean }
+  /** 外部で作った 3D モデルのファイルを取り込む（ファイル選択を開く） */
+  | { kind: "import" }
   /** 道具がまだ無い制作（未実装と伝える） */
   | { kind: "unsupported"; what: string }
   | { kind: "cancel" }
@@ -152,6 +154,7 @@ function clauseOp(c: string): KarenOp | null {
   if (/(次の制作|次を作|新しい制作|別のを作)/.test(c)) return { kind: "next" };
   if (/(全部|すべて|全て|ぜんぶ)(の)?(オブジェクト|モデル)?(を)?(消|削除|クリア)/.test(c) || /(シーン|ワークスペース)(を)?(クリア|リセット|空に)/.test(c)) return { kind: "clear" };
   if (/(視点|カメラ|ビュー|見え方)(を)?(リセット|戻|元に)/.test(c) || /^リセット/.test(c)) return { kind: "reset-view" };
+  if (/(取り込|取込|インポート|import|読み込ん|読みこん|読み込み|ファイル(を)?(開|選|追加|入れ))/i.test(c)) return { kind: "import" };
   if (/(保存|セーブ)/.test(c)) return { kind: "save" };
   if (/(エクスポート|書き出|glb|GLB|ダウンロード)/.test(c)) return { kind: "export" };
   if (/(レンダリング|レンダー|render|スクショ|画像(で|に)(保存|して|出して))/i.test(c)) return { kind: "render" };
@@ -242,6 +245,8 @@ export function describeOp(op: KarenOp): string {
       return "すべてのオブジェクトを削除";
     case "reset-view":
       return "視点をリセット";
+    case "import":
+      return "3D モデルのファイルを取り込む";
     case "save":
       return "プロジェクトを保存";
     case "export":

@@ -29,3 +29,4 @@ public/pdfjs/
 public/ort/
 # E.D.I.T.H. の 3D 地球儀（CesiumJS）の本体と静的ファイルは build 時に node_modules からコピーする
 public/cesium/
+public/draco/

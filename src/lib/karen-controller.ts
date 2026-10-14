@@ -10,6 +10,7 @@
 import { useSyncExternalStore } from "react";
 import { setAiMode } from "./ai-mode";
 import { downloadAsset } from "./hologram-model";
+import { IMPORT_JOB_TITLE, ImportError, importModelFiles, openImportPicker } from "./karen-import";
 import type { HoloAsset, HoloModel } from "./hologram-schema";
 import { describeOp, parseKarenCommand, SHAPE_LABEL, startsCreation, type KarenOp } from "./karen-intent";
 import { addObject, clearScene, getScene, removeObject, resetView, setProject, setTurntable, target, updateObject, type SceneObject } from "./karen-scene";
@@ -126,6 +127,26 @@ async function createModel(subject: string, request: string, io?: KarenIo): Prom
   }
 }
 
+/** 外部で作った 3D モデルのファイルを取り込んで、シーンに置く（選ばれた・落とされたファイル） */
+export async function importFiles(files: FileList | File[], io?: KarenIo): Promise<void> {
+  if (!files.length) return;
+  if (busy(getKarenState())) cancelCreation(io);
+  const id = nextJobId();
+  dispatchKaren({ type: "START_CREATE", request: IMPORT_JOB_TITLE, jobId: id, step: "build" });
+  try {
+    const made = await importModelFiles(files);
+    if (getKarenState().job?.id !== id) return; // 取り込み中にキャンセルされた
+    addObject({ name: made.name, kind: "asset", asset: made.asset, buffer: made.buffer });
+    dispatchKaren({ type: "JOB_DONE", jobId: id });
+    notice(`「${made.name}」を取り込みました。ドラッグで視点を回し、選ぶと移動・回転・拡大縮小できます。`, "info", io);
+  } catch (err) {
+    const message = err instanceof ImportError ? err.message : "3D モデルを取り込めませんでした。";
+    if (!(err instanceof ImportError)) console.warn("[karen] import failed:", err);
+    dispatchKaren({ type: "JOB_ERROR", jobId: id, error: message });
+    notice(message, "error", io);
+  }
+}
+
 /** 制作をキャンセルする（進行中の問い合わせも止める） */
 export function cancelCreation(io?: KarenIo): boolean {
   if (!busy(getKarenState())) return false;
@@ -159,7 +180,7 @@ function edit(io: KarenIo | undefined, apply: (o: SceneObject) => void): boolean
 
 async function runOp(op: KarenOp, io?: KarenIo): Promise<void> {
   // 制作中に届いた編集は、制作が終わってから当てる
-  if (busy(getKarenState()) && !["cancel", "create-model", "idle", "ask", "unsupported"].includes(op.kind)) {
+  if (busy(getKarenState()) && !["cancel", "create-model", "idle", "ask", "unsupported", "import"].includes(op.kind)) {
     queued.push(op);
     notice(`制作中です。終わったら「${describeOp(op)}」を反映します。`, "info", io, false);
     return;
@@ -209,6 +230,11 @@ async function runOp(op: KarenOp, io?: KarenIo): Promise<void> {
       return;
     case "turntable":
       setTurntable(op.on);
+      return;
+    case "import":
+      // 声からはファイル選択を開けないことがある（ブラウザが、押したとき以外は開かせない）ので、やり方も伝える
+      openImportPicker();
+      notice("取り込む 3D モデルのファイルを選んでください（GLB・glTF・OBJ・FBX・STL・PLY・3MF）。画面にドラッグ＆ドロップしても取り込めます。", "info", io);
       return;
     case "save":
       await saveCurrent(io);

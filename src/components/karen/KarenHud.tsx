@@ -19,10 +19,11 @@ import { KarenWorkspace, type TransformMode } from "./KarenWorkspace";
 import { busy, dispatchKaren, useKarenState, type JobStep, type KarenPhase } from "@/lib/karen-state";
 import { selectObject, useScene } from "@/lib/karen-scene";
 import { useProjects } from "@/lib/karen-projects";
-import { answerExit, cancelCreation, exportGlb, openProject, renderPng, runKarenOp, saveCurrent, useExitAsk, workspaceThumbnail, type KarenIo } from "@/lib/karen-controller";
+import { answerExit, cancelCreation, exportGlb, importFiles, openProject, renderPng, runKarenOp, saveCurrent, useExitAsk, workspaceThumbnail, type KarenIo } from "@/lib/karen-controller";
 import type { Shape } from "@/lib/karen-intent";
 import { useAiRoute } from "@/lib/ai-router";
 import { gpuName } from "@/lib/webgl";
+import { IMPORT_ACCEPT, IMPORT_JOB_TITLE, registerImportPicker } from "@/lib/karen-import";
 
 /** 球が消えて制作の画面になるまでの演出の長さ */
 const TRANSITION_MS = 1500;
@@ -168,6 +169,15 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
   const [panel, setPanel] = useState<null | "projects" | "scene" | "add">(null);
   const [entering, setEntering] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** 外部の 3D モデルを取り込むファイル選択（隠してある） */
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    registerImportPicker(() => fileRef.current?.click());
+    return () => registerImportPicker(null);
+  }, [active]);
+  const hasFiles = (e: React.DragEvent) => [...e.dataTransfer.types].includes("Files");
 
   // 呼び出されたときの青い走査線の演出
   useEffect(() => {
@@ -255,6 +265,13 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
       disabled: !hasObjects,
       title: "選んだオブジェクトを動かす（押すたびに 移動 → 回転 → 拡大縮小）",
     },
+    {
+      key: "import",
+      label: "IMPORT MODEL",
+      icon: Icon.folder,
+      on: () => fileRef.current?.click(),
+      title: "外部で作った 3D モデルを取り込む（GLB・glTF・OBJ・FBX・STL・PLY・3MF。画面にドラッグ＆ドロップでも可）",
+    },
     { key: "render", label: "RENDER", icon: Icon.cube, on: () => void renderPng(io), disabled: !hasObjects, title: "いまの画面を PNG 画像に書き出す" },
     {
       key: "anim",
@@ -269,6 +286,8 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
 
   const stepState = (s: JobStep) => {
     if (!st.job) return "todo";
+    // ファイルの取り込みは、組み立てるだけ（探す・調べる・設計するは要らない）
+    if (st.job.title === IMPORT_JOB_TITLE && s !== "build") return "skip";
     if (st.job.done.includes(s)) return "done";
     if (st.job.step === s && working) return "now";
     // 既存の 3D モデルが見つかったので、調べる・設計するは要らなかった
@@ -277,7 +296,28 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
   };
 
   return (
-    <div className="karen" data-phase={st.phase} data-workspace={st.workspace || undefined} data-entering={entering || undefined} aria-hidden={!active}>
+    <div
+      className="karen"
+      data-phase={st.phase}
+      data-workspace={st.workspace || undefined}
+      data-entering={entering || undefined}
+      aria-hidden={!active}
+      onDragOver={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        setDropping(false);
+        void importFiles(e.dataTransfer.files, io);
+      }}
+    >
       <div className="karen__grid" aria-hidden="true" />
       <svg className="karen__frame" viewBox="0 0 1600 900" preserveAspectRatio="none" aria-hidden="true">
         <path d="M14 40 L40 14 H560 L590 40 H1010 L1040 14 H1560 L1586 40 V860 L1560 886 H1040 L1010 860 H590 L560 886 H40 L14 860 Z" />
@@ -404,6 +444,9 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
             <span className="ktoolbar__sep" />
             <button type="button" onClick={() => setPanel((p) => (p === "add" ? null : "add"))} aria-pressed={panel === "add"} title="形を足す">
               ADD
+            </button>
+            <button type="button" onClick={() => fileRef.current?.click()} title="外部で作った 3D モデルを取り込む（GLB・glTF・OBJ・FBX・STL・PLY・3MF）">
+              IMPORT
             </button>
             <button type="button" disabled={!hasObjects} onClick={() => runKarenOp({ kind: "delete" }, io)} title="選んだオブジェクトを削除">
               DELETE
@@ -544,7 +587,7 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
                     <li key={s.step} data-state={state}>
                       <i />
                       {s.label}
-                      {state === "skip" && <small>（既存のモデルを使用）</small>}
+                      {state === "skip" && <small>{st.job?.title === IMPORT_JOB_TITLE ? "（取り込んだファイルを使用）" : "（既存のモデルを使用）"}</small>}
                     </li>
                   );
                 })}
@@ -601,6 +644,24 @@ export const KarenHud = memo(function KarenHud({ active, messages, voiceState, v
           {Icon.send}
         </button>
       </form>
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept={IMPORT_ACCEPT}
+        hidden
+        onChange={(e) => {
+          const files = e.currentTarget.files;
+          if (files?.length) void importFiles([...files], io);
+          e.currentTarget.value = "";
+        }}
+      />
+      {dropping && (
+        <div className="kdrop" aria-hidden="true">
+          <b>DROP TO IMPORT</b>
+          <span>3D モデルのファイルを離すと取り込みます（GLB・glTF・OBJ・FBX・STL・PLY・3MF）</span>
+        </div>
+      )}
       <footer className="kfoot">
         K.A.R.E.N. <span>//</span> CREATIVE MODE <span>//</span> <b data-on={online || undefined}>{online ? "ONLINE" : "OFFLINE"}</b>
         <i />

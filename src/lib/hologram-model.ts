@@ -6,6 +6,7 @@
 import { useSyncExternalStore } from "react";
 import type { HoloAsset, HoloModel } from "./hologram-schema";
 import { resetView } from "./hologram-control";
+import { LOCAL_URL_PREFIX, readImported } from "./karen-import";
 
 export interface HoloState {
   status: "idle" | "loading" | "ready" | "error";
@@ -97,6 +98,8 @@ export async function requestHologram(subject: string, opts: { skipFind?: boolea
 
 /** .glb を読み込む（まず直接、だめならサーバーの中継から）。読めなければ null */
 export async function downloadAsset(url: string): Promise<ArrayBuffer | null> {
+  // K.A.R.E.N. に取り込んだファイル（この端末にしまってある）
+  if (url.startsWith(LOCAL_URL_PREFIX)) return readImported(url);
   for (const src of [url, `/api/hologram/asset?u=${encodeURIComponent(url)}`]) {
     try {
       const res = await fetch(src, { signal: AbortSignal.timeout(20000) });
