@@ -54,7 +54,8 @@ describe("無料枠の上限", () => {
     assert.equal(first.text, "ok");
     assert.deepEqual(first.called, ["quota-day-a", "quota-day-b"]);
     const limited = limitedModels().find((l) => l.model === "quota-day-a");
-    assert.ok(limited && limited.until > Date.now() + 15 * 60_000 - 1 && limited.until <= nextPacificMidnight());
+    // 西海岸の 0 時（枠が戻る時刻）まで休ませる（時刻によっては数分後のこともある）
+    assert.ok(limited && limited.until > Date.now() && Math.abs(limited.until - nextPacificMidnight()) < 5000);
     // 2 回目は上限のモデルを試さない（無駄に呼ばない）
     const second = await ask(["quota-day-a", "quota-day-b"], () => sse("again"));
     assert.deepEqual(second.called, ["quota-day-b"]);

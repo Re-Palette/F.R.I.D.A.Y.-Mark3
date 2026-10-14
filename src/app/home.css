@@ -53,31 +53,42 @@
 /* 流れる光（回路を走るエネルギー） */
 .bg__streaks i {
   opacity: 0.55;
-  background: linear-gradient(90deg, transparent, rgba(255, 170, 80, 0.95) 50%, transparent);
-  background-size: 40% 100%;
-  background-repeat: no-repeat;
-  animation: streak 7s linear infinite;
+  background: none;
+  overflow: hidden;
 }
 
-.bg__streaks i:nth-child(2) {
+/* 流れる光は、帯の中を transform で動かす（画面の処理が忙しくても止まらない・描き直しも要らない） */
+.bg__streaks i::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 170, 80, 0.95) 50%, transparent);
+  animation: streak 7s linear infinite;
+  will-change: transform;
+}
+
+.bg__streaks i:nth-child(2)::before {
   animation-delay: -2.4s;
   animation-duration: 9s;
 }
-.bg__streaks i:nth-child(3) {
+.bg__streaks i:nth-child(3)::before {
   animation-delay: -4.8s;
   animation-duration: 8s;
 }
-.bg__streaks i:nth-child(4) {
+.bg__streaks i:nth-child(4)::before {
   animation-delay: -1.2s;
   animation-duration: 11s;
 }
 
 @keyframes streak {
   from {
-    background-position: -60% 0;
+    transform: translateX(-90%);
   }
   to {
-    background-position: 160% 0;
+    transform: translateX(240%);
   }
 }
 

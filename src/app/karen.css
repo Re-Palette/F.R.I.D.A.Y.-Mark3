@@ -189,10 +189,10 @@
 
 @keyframes kbar-run {
   from {
-    left: -30%;
+    translate: -100% 0;
   }
   to {
-    left: 100%;
+    translate: 333% 0;
   }
 }
 

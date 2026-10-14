@@ -496,11 +496,28 @@
     transform: rotate(360deg);
   }
 }
+/* 呼吸する光：光の層の濃さ（opacity）だけを変える（box-shadow・filter を動かすと、毎コマ描き直しになって重い） */
 @keyframes edith-breathe {
   50% {
-    box-shadow: 0 0 34px rgba(181, 108, 255, 0.95);
-    filter: brightness(1.15);
+    opacity: 1;
   }
+}
+.emode,
+.edock__orb {
+  position: relative;
+  isolation: isolate;
+}
+.emode::after,
+.edock__orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: rgba(215, 180, 255, 0.12);
+  box-shadow: 0 0 34px rgba(181, 108, 255, 0.95);
+  opacity: 0;
+  pointer-events: none;
 }
 @keyframes edith-bar {
   50% {
@@ -885,8 +902,8 @@
   color: var(--e-dim);
   text-shadow: none;
 }
-.emode[data-state="listening"],
-.emode[data-state="speaking"] {
+.emode[data-state="listening"]::after,
+.emode[data-state="speaking"]::after {
   animation: edith-breathe 1.6s ease-in-out infinite;
 }
 .eai {
@@ -1447,15 +1464,21 @@
   background: radial-gradient(circle, rgba(215, 180, 255, 0.3) 0%, rgba(139, 53, 255, 0.3) 45%, rgba(26, 11, 61, 0.9) 75%);
   color: #fff;
   box-shadow: 0 0 20px rgba(139, 53, 255, 0.8);
+}
+.edock__orb::after {
   animation: edith-breathe 3.2s ease-in-out infinite;
 }
-.edock__orb[data-state="off"] {
+.edock__orb[data-state="off"]::after {
   animation: none;
+}
+.edock__orb[data-state="off"] {
   box-shadow: 0 0 8px rgba(139, 53, 255, 0.4);
   color: var(--e-dim);
 }
-.edock__orb[data-state="listening"] {
+.edock__orb[data-state="listening"]::after {
   animation-duration: 1.1s;
+}
+.edock__orb[data-state="listening"] {
   box-shadow: 0 0 34px rgba(215, 180, 255, 0.95);
 }
 .edock__orb[data-state="speaking"] span,
@@ -1482,8 +1505,10 @@
 }
 .edock__eq i {
   width: 2px;
-  height: 3px;
+  height: 10px;
   background: var(--e-glow);
+  transform: scaleY(0.3);
+  transform-origin: 50% 100%;
 }
 .edock__eq[data-active] i {
   animation: edith-eq 0.8s ease-in-out infinite alternate;
@@ -1896,7 +1921,7 @@
 
 @keyframes edith-eq {
   to {
-    height: 10px;
+    transform: scaleY(1);
   }
 }
 @keyframes edith-twinkle {
