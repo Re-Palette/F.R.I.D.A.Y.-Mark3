@@ -48,7 +48,7 @@ import { aiCall, stripWake } from "@/lib/speech";
 import { handleKarenText, requestExit, type KarenIo } from "@/lib/karen-controller";
 import { busy as karenBusy, dispatchKaren, getKarenState, subscribeKaren } from "@/lib/karen-state";
 import { getScene } from "@/lib/karen-scene";
-import { EDITH_TOOL, EDITH_VIEW_TOOL, FRIDAY_TOOL, KAREN_TOOL, STALE_CLIENT, WEB_SEARCH_TOOL } from "@/lib/live-voice";
+import { EDITH_TOOL, EDITH_VIEW_TOOL, FRIDAY_TOOL, KAREN_TOOL, NEWS_TOOL, STALE_CLIENT } from "@/lib/live-voice";
 import { ACTION_TIMEOUT_MS, summarizeAction } from "@/lib/live-actions";
 import { KarenHud } from "./karen/KarenHud";
 import { EdithHud } from "./edith/EdithHud";
@@ -509,14 +509,13 @@ export function Dashboard() {
     const raw = typeof args.request === "string" ? args.request : typeof args.query === "string" ? args.query : "";
     const request = raw.trim();
     if (!request) return { ok: false, error: "頼みの内容が空です。" };
-    // Web 検索（LangSearch・Brave）：サーバーが調べた結果を返し、AI が要約して声で答える
-    if (name === WEB_SEARCH_TOOL) {
+    // ニュース（FreeNewsApi）：サーバーが探した記事を返し、AI が要約して声で答える
+    if (name === NEWS_TOOL) {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(request.slice(0, 200))}`, { cache: "no-store" });
-        const data = (await res.json()) as Record<string, unknown>;
-        return res.ok ? data : { ok: false, error: typeof data.error === "string" ? data.error : "検索できませんでした。" };
+        return (await res.json()) as Record<string, unknown>;
       } catch {
-        return { ok: false, error: "検索できませんでした（通信エラー）。" };
+        return { ok: false, error: "ニュースの記事を取得できませんでした（通信エラー）。" };
       }
     }
     // E.D.I.T.H. の画面の操作（ピックアップ・3D・ライブカメラ・追跡・表示の切り替え）は、この端末で動かす
@@ -527,7 +526,7 @@ export function Dashboard() {
         return { ok: false, error: getAiMode() === "edith" ? "画面の操作として分かりませんでした。場所の名前と「ピックアップ」「3Dで見せて」「〜を出して」などで頼んでください。" : "E.D.I.T.H. の画面が開いていません。" };
       }
     }
-    // E.D.I.T.H. の調べもの：これまでの会話の仕組み（E.D.I.T.H. の人格・Web 検索）で調べる。返答は画面の情報ウィンドウに出る
+    // E.D.I.T.H. の調べもの：これまでの会話の仕組み（E.D.I.T.H. の人格・Google 検索）で調べる。返答は画面の情報ウィンドウに出る
     if (name === FRIDAY_TOOL || name === EDITH_TOOL) return runFridayAction(request);
     if (name !== KAREN_TOOL || getAiMode() !== "karen") return { ok: false, error: "いまは K.A.R.E.N. のモードではありません。" };
     const notices: string[] = [];

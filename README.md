@@ -45,8 +45,6 @@ API キーは [Google AI Studio](https://aistudio.google.com/apikey) で発行�
 | `GOOGLE_CALENDAR_ID` | | `primary` | 読み書きするカレンダー |
 | `WEATHER_CITY` / `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` | | 東京 | 天気の場所（Open-Meteo・登録不要） |
 | `FRIDAY_SEARCH` | | `auto` | Web 検索。`auto`（必要なときだけ）/ `always` / `off` |
-| `LANGSEARCH_API_KEY` | | | 調べものを [LangSearch](https://langsearch.com/)（無料・1 日の上限あり）で行う（F.R.I.D.A.Y. は検索結果を要約して答える）。無ければ Gemini の Google 検索 |
-| `BRAVE_SEARCH_API_KEY` | | | LangSearch の代わりに Brave Search API を使う（`LANGSEARCH_API_KEY` が無いときだけ） |
 | `NEWS_TIME` / `NEWS_TOPICS` | | `07:00` / なし | 毎日のニュースの時間と興味のある分野（脳の「ニュース」ノートが優先） |
 | `FREENEWSAPI` | | （使う） | ニュースの記事を [FreeNewsApi](https://freenewsapi.ai/)（キー不要）から持ってくる。`off` で使わない（Google 検索でまとめる） |
 | `CRON_SECRET` | | — | 毎夜の自動日記・プッシュ通知の定期実行用の合言葉 |
@@ -155,10 +153,7 @@ Obsidian（PC / スマホ） ⇄ Obsidian Git ⇄ GitHub 非公開リポジト�
 
 - ニュース・最新情報・価格・「調べて」など、最新の情報が必要そうな発言のときだけ Gemini の Google 検索を有効にします（`src/agents/search/needs-search.ts`）。
   無料枠の検索回数を節約するためです。常に使う場合は `FRIDAY_SEARCH=always`。
-- `LANGSEARCH_API_KEY` を設定すると、検索が要るときだけ **LangSearch** で検索し、F.R.I.D.A.Y. はその検索結果（見出し・本文の抜き出し・日付）を読んで要約して答えます（結果に無いことは足さない）。
-  ふだんの会話（検索が要らない発言）はこれまでどおりです。`BRAVE_SEARCH_API_KEY` だけがあるときは Brave Search を使います。
-  文字の会話・LINE・E.D.I.T.H. の調べもの・リアルタイム音声会話（`web_search` の道具 → `/api/search`）のすべてで使います。
-  検索 API が失敗・0 件・時間切れのときは、Gemini の Google 検索に戻します。ニュース（E.D.I.T.H. の NEWS・朝のまとめ・通知の見出し）は下の FreeNewsApi の記事から作ります。
+- ニュース（E.D.I.T.H. の NEWS・朝のまとめ・通知の見出し・話題のニュース・ニュースの詳細）は、検索ではなく下の FreeNewsApi の記事から作ります。
 - 参照したページは返答の下にリンクで表示します（読み上げはしません）。
 - 検索が使えない・検索の無料枠を使い切ったときは、自動で検索なしで答えます。
 
@@ -519,10 +514,10 @@ FRIDAY ── AI Router ─┬─ ONLINE  → Gemini（Vercel のサーバーの
   出典は記事そのものの URL です。記事が取れない・少ないときは、これまでどおり Gemini の Google 検索でまとめます。`FREENEWSAPI=off` で使いません。
 - 話題を決めたニュースの質問（「アメリカでのニュースは？」「トヨタのニュースある？」）や、ニュースの続きの質問（「これの詳細は？」）も、
   FreeNewsApi でその話題の記事を探して答えます（`src/agents/search/news-search.ts`。続きの質問は会話の流れから検索語を作る）。
-  会話（F.R.I.D.A.Y.・E.D.I.T.H.・K.A.R.E.N.・LINE・声）でのニュースの質問には Google 検索・検索 API を使いません。記事が取れなかったときは、そう伝えます。
+  会話（F.R.I.D.A.Y.・E.D.I.T.H.・K.A.R.E.N.・LINE・声）でのニュースの質問には Google 検索を使いません。記事が取れなかったときは、そう伝えます。
+- 検索は必要なときだけ使います（E.D.I.T.H. のときも、調べものの発言のときだけ）。
 - 「ニュースの詳細を教えて」「これの詳細は？」は、前の返事に出た記事をすぐ見つけ（最近見せた記事の見出しと照らし合わせる）、FreeNewsApi から本文（`full_text=true`）を持ってきて詳しく答えます。
 - 速さのため：ニュースのときは Gemini に考えさせる量を最小にし、今日のニュースの記事は `/api/warm`（入力中・聞き取り中）で先に取っておきます。
-- 検索は必要なときだけ使います（E.D.I.T.H. のときも、調べものの発言のときだけ）。
 
 - 設定した時間（既定 7:00）を過ぎてから **その日最初に話しかけたとき**、まず発言に答えてから、今日の主なニュース 3 本と「興味のある分野」ごとのニュースを検索してまとめて伝えます。
   その日に伝えたかは Cookie（端末ごと）で覚えます。「今日のニュースは？」と聞けばいつでもまとめます。

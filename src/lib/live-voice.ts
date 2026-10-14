@@ -52,24 +52,24 @@ const EDITH_TOOL_DECL = {
   ],
 };
 
-/** Web 検索（LangSearch・Brave。サーバーの /api/search が調べる。サーバーの integrations/live.ts と同じ名前） */
-export const WEB_SEARCH_TOOL = "web_search";
-const WEB_SEARCH_DECL = {
+/** E.D.I.T.H. の GOD'S EYE VIEW の操作（場所のピックアップ・3D・ライブカメラ・追跡・表示の切り替え） */
+export const EDITH_VIEW_TOOL = "edith_view";
+/** ニュースを探す道具（FreeNewsApi の記事。サーバーの /api/search が探す。サーバーの integrations/live.ts と同じ名前） */
+export const NEWS_TOOL = "news_search";
+const NEWS_DECL = {
   functionDeclarations: [
     {
-      name: WEB_SEARCH_TOOL,
-      description: "Web を検索し、検索結果（見出し・説明・日付・出典）を返す。最新の情報・ニュース・事実確認が必要な質問に使い、結果を要約して答える。",
+      name: NEWS_TOOL,
+      description: "ニュースの記事を探す（FreeNewsApi）。ニュース・話題のニュース・ニュースの詳細を聞かれたときに使い、記事を読んで要約して答える。",
       parameters: {
         type: "OBJECT",
-        properties: { query: { type: "STRING", description: "検索の言葉（日本語で短く。例：今日の日経平均 終値）" } },
+        properties: { query: { type: "STRING", description: "探すニュースの話題（日本語で短く。例：アメリカ／日銀 金利／今日のニュース）。詳細を聞かれたら、その記事の見出しの言葉を入れる" } },
         required: ["query"],
       },
     },
   ],
 };
 
-/** E.D.I.T.H. の GOD'S EYE VIEW の操作（場所のピックアップ・3D・ライブカメラ・追跡・表示の切り替え） */
-export const EDITH_VIEW_TOOL = "edith_view";
 const EDITH_VIEW_DECL = {
   name: EDITH_VIEW_TOOL,
   description:
@@ -127,8 +127,8 @@ interface LivePrep {
   model?: string;
   systemInstruction?: string;
   voiceName?: string | null;
-  /** Web 検索を検索 API（LangSearch・Brave。web_search）で行う */
-  webSearch?: boolean;
+  /** ニュースを FreeNewsApi から探す道具を使う */
+  newsSearch?: boolean;
   error?: string;
   /** 画面が古い版（読み込み直す） */
   stale?: boolean;
@@ -158,12 +158,13 @@ export function buildSetup(
   prep: Required<Pick<LivePrep, "model" | "systemInstruction">> & { voiceName?: string | null },
   full: boolean,
   persona?: "karen" | "edith",
-  webSearch = false,
+  newsSearch = false,
 ) {
   // 操作の道具は、細かい設定を受け付けないモデル向けの最小の設定にも入れる（無いと操作ができない）
   const own = persona === "karen" ? [KAREN_TOOL_DECL] : persona === "edith" ? [{ functionDeclarations: [...FRIDAY_TOOL_DECL.functionDeclarations, ...EDITH_TOOL_DECL.functionDeclarations, EDITH_VIEW_DECL] }] : [FRIDAY_TOOL_DECL];
-  // 検索は検索 API（web_search）があればそれだけ。無ければ Gemini の Google 検索
-  const tools = webSearch ? [...own, WEB_SEARCH_DECL] : full ? [{ googleSearch: {} }, ...own] : own;
+  // ニュースは Google 検索ではなく news_search（FreeNewsApi）で探す
+  const news = newsSearch ? [NEWS_DECL] : [];
+  const tools = full ? [{ googleSearch: {} }, ...own, ...news] : [...own, ...news];
   return {
     setup: {
       model: prep.model.startsWith("models/") ? prep.model : `models/${prep.model}`,
@@ -376,7 +377,7 @@ export class LiveSession {
           /* noop */
         }
       }, CONNECT_MS);
-      ws.onopen = () => ws.send(JSON.stringify(buildSetup({ model: prep.model!, systemInstruction: prep.systemInstruction!, voiceName: prep.voiceName }, full, opts.persona, prep.webSearch)));
+      ws.onopen = () => ws.send(JSON.stringify(buildSetup({ model: prep.model!, systemInstruction: prep.systemInstruction!, voiceName: prep.voiceName }, full, opts.persona, prep.newsSearch)));
       ws.onerror = () => {
         clearTimeout(timer);
         reject(new Error("リアルタイム会話につながりませんでした。"));

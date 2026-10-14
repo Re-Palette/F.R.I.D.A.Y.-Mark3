@@ -5,7 +5,6 @@
 import type { Agent, AgentContext, AgentOutputChunk } from "@/agents/types";
 import { asksForSns, asksForTrend, needsSearch } from "@/agents/search/needs-search";
 import { getWeather, type WeatherReport } from "@/integrations/weather";
-import { searchProvider, searchQuery, searchSection, webSearch, type WebSearch } from "@/integrations/web-search";
 import { articleDetails, articleLines, articlesMentioned, dailyNews, findNews, freeNewsEnabled, type NewsArticle } from "@/integrations/free-news";
 import { followUpQuery, newsAsk, newsSearchSection } from "@/agents/search/news-search";
 import { asksForNews, readNewsSettings } from "@/integrations/news";
@@ -62,9 +61,6 @@ async function calendarForTurn(ctx: AgentContext, latest: string, budget: number
   if (snap) return snapshotEvents(snap, ctx.now, ctx.timezone);
   return live?.events ?? null;
 }
-
-/** 検索 API（LangSearch・Brave）の結果を待てる時間。間に合わなければ Gemini の Google 検索で答える */
-const SEARCH_BUDGET_MS = { text: 3000, voice: 2000 };
 
 /** ニュースのとき、FreeNewsApi の記事を待てる時間 */
 const NEWS_BUDGET_MS = { text: 4000, voice: 3000 };
@@ -212,7 +208,7 @@ export const chatAgent: Agent = {
     // ニュースのまとめの設定が渡らない場面（LINE など）で「今日のニュースは？」と聞かれたとき
     const generalNews = newsByApi && !briefing && !topicAsk && !looking && asksForNews(latest);
     const newsTurn = newsByApi && (briefing || Boolean(topicAsk) || generalNews);
-    // 検索は必要なときだけ（E.D.I.T.H. のときも、調べものの発言のときだけ）。ニュースの質問では検索しない
+    // Web 検索は Gemini の Google 検索で、必要なときだけ（E.D.I.T.H. のときも、調べものの発言のときだけ）。ニュースの質問では検索しない（FreeNewsApi の記事から）
     const search =
       mode !== "off" &&
       !newsTurn &&
@@ -235,16 +231,6 @@ export const chatAgent: Agent = {
           "news-search",
         )
       : Promise.resolve(null);
-    // 検索は LangSearch・Brave（キーがあれば）。準備（脳・予定など）と同時に始める。ニュースのまとめは Gemini の Google 検索のまま
-    const searchTask: Promise<WebSearch | null> =
-      search && !briefing && !topicAsk && searchProvider()
-        ? within(
-            webSearch(searchQuery(latest, prevUser), { signal: ctx.signal, ...(ctx.voice ? { count: 4, chars: 400 } : {}) }),
-            ctx.voice ? SEARCH_BUDGET_MS.voice : SEARCH_BUDGET_MS.text,
-            null,
-            "web-search",
-          )
-        : Promise.resolve(null);
     // ニュースをまとめるときは、FreeNewsApi から今日の記事を持ってくる（準備と同時に始める）
     const newsTask: Promise<NewsArticle[] | null> =
       newsByApi && (briefing || generalNews)
@@ -283,13 +269,11 @@ export const chatAgent: Agent = {
     // 話題のニュースの記事
     const topicNews = await topicNewsTask.then((r) => (r && r.articles.length ? r : null));
     if (topicNews) yield { text: "", sources: topicNews.articles.map((a) => ({ title: a.title, uri: a.url })) };
-    const found = await searchTask.then((b) => (b?.results.length ? b : null));
     // 今日のニュースの記事（朝のまとめ・「今日のニュースは？」）
     const newsArticles = await newsTask.then((a) => (a && a.length ? a : null));
     // ニュースの質問なのに記事が取れなかった（検索はしない。取れなかったと正直に伝える）
     const newsMissing = newsTurn && !topicNews && !newsArticles;
     if (newsArticles) yield { text: "", sources: newsArticles.map((a) => ({ title: a.title, uri: a.url })) };
-    if (found) yield { text: "", sources: found.results.map((r) => ({ title: r.title, uri: r.url })) };
 
     // カメラの映像（最新の発言にだけ付く）は、文字の前に画像として渡す
     const camera = Boolean(ctx.messages[ctx.messages.length - 1]?.image);
@@ -356,14 +340,14 @@ export const chatAgent: Agent = {
         lectureDocs,
         usage,
         voice: ctx.voice,
-      }) + (ctx.persona === "karen" ? KAREN_SECTION : ctx.persona === "edith" ? EDITH_SECTION : "") + (found ? searchSection(found) : "") + (topicNews ? newsSearchSection(topicNews.query, topicNews.articles, ctx.timezone, detailAsk) : "") +
+      }) + (ctx.persona === "karen" ? KAREN_SECTION : ctx.persona === "edith" ? EDITH_SECTION : "") + (topicNews ? newsSearchSection(topicNews.query, topicNews.articles, ctx.timezone, detailAsk) : "") +
       (generalNews && newsArticles ? newsSearchSection("今日のニュース", newsArticles, ctx.timezone) : "") +
       (newsMissing ? NEWS_MISSING : "");
     // Gemini が使えなければ、ローカル AI（Ollama）で答える（サーバーが PC 上で動いているときだけ）。
     // Ollama が読める長さ（num_ctx 2048）に収まるよう、人格の要点・記憶の一部・直近の会話だけを渡す
     for await (const chunk of withLocalFallback(
       // ニュースは記事を読んでまとめるだけなので、考える量を最小にして最初の一言を速くする
-      streamGemini({ config: newsTurn ? { ...runConfig, thinkingLevel: "minimal" as const } : runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search && !found }),
+      streamGemini({ config: newsTurn ? { ...runConfig, thinkingLevel: "minimal" as const } : runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search }),
       () => ({
         system: `${buildCompactInstruction({
           now: ctx.now,
