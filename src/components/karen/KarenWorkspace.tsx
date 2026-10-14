@@ -12,6 +12,8 @@ import { memo, useEffect, useRef, useState } from "react";
 import type * as T from "three";
 import { buildAsset, buildModel, holoMaterial } from "../hologram-visuals";
 import { registerWorkspace } from "@/lib/karen-controller";
+import { buildRealAsset } from "@/lib/gltf-full";
+import { LOCAL_URL_PREFIX } from "@/lib/karen-import";
 import { isScreenCovered } from "@/lib/screen-cover";
 import { tooSoon } from "@/lib/frame-cap";
 import { getScene, selectObject, updateObject, useScene, type SceneObject, type Vec3 } from "@/lib/karen-scene";
@@ -35,6 +37,14 @@ function paint(THREE: Three, root: T.Object3D, color: string | undefined) {
   root.traverse((o) => {
     const mats = (o as T.Mesh).material;
     for (const m of Array.isArray(mats) ? mats : mats ? [mats] : []) {
+      // 取り込んだモデルの元の材質：色を指定したら画像の上から色を掛け、外したら元の色に戻す（青に寄せない）
+      if (m.userData.real) {
+        const rm = m as T.MeshStandardMaterial;
+        if (!rm.color) continue;
+        if (!rm.userData.base) rm.userData.base = rm.color.clone();
+        rm.color.copy(want ?? (rm.userData.base as T.Color));
+        continue;
+      }
       const sm = m as T.ShaderMaterial;
       if (sm.uniforms?.uColor) {
         if (!sm.userData.base) sm.userData.base = (sm.uniforms.uColor.value as T.Color).clone();
@@ -175,6 +185,30 @@ export const KarenWorkspace = memo(function KarenWorkspace({ active, mode }: { a
 
       const content = new THREE.Group();
       scene3.add(content);
+      /** 取り込んだモデルを元の見た目で照らす光（初めて取り込んだときに用意する。ホログラムの材質は光を使わない） */
+      let lit = false;
+      let envTex: T.Texture | null = null;
+      const light = async () => {
+        if (lit) return;
+        lit = true;
+        scene3.add(new THREE.HemisphereLight(0xe8f4ff, 0x20242c, 1.1));
+        const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+        sun.position.set(4, 8, 6);
+        scene3.add(sun);
+        // 金属・光沢の映り込み用の部屋の光
+        try {
+          const { RoomEnvironment } = await import("three/examples/jsm/environments/RoomEnvironment.js");
+          const pmrem = new THREE.PMREMGenerator(renderer);
+          const room = new RoomEnvironment();
+          envTex = pmrem.fromScene(room, 0.04).texture;
+          scene3.environment = envTex;
+          scene3.environmentIntensity = 0.8;
+          room.dispose();
+          pmrem.dispose();
+        } catch {
+          /* 映り込みが無くても表示はできる */
+        }
+      };
       const time = { value: 0 };
       const built = new Map<string, Built>();
       const selBox = new THREE.BoxHelper(new THREE.Object3D(), 0x7fe9ff);
@@ -229,7 +263,16 @@ export const KarenWorkspace = memo(function KarenWorkspace({ active, mode }: { a
           };
         } else {
           try {
-            const made = o.kind === "asset" && o.buffer ? await buildAsset(THREE, o.buffer, time) : o.model ? await buildModel(THREE, o.model, time) : null;
+            // 取り込んだファイルは、元の形・材質・画像のまま描く（ホログラム風の単純化はしない）
+            const real = o.kind === "asset" && o.buffer && o.asset?.url.startsWith(LOCAL_URL_PREFIX);
+            if (real) await light();
+            const made = real
+              ? { ...(await buildRealAsset(THREE, o.buffer!)), spinners: [] }
+              : o.kind === "asset" && o.buffer
+                ? await buildAsset(THREE, o.buffer, time)
+                : o.model
+                  ? await buildModel(THREE, o.model, time)
+                  : null;
             if (!made) return null;
             // ホログラムの組み立ては直径 2.9 にそろえてあるので、ワークスペースでは扱いやすい大きさに
             made.pivot.scale.multiplyScalar(0.6);
@@ -418,6 +461,14 @@ export const KarenWorkspace = memo(function KarenWorkspace({ active, mode }: { a
               const m = x as T.Mesh;
               if (!m.isMesh) return;
               const sm = (Array.isArray(m.material) ? m.material[0] : m.material) as T.ShaderMaterial;
+              // 取り込んだモデルの元の材質は、そのまま書き出す（画像・質感も残す）
+              if (sm.userData.real) {
+                const mesh = new THREE.Mesh(m.geometry.clone(), m.material);
+                mesh.applyMatrix4(m.matrixWorld);
+                mesh.userData.keepMaterial = true;
+                copy.add(mesh);
+                return;
+              }
               const color = (sm.uniforms?.uColor?.value as T.Color | undefined) ?? new THREE.Color(o?.color ?? "#2ee6ff");
               const mesh = new THREE.Mesh(m.geometry.clone(), new THREE.MeshStandardMaterial({ color, emissive: color.clone().multiplyScalar(0.25), metalness: 0.1, roughness: 0.6 }));
               mesh.applyMatrix4(m.matrixWorld);
@@ -430,7 +481,7 @@ export const KarenWorkspace = memo(function KarenWorkspace({ active, mode }: { a
             const m = x as T.Mesh;
             if (m.isMesh) {
               m.geometry.dispose();
-              (m.material as T.Material).dispose();
+              if (!m.userData.keepMaterial) (m.material as T.Material).dispose();
             }
           });
           return result instanceof ArrayBuffer ? new Blob([result], { type: "model/gltf-binary" }) : null;
@@ -439,6 +490,7 @@ export const KarenWorkspace = memo(function KarenWorkspace({ active, mode }: { a
 
       cleanup = () => {
         cancelAnimationFrame(raf);
+        envTex?.dispose();
         ro.disconnect();
         io.disconnect();
         renderer.domElement.removeEventListener("pointerdown", onDown);
