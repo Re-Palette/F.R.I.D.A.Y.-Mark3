@@ -33,7 +33,7 @@ export async function transcribe(audio: string, mimeType: string, signal?: Abort
   // 速さ優先：軽いモデル（Flash-Lite）を先に、考える時間は最小で
   const models = [...config.models].sort((a, b) => Number(b.includes("lite")) - Number(a.includes("lite")));
   let text = "";
-  for await (const chunk of streamGemini({ purpose: `stt-${purpose}`, 
+  for await (const chunk of streamGemini({ purpose: `stt-${purpose}`,
     config: { ...config, models, model: models[0], thinkingLevel: "minimal", temperature: 0, maxOutputTokens: 300 },
     contents: [{ role: "user", parts: [{ inlineData: { mimeType, data: audio } }, { text: purpose === "wake" ? WAKE_PROMPT : PROMPT }] }],
     signal,

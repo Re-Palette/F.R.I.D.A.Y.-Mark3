@@ -154,7 +154,7 @@ export async function newsFromArticles(category: EdithCategory, articles: NewsAr
 
 ${articleLines(list, getTimezone())}`;
   let text = "";
-  for await (const chunk of streamGemini({ purpose: "edith-news", 
+  for await (const chunk of streamGemini({ purpose: "edith-news",
     config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500 },
     systemInstruction: "あなたは世界のニュースを正確に短くまとめる係。渡された記事に書かれた事実だけを書く。",
     contents: [{ role: "user", parts: [{ text: ask }] }],
@@ -181,16 +181,51 @@ ${articleLines(list, getTimezone())}`;
   return items.length ? { category, items: items.slice(0, 6), refs: [], fetchedAt: new Date().toISOString() } : null;
 }
 
+/** 媒体の国（JP など）を日本語の国名に */
+const regionNames = (() => {
+  try {
+    return new Intl.DisplayNames(["ja"], { type: "region" });
+  } catch {
+    return null;
+  }
+})();
+
+/**
+ * Gemini を使わず、FreeNewsApi の記事をそのまま一覧にする（Gemini の無料枠切れ・失敗のとき）。
+ * 見出し・要約は記事に書かれたまま（日本語に直さない）。出典は記事そのもの。
+ */
+export function newsFromArticlesRaw(category: EdithCategory, articles: NewsArticle[]): EdithNews | null {
+  const items: EdithNewsItem[] = [];
+  for (const a of articles) {
+    if (items.length >= 6) break;
+    if (items.some((i) => i.title === a.title)) continue;
+    const region = (a.country && regionNames?.of(a.country)) || "世界";
+    items.push({
+      title: a.title.length > 80 ? `${a.title.slice(0, 79)}…` : a.title,
+      summary: a.description.length > 120 ? `${a.description.slice(0, 119)}…` : a.description,
+      region,
+      place: findPlaces(`${region} ${a.title}`, 1)[0] ?? null,
+      sources: [{ title: a.source, uri: a.url }],
+    });
+  }
+  return items.length ? { category, items, refs: [], fetchedAt: new Date().toISOString() } : null;
+}
+
 async function fetchNews(category: EdithCategory, signal?: AbortSignal): Promise<EdithNews> {
-  // まず FreeNewsApi の記事から。取れなければ、これまでどおり Google 検索で調べる
+  // まず FreeNewsApi の記事から。Gemini が使えなければ記事をそのまま出す。記事が取れなければ、Google 検索で調べる
   if (freeNewsEnabled()) {
+    let articles: NewsArticle[] = [];
     try {
-      const articles = await freeNews({ q: FREE_QUERY[category], date: "24h", size: 20, sort: "relevance" }, { signal });
+      articles = await freeNews({ q: FREE_QUERY[category], date: "24h", size: 20, sort: "relevance" }, { signal });
       const fromArticles = await newsFromArticles(category, articles, signal);
       if (fromArticles) return fromArticles;
     } catch (err) {
-      if (err instanceof FridayError && err.code === "RATE_LIMITED") throw err;
-      console.warn("[edith-news] free-news failed:", err instanceof Error ? err.message : err);
+      console.warn("[edith-news] free-news summary failed:", err instanceof Error ? err.message : err);
+    }
+    const raw = newsFromArticlesRaw(category, articles);
+    if (raw) {
+      console.info(`[edith-news] ${category}: showing free-news articles as-is (${raw.items.length})`);
+      return raw;
     }
   }
   const config = getGeminiConfig();
@@ -202,7 +237,7 @@ async function fetchNews(category: EdithCategory, signal?: AbortSignal): Promise
   let text = "";
   let grounding: GeminiChunk["grounding"];
   const refs: GeminiSource[] = [];
-  for await (const chunk of streamGemini({ purpose: "edith-news", 
+  for await (const chunk of streamGemini({ purpose: "edith-news",
     config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500 },
     systemInstruction: "あなたは世界のニュースを正確に短くまとめる係。検索結果に書かれた事実だけを書く。",
     contents: [{ role: "user", parts: [{ text: ask }] }],

@@ -82,7 +82,7 @@ export async function summarizeLecture(input: { subject: string; transcript: str
 # 文字起こし
 ${input.transcript}`;
   let text = "";
-  for await (const chunk of streamGemini({ purpose: "lecture", 
+  for await (const chunk of streamGemini({ purpose: "lecture",
     config: { ...config, thinkingLevel: "low", maxOutputTokens: 12_000, temperature: 0.3 },
     systemInstruction: SYSTEM,
     contents: [{ role: "user", parts: [{ text: ask }] }],

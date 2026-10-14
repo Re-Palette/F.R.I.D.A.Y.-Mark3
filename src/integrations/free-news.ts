@@ -25,6 +25,8 @@ export interface NewsArticle {
   publishedAt: string | null;
   /** 本文（詳細を頼んだときだけ。full_text=true で返ってきたもの） */
   body?: string;
+  /** 媒体の国（ISO の 2 文字。分かるときだけ） */
+  country?: string;
 }
 
 export interface FreeNewsQuery {
@@ -109,8 +111,9 @@ export function parseFreeNews(json: unknown): NewsArticle[] {
       description,
       ...(body.length > description.length + 40 ? { body } : {}),
       url,
-      source: clean(str(publisher?.name ?? a.publisher ?? src?.name ?? a.source ?? a.domain ?? a.site)) || hostOf(url),
+      source: clean(str(publisher?.name ?? a.publisher ?? src?.name ?? a.source ?? a.sitename ?? a.domain ?? a.site)) || hostOf(url),
       publishedAt: isoOf(a.published_at ?? a.publishedAt ?? a.published ?? a.pubDate ?? a.date ?? a.sec ?? a.crawled_at),
+      ...(/^[A-Za-z]{2}$/.test(str(a.country)) ? { country: str(a.country).toUpperCase() } : {}),
     });
   }
   return out;

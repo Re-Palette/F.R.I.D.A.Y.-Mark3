@@ -61,7 +61,7 @@ export async function researchHologram(subject: string): Promise<HoloBrief | nul
   let text = "";
   const sources: HoloBrief["sources"] = [];
   try {
-    for await (const chunk of streamGemini({ purpose: "hologram", 
+    for await (const chunk of streamGemini({ purpose: "hologram",
       config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500, temperature: 0.3 },
       systemInstruction: RESEARCH,
       contents: [{ role: "user", parts: [{ text: `対象：${subject}` }] }],
@@ -92,7 +92,7 @@ async function design(subject: string, thinkingLevel: "low" | "medium", notes?: 
   const ask = notes
     ? `対象：${subject}\n\n# 調べた見た目（これに忠実に、比率・部品の数・特徴的な形を再現する）\n${notes}`
     : `対象：${subject}`;
-  for await (const chunk of streamGemini({ purpose: "hologram", 
+  for await (const chunk of streamGemini({ purpose: "hologram",
     config: { ...config, thinkingLevel, maxOutputTokens: 20000, temperature: 0.5 },
     systemInstruction: SYSTEM,
     contents: [{ role: "user", parts: [{ text: ask }] }],

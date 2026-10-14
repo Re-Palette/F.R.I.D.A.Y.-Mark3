@@ -26,13 +26,19 @@ export async function newsHeadlines(topics: string[]): Promise<string> {
     ? `${want}を、次の記事の一覧から選んで、${format}記事に書かれていないことは書かないでください。\n\n${articleLines(articles, getTimezone())}`
     : `${want}を、Google 検索で調べて、${format}`;
   let text = "";
-  for await (const chunk of streamGemini({ purpose: "headlines", 
-    config: { ...config, thinkingLevel: "low", maxOutputTokens: 800 },
-    systemInstruction: SYSTEM,
-    contents: [{ role: "user", parts: [{ text: ask }] }],
-    googleSearch: !fromArticles,
-  })) {
-    text += chunk.text;
+  try {
+    for await (const chunk of streamGemini({ purpose: "headlines",
+      config: { ...config, thinkingLevel: "low", maxOutputTokens: 800 },
+      systemInstruction: SYSTEM,
+      contents: [{ role: "user", parts: [{ text: ask }] }],
+      googleSearch: !fromArticles,
+    })) {
+      text += chunk.text;
+    }
+  } catch (err) {
+    // Gemini が使えない（無料枠切れなど）ときは、記事の見出しをそのまま出す
+    if (!fromArticles) throw err;
+    text = articles.slice(0, 5).map((a) => `・${a.title.length > 40 ? `${a.title.slice(0, 39)}…` : a.title}`).join("\n");
   }
   const lines = text
     .split("\n")
