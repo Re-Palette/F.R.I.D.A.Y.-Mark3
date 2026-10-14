@@ -7,6 +7,7 @@ import { handleConversation } from "@/core/friday";
 import { CalendarAccess, refreshTokenFrom } from "@/integrations/google-calendar";
 import { peekNewsSettings } from "@/integrations/news";
 import { getGeminiConfig, getTimezone } from "@/lib/config";
+import { pickTextModels } from "@/llm/gemini";
 import { isBrainConfigured } from "@/memory/github-brain";
 
 export const runtime = "nodejs";
@@ -44,6 +45,8 @@ export async function GET(req: Request): Promise<Response> {
   } finally {
     clearTimeout(stop);
   }
+  // Google 側の様子：使えるモデルの一覧と、各モデルに 1 回だけ短く聞いたときの返事（404 の理由を見るため）
+  const probe = await probeGemini(config).catch((err) => ({ error: String(err) }));
   const body = {
     question: q,
     newsScheduled: scheduled,
@@ -54,7 +57,49 @@ export async function GET(req: Request): Promise<Response> {
     calendarCookie: Boolean(refresh),
     freenewsapi: process.env.FREENEWSAPI ?? "(未設定=使う)",
     timeline,
+    probe,
     answer: text.slice(0, 400),
   };
   return new Response(JSON.stringify(body, null, 2), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
+async function probeGemini(config: ReturnType<typeof getGeminiConfig>) {
+  const headers = { "x-goog-api-key": config.apiKey ?? "", "Content-Type": "application/json" };
+  const signal = AbortSignal.timeout(8000);
+  const listRes = await fetch(`${config.baseUrl}/models?pageSize=1000`, { headers, signal, cache: "no-store" });
+  const listRaw = await listRes.text();
+  let all: { name: string; supportedGenerationMethods?: string[] }[] = [];
+  try {
+    all = (JSON.parse(listRaw) as { models?: typeof all }).models ?? [];
+  } catch {
+    /* JSON でなければ下で生の文字を見せる */
+  }
+  const flash = all
+    .filter((m) => /flash/i.test(m.name) && m.supportedGenerationMethods?.includes("generateContent"))
+    .map((m) => m.name.replace(/^models\//, ""));
+  const picked = pickTextModels(all);
+  const tries = [];
+  for (const model of [...new Set([config.models[0], ...picked])].filter(Boolean).slice(0, 4)) {
+    const res = await fetch(`${config.baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers,
+      signal: AbortSignal.timeout(10_000),
+      cache: "no-store",
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: { maxOutputTokens: 8 } }),
+    }).catch((err: unknown) => err as Error);
+    tries.push(
+      res instanceof Error
+        ? { model, error: String(res) }
+        : { model, status: res.status, body: res.ok ? "OK" : (await res.text()).slice(0, 300) },
+    );
+  }
+  return {
+    baseUrl: config.baseUrl,
+    listStatus: listRes.status,
+    listError: listRes.ok ? undefined : listRaw.slice(0, 300),
+    modelCount: all.length,
+    flashModels: flash,
+    picked,
+    tries,
+  };
 }
