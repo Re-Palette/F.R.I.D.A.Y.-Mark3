@@ -16,7 +16,7 @@ export const geminiProvider: AIProvider = {
     return (await checkGemini()) === null;
   },
   async *stream(req: AIRequest) {
-    yield* streamGemini({
+    yield* streamGemini({ purpose: "chat-provider", 
       config: { ...getGeminiConfig(), ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}) },
       systemInstruction: req.system,
       contents: req.messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),

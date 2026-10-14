@@ -87,7 +87,7 @@ async function askJson<T>(system: string, text: string): Promise<T | null> {
   const config = getGeminiConfig();
   let out = "";
   try {
-    for await (const chunk of streamGemini({
+    for await (const chunk of streamGemini({ purpose: "hologram-assets", 
       config: { ...config, thinkingLevel: "low", maxOutputTokens: 600, temperature: 0.1 },
       systemInstruction: system,
       contents: [{ role: "user", parts: [{ text }] }],

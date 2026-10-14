@@ -154,7 +154,7 @@ export async function newsFromArticles(category: EdithCategory, articles: NewsAr
 
 ${articleLines(list, getTimezone())}`;
   let text = "";
-  for await (const chunk of streamGemini({
+  for await (const chunk of streamGemini({ purpose: "edith-news", 
     config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500 },
     systemInstruction: "あなたは世界のニュースを正確に短くまとめる係。渡された記事に書かれた事実だけを書く。",
     contents: [{ role: "user", parts: [{ text: ask }] }],
@@ -202,7 +202,7 @@ async function fetchNews(category: EdithCategory, signal?: AbortSignal): Promise
   let text = "";
   let grounding: GeminiChunk["grounding"];
   const refs: GeminiSource[] = [];
-  for await (const chunk of streamGemini({
+  for await (const chunk of streamGemini({ purpose: "edith-news", 
     config: { ...config, thinkingLevel: "low", maxOutputTokens: 1500 },
     systemInstruction: "あなたは世界のニュースを正確に短くまとめる係。検索結果に書かれた事実だけを書く。",
     contents: [{ role: "user", parts: [{ text: ask }] }],

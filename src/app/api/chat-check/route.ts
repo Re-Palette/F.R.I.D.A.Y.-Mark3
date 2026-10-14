@@ -1,13 +1,14 @@
 /**
- * GET /api/chat-check?q=こんにちは&news=scheduled — 本番のサーバーで 1 回答えてみて、どこで止まるかを時間つきで返す（調べる用）。
+ * GET /api/chat-check?q=こんにちは&news=scheduled&probe=1 — 本番のサーバーで 1 回答えてみて、どこで止まるかを時間つきで返す（調べる用）。
  *   準備（記憶・予定・ニュースの記事）→ Gemini → 返事、のそれぞれの時刻・エラーを並べる。最大 40 秒。合言葉のロックの内側。
+ *   probe=1 で、モデルに短く聞いた Google の返事（429・404 の理由）も見る。
  *   news=scheduled で「その日最初の会話（ニュースを添える）」と同じ道筋を試す。
  */
 import { handleConversation } from "@/core/friday";
 import { CalendarAccess, refreshTokenFrom } from "@/integrations/google-calendar";
 import { peekNewsSettings } from "@/integrations/news";
 import { getGeminiConfig, getTimezone } from "@/lib/config";
-import { pickTextModels } from "@/llm/gemini";
+import { geminiCallCounts, pickTextModels } from "@/llm/gemini";
 import { isBrainConfigured } from "@/memory/github-brain";
 
 export const runtime = "nodejs";
@@ -46,7 +47,7 @@ export async function GET(req: Request): Promise<Response> {
     clearTimeout(stop);
   }
   // Google 側の様子：使えるモデルの一覧と、各モデルに 1 回だけ短く聞いたときの返事（404 の理由を見るため）
-  const probe = await probeGemini(config).catch((err) => ({ error: String(err) }));
+  const probe = await probeGemini(config, params.get("probe") === "1").catch((err) => ({ error: String(err) }));
   const body = {
     question: q,
     newsScheduled: scheduled,
@@ -57,13 +58,19 @@ export async function GET(req: Request): Promise<Response> {
     calendarCookie: Boolean(refresh),
     freenewsapi: process.env.FREENEWSAPI ?? "(未設定=使う)",
     timeline,
+    // このサーバーが無料枠のリセット後に Gemini を呼んだ回数（用途ごと・目安。サーバーが入れ替わると 0 から数え直す）
+    geminiCalls: (() => {
+      const c = geminiCallCounts();
+      return { since: c.since ? new Date(c.since).toISOString() : null, counts: c.counts };
+    })(),
     probe,
     answer: text.slice(0, 400),
   };
   return new Response(JSON.stringify(body, null, 2), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
-async function probeGemini(config: ReturnType<typeof getGeminiConfig>) {
+/** try=true のときだけ、実際に短く聞いてみる（無料枠を使うので、ふだんは一覧だけ） */
+async function probeGemini(config: ReturnType<typeof getGeminiConfig>, tryModels: boolean) {
   const headers = { "x-goog-api-key": config.apiKey ?? "", "Content-Type": "application/json" };
   const signal = AbortSignal.timeout(8000);
   const listRes = await fetch(`${config.baseUrl}/models?pageSize=1000`, { headers, signal, cache: "no-store" });
@@ -79,7 +86,7 @@ async function probeGemini(config: ReturnType<typeof getGeminiConfig>) {
     .map((m) => m.name.replace(/^models\//, ""));
   const picked = pickTextModels(all);
   const tries = [];
-  for (const model of [...new Set([...config.models, ...picked])].filter(Boolean).slice(0, 8)) {
+  for (const model of tryModels ? [...new Set([config.models[0], ...picked])].filter(Boolean).slice(0, 2) : []) {
     const res = await fetch(`${config.baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers,

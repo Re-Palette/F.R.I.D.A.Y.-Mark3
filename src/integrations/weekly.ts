@@ -45,7 +45,7 @@ export async function writeWeeklyReview(calendar?: CalendarAccess): Promise<Week
   const material = await gatherReview(tz, 7, access);
 
   let text = "";
-  for await (const chunk of streamGemini({
+  for await (const chunk of streamGemini({ purpose: "weekly", 
     config: { ...config, thinkingLevel: "low", maxOutputTokens: Math.max(config.maxOutputTokens, 4000), temperature: 0.4 },
     systemInstruction: SYSTEM,
     contents: [{ role: "user", parts: [{ text: `${material.from}〜${material.to} の 1 週間を振り返ってください。\n\n${formatMaterial(material)}` }] }],

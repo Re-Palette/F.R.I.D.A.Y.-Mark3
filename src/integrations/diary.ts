@@ -40,7 +40,7 @@ export async function writeDailyDiary(): Promise<DiaryResult> {
   if (empty) return { status: "skipped", reason: "今日は記録がありません" };
 
   let text = "";
-  for await (const chunk of streamGemini({
+  for await (const chunk of streamGemini({ purpose: "diary", 
     config: { ...config, maxOutputTokens: Math.max(config.maxOutputTokens, 3000) },
     systemInstruction: SYSTEM,
     contents: [{ role: "user", parts: [{ text: `今日（${material.to}）の日記を書いてください。\n\n${formatMaterial(material)}` }] }],

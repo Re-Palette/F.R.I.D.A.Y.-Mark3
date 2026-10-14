@@ -44,7 +44,7 @@ export async function followUpQuery(latest: string, prevUser: string | undefined
 ユーザー: ${(prevUser ?? "").slice(0, 200)}
 あなた: ${(prevAssistant ?? "").slice(0, 1200)}
 ユーザー: ${latest.slice(0, 200)}`;
-    for await (const chunk of streamGemini({
+    for await (const chunk of streamGemini({ purpose: "news-followup", 
       config: { ...config, thinkingLevel: "minimal", maxOutputTokens: 40 },
       systemInstruction: "あなたは検索語を作る係。検索語だけを 1 行で書く。",
       contents: [{ role: "user", parts: [{ text: ask }] }],

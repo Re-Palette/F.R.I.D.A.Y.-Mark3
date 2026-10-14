@@ -20,6 +20,8 @@ export interface GeminiStreamOptions {
   signal?: AbortSignal;
   /** Google 検索で調べてから答えさせる（最新情報が必要な質問だけ） */
   googleSearch?: boolean;
+  /** 何のための呼び出しか（無料枠をどこで使っているかを数えるため） */
+  purpose?: string;
 }
 
 export interface GeminiSource {
@@ -466,6 +468,23 @@ const STREAM_STALL_MS = { first: 40_000, between: 25_000 };
  * Gemini からのテキストを生成順に yield する。
  * 最初のトークンまでの時間を最小にするため、SSE をそのまま逐次パースする。
  */
+/** 無料枠が戻ってから（アメリカ西海岸の 0 時から）の呼び出し回数を、用途ごとに数える（このサーバーの中だけ・目安） */
+const callCounts = { since: 0, by: new Map<string, number>() };
+
+function countCall(purpose = "other"): void {
+  const reset = nextPacificMidnight() - 24 * 3600_000;
+  if (callCounts.since !== reset) {
+    callCounts.since = reset;
+    callCounts.by.clear();
+  }
+  callCounts.by.set(purpose, (callCounts.by.get(purpose) ?? 0) + 1);
+}
+
+/** 用途ごとの呼び出し回数（多い順） */
+export function geminiCallCounts(): { since: number; counts: Record<string, number> } {
+  return { since: callCounts.since, counts: Object.fromEntries([...callCounts.by].sort((a, b) => b[1] - a[1])) };
+}
+
 export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<GeminiChunk> {
   if (!opts.config.apiKey) {
     throw new FridayError(
@@ -475,6 +494,7 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
     );
   }
 
+  countCall(opts.purpose);
   const { res, model } = await connect(opts);
   let modelReported = false;
   if (!res.body) {

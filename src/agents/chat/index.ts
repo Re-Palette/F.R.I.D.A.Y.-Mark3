@@ -347,7 +347,7 @@ export const chatAgent: Agent = {
     // Ollama が読める長さ（num_ctx 2048）に収まるよう、人格の要点・記憶の一部・直近の会話だけを渡す
     for await (const chunk of withLocalFallback(
       // ニュースは記事を読んでまとめるだけなので、考える量を最小にして最初の一言を速くする
-      streamGemini({ config: newsTurn ? { ...runConfig, thinkingLevel: "minimal" as const } : runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search }),
+      streamGemini({ purpose: newsTurn ? "chat-news" : "chat",  config: newsTurn ? { ...runConfig, thinkingLevel: "minimal" as const } : runConfig, systemInstruction, contents, signal: ctx.signal, googleSearch: search }),
       () => ({
         system: `${buildCompactInstruction({
           now: ctx.now,

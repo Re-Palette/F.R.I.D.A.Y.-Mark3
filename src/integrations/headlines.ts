@@ -26,7 +26,7 @@ export async function newsHeadlines(topics: string[]): Promise<string> {
     ? `${want}を、次の記事の一覧から選んで、${format}記事に書かれていないことは書かないでください。\n\n${articleLines(articles, getTimezone())}`
     : `${want}を、Google 検索で調べて、${format}`;
   let text = "";
-  for await (const chunk of streamGemini({
+  for await (const chunk of streamGemini({ purpose: "headlines", 
     config: { ...config, thinkingLevel: "low", maxOutputTokens: 800 },
     systemInstruction: SYSTEM,
     contents: [{ role: "user", parts: [{ text: ask }] }],
