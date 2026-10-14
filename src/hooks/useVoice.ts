@@ -191,6 +191,8 @@ export function useVoice({
   const [diag, setDiag] = useState("");
   /** 聞き取りを始めた時刻 */
   const recStartedAt = useRef(0);
+  /** 聞き取りが始めてすぐ終わった回数（続くと再開の間を空ける） */
+  const quickEnds = useRef(0);
   const [supported, setSupported] = useState(true);
 
   const stateRef = useRef<VoiceState>("off");
@@ -622,8 +624,12 @@ export function useVoice({
         // 自分で止めた直後はすぐ再開（話し始めの言葉を取りこぼさない）。それ以外は少し待つ
         // オフラインで聞き取りが使えないときは 3 秒ごとに試し直す（すぐ繰り返すとマイクを何度も開け閉めして重い）
         const netDown = Date.now() - netErrorAt.current < 2000;
+        // 始めてすぐ終わるのが続くとき（マイクが使えない・聞き取りが断られるなど）は、間を少しずつ空ける
+        //（すぐ再開を繰り返すと、聞き取りの開け閉めで画面全体が重くなり固まる）
+        quickEnds.current = Date.now() - recStartedAt.current < 400 ? quickEnds.current + 1 : 0;
+        const backoff = quickEnds.current >= 3 ? Math.min(5000, 250 * 2 ** (quickEnds.current - 3)) : 0;
         // 録音の聞き取りは区切りのたびにすぐ聞き直す（続けて話した言葉を取りこぼさない）
-        restartTimer.current = window.setTimeout(startRec, netDown ? 3000 : wasAborting || rec instanceof RecordedRecognition ? 0 : 200);
+        restartTimer.current = window.setTimeout(startRec, netDown ? 3000 : backoff || (wasAborting || rec instanceof RecordedRecognition ? 0 : 200));
       }
     };
 

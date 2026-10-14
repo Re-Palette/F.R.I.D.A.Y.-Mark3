@@ -16,6 +16,7 @@
  *     画面を離れる（このコンポーネントを外す）と、地球儀・イベント・タイマーをすべて片付ける
  *   - WebGL が使えない・描画に失敗したときは、地球儀の代わりに理由を出す（画面のほかの部分は壊さない）
  */
+import { isLowPowerDevice } from "@/lib/low-power";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type * as CesiumNS from "cesium";
 import { loadCesium, webglAvailable, type CesiumModule } from "@/lib/earth/cesium-loader";
@@ -209,7 +210,8 @@ function EdithEarthImpl(p: Props) {
         }
         viewerRef.current = viewer;
         // 操作中に描き直すのも 1 秒 60 回まで（更新の速い画面で 2 倍以上描かないように。src/lib/frame-cap.ts と同じ考え）
-        viewer.targetFrameRate = 60;
+        // 性能の低いパソコンでは 1 秒 30 回まで（地球儀の回転・移動の見た目は同じで、描く回数が半分になる）
+        viewer.targetFrameRate = isLowPowerDevice() ? 30 : 60;
         const scene = viewer.scene;
         scene.backgroundColor = C.Color.TRANSPARENT;
         if (scene.sun) scene.sun.show = false;

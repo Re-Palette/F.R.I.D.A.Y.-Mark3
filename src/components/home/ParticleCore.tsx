@@ -9,6 +9,7 @@
  *   抑揚（声が上がる・下がる）→ 球が縦に伸びる・つぶれる／低い声 → 赤道がふくらむ／高い子音 → 表面がきらめく
  * 見えていないとき・タブが裏のときは描かない。動きを減らす設定なら止まった絵を 1 枚だけ描く。
  */
+import { isLowPowerDevice } from "@/lib/low-power";
 import { memo, useEffect, useRef } from "react";
 import { voiceLevel } from "@/lib/voice-level";
 import { resizeWorthIt, settled } from "@/lib/settle";
@@ -127,7 +128,8 @@ export const ParticleCore = memo(function ParticleCore({
     let h = 0;
     let lite = false;
     /** 1 回描くのに時間がかかる端末では、コマ数ではなく解像度を下げる（動きのなめらかさは落とさない） */
-    let lowRes = false;
+    // 性能の低いパソコンでは、初めから解像度を等倍にする（見た目は同じ。描く量が減る）
+    let lowRes = isLowPowerDevice();
     // 毎回作ると重い「にじむ光・同心円・細かい粒」と「太陽」は、大きさが変わったときだけ別の canvas に描いておく
     const back = document.createElement("canvas");
     const sun = document.createElement("canvas");
@@ -373,7 +375,8 @@ export const ParticleCore = memo(function ParticleCore({
     //   - 1 回描くのに 8ms を超えるようなら、解像度を下げる（コマ数はそのまま）
     //   - 画面の更新（requestAnimationFrame）の間隔を 3 秒ごとに測り、平均 22ms を超えたら（45fps 未満）画面の飾りの動きを止めて余裕を回す
     //   - 2 回続けて平均 45ms を超えたら（20fps 未満）、この端末には重いと判断して軽い描き方（30fps）にする
-    let gap = 0;
+    // 性能の低いパソコンでは、初めから 1 秒 30 回に抑える（ゆっくり回る球なので見た目はほぼ変わらない）
+    let gap = isLowPowerDevice() ? 32 : 0;
     let drawAvg = 0;
     let prev = 0;
     let sum = 0;

@@ -395,6 +395,9 @@ export async function pingGemini(config: GeminiConfig, signal?: AbortSignal): Pr
     : lastError;
 }
 
+/** 応答が止まったとみなすまでの時間（最初の文字まで／届き始めてからの途切れ） */
+const STREAM_STALL_MS = { first: 40_000, between: 25_000 };
+
 /**
  * Gemini からのテキストを生成順に yield する。
  * 最初のトークンまでの時間を最小にするため、SSE をそのまま逐次パースする。
@@ -476,9 +479,25 @@ export async function* streamGemini(opts: GeminiStreamOptions): AsyncGenerator<G
     return { text, finishReason, ...(sources.length ? { sources } : {}), ...(grounding ? { grounding } : {}) };
   };
 
+  // Gemini の応答が止まったら待つのをやめる（「考え中」のまま止まらないように。最初の文字までは考える時間・検索の分だけ長め）
+  const readWithin = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new FridayError("UPSTREAM_ERROR", "Gemini の応答が止まりました。もう一度試してください。", 504, true)),
+        producedText ? STREAM_STALL_MS.between : STREAM_STALL_MS.first,
+      );
+    });
+    try {
+      return await Promise.race([reader.read(), stalled]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   try {
     while (true) {
-      const { value, done } = await reader.read();
+      const { value, done } = await readWithin();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 

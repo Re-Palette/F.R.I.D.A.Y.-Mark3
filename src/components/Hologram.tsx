@@ -7,6 +7,7 @@
  * - ドラッグで回す／ホイールで拡大縮小／ダブルクリックで元に戻す。手の動き（HandControl）でも動く
  * - 画面に見えていない間は描画を止める。WebGL が使えない環境では何も出さない（元の円盤が見える）
  */
+import { isLowPowerDevice } from "@/lib/low-power";
 import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatPhase } from "@/hooks/useChat";
@@ -69,7 +70,8 @@ export const Hologram = memo(function Hologram({
       }
       // 高解像度の画面でも描く点の数を抑える（拡大表示は面積が大きいのでさらに控えめに）
       // 描画が追いつかない端末では、quality を下げて解像度を落とす（2: 標準 → 1: 1 倍 → 0: 0.75 倍）
-      let quality = 2;
+      // 性能の低いパソコンでは、初めから等倍で描く（光のにじみは残す）
+      let quality = isLowPowerDevice() ? 1 : 2;
       const pixelRatio = () =>
         quality >= 2 ? Math.min(window.devicePixelRatio || 1, getHoloState().expanded ? 1.25 : 1.5) : quality === 1 ? 1 : 0.75;
       renderer.setPixelRatio(pixelRatio());

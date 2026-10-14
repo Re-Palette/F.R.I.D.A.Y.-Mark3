@@ -22,21 +22,31 @@
   mask-image: radial-gradient(ellipse 80% 75% at 50% 50%, transparent 12%, #000 60%);
 }
 
+/* 走査線（止まっている）と、上から下へ流れる光の帯。帯は 1 枚の層として動かす
+  （背景の位置を動かすと、画面全体を毎フレーム描き直して重くなる。見た目は同じ） */
 .bg__scan {
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px),
-    linear-gradient(180deg, transparent 0%, rgba(255, 140, 40, 0.05) 50%, transparent 100%);
-  background-size: auto, 100% 38%;
-  background-repeat: repeat, no-repeat;
+  overflow: hidden;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px);
+}
+
+.bg__scan::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 38%;
+  background: linear-gradient(180deg, transparent 0%, rgba(255, 140, 40, 0.05) 50%, transparent 100%);
+  will-change: transform;
   animation: bg-scan 9s linear infinite;
 }
 
 @keyframes bg-scan {
   from {
-    background-position: 0 0, 0 -40%;
+    transform: translateY(-65%);
   }
   to {
-    background-position: 0 0, 0 140%;
+    transform: translateY(228%);
   }
 }
 
@@ -4191,4 +4201,37 @@ body[data-local-busy] .hmode__value i {
 .vcap[data-diag] {
   border-color: rgba(255, 140, 140, 0.6);
   color: #ffd2c4;
+}
+
+/*
+ * 下の段（ACTIVITY ⇄ RESPONSE）の高さを固定する（パソコン）。
+ * 高さが変わると真ん中のコア（大きな円・粒子）の大きさが変わり、送った瞬間や返事が流れ込むたびに
+ * 全部を描き直して画面が固まっていた。返事の本文はパネルの中でスクロールする。
+ */
+@media (min-width: 1000px) {
+  .home__bottom {
+    height: clamp(150px, 20vh, 220px);
+    align-items: flex-end;
+  }
+
+  .home__bottom > * {
+    max-height: 100%;
+  }
+
+  .home__bottom .rpanel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    animation: none;
+  }
+
+  .home__bottom .rpanel__body {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .home__bottom .hactivity {
+    overflow: hidden;
+  }
 }

@@ -109,6 +109,11 @@ export interface LastRunStats {
 const STORAGE_KEY = "friday.session.v1";
 /** 返答を流し込む表示の描き直しの最短間隔（ms） */
 const PATCH_GAP_MS = 33;
+/**
+ * 返事が届かないまま待ち続けないための上限。最初の文字まで（調べものの時間を含む）と、届き始めてからの途切れ。
+ * これを過ぎたら待つのをやめて「届きませんでした」と知らせる（「考え中」のまま止まらないように）
+ */
+const STALL_MS = { first: 45_000, between: 30_000 };
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -652,9 +657,21 @@ export function useChat() {
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let pending = "";
+            // 返事が止まったら待つのをやめる（サーバーや AI が応答しないまま「考え中」で止まらないように）
+            let stalled = false;
+            let stallTimer = 0;
+            const arm = () => {
+              clearTimeout(stallTimer);
+              stallTimer = window.setTimeout(() => {
+                stalled = true;
+                void reader.cancel().catch(() => {});
+              }, received ? STALL_MS.between : STALL_MS.first);
+            };
             try {
+              arm();
               while (!switchToLocal) {
                 const { value, done } = await reader.read();
+                arm();
                 if (done) break;
                 pending += decoder.decode(value, { stream: true });
                 let nl: number;
@@ -674,8 +691,13 @@ export function useChat() {
               if (controller.signal.aborted || received) throw err;
               switchToLocal = true;
               markGeminiFailed("network");
+            } finally {
+              clearTimeout(stallTimer);
             }
-            if (switchToLocal) {
+            if (stalled && !settled) {
+              void reader.cancel().catch(() => {});
+              fail({ code: "TIMEOUT", message: "返事が届きませんでした（時間切れ）。もう一度試してください。", retryable: true });
+            } else if (switchToLocal) {
               void reader.cancel().catch(() => {});
               if (!controller.signal.aborted) markGeminiFailed("gemini");
             } else if (!settled) {
