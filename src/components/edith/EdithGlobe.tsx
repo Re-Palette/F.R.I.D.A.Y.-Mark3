@@ -35,6 +35,8 @@ interface Props {
   resetKey: number;
   /** 視点の中心の緯度・経度（座標の小窓に出す） */
   onView?: (v: { lat: number; lon: number }) => void;
+  /** 止める（E.D.I.T.H. の画面を隠して取っておく間） */
+  paused?: boolean;
 }
 
 const PURPLE = 0x8b35ff;
@@ -89,7 +91,7 @@ function ellipse(rx: number, rz: number, y = 0, seg = 160): number[] {
   return pts;
 }
 
-export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelect, autoRotate, resetKey, onView }: Props) {
+export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelect, autoRotate, resetKey, onView, paused = false }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [fallback, setFallback] = useState(false);
   const api = useRef<{
@@ -97,8 +99,8 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
     setAuto: (on: boolean) => void;
     reset: () => void;
   } | null>(null);
-  const latest = useRef({ points, selectedId, onSelect, onView, autoRotate });
-  latest.current = { points, selectedId, onSelect, onView, autoRotate };
+  const latest = useRef({ points, selectedId, onSelect, onView, autoRotate, paused });
+  latest.current = { points, selectedId, onSelect, onView, autoRotate, paused };
 
   useEffect(() => {
     if (!webglAvailable()) {
@@ -414,8 +416,8 @@ export const EdithGlobe = memo(function EdithGlobe({ points, selectedId, onSelec
       let sway = 0;
       const tick = (now: number) => {
         raf = requestAnimationFrame(tick);
-        // 裏にある間・切り替えの演出が覆っている間は描かない
-        if (document.hidden || isScreenCovered()) {
+        // 裏にある間・切り替えの演出が覆っている間・E.D.I.T.H. の画面を隠している間は描かない
+        if (document.hidden || isScreenCovered() || latest.current.paused) {
           last = now;
           return;
         }

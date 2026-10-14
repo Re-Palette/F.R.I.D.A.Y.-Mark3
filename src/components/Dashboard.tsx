@@ -4,7 +4,7 @@
  * F.R.I.D.A.Y. Mark3 メイン画面。
  * HUB（Core + Agent カード）と CHAT（会話ログ）を中央ステージで切り替える。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import type { StatusResponse } from "@/core/types";
 import { CALENDAR_CHANGED, STATUS_CHANGED, useChat, type SendOptions, type UiMessage } from "@/hooks/useChat";
 import { REMINDERS_CHANGED, useReminders, type DueReminder } from "@/hooks/useReminders";
@@ -156,6 +156,22 @@ function useAgentStatus() {
   return { status, model, maxContext, reason, tts, brain, calendar, news, voiceSpeed, automation, hologramLibrary, spotify, refresh, setStatus };
 }
 
+/**
+ * 一度開いた E.D.I.T.H. の画面は、離れても捨てずに隠して取っておく。
+ * 戻るたびに 3D 地球儀・ホログラムの地図を作り直すと、性能の低いパソコンでは切り替えのたびに数秒止まるため。
+ * 隠している間は描画・計測を止め（active=false）、会話が流れても描き直さない。
+ */
+const KeptEdith = memo(
+  function KeptEdith(props: ComponentProps<typeof EdithHud> & { active: boolean }) {
+    return (
+      <div className="mode-keep" data-off={props.active ? undefined : ""}>
+        <EdithHud {...props} />
+      </div>
+    );
+  },
+  (a, b) => !a.active && !b.active,
+);
+
 export function Dashboard() {
   const chat = useChat();
   // AI Router：Gemini（オンライン）とローカル AI＝Ollama（短い会話・オフライン）のどちらで答えるかを、自分で確かめて切り替える
@@ -249,6 +265,11 @@ export function Dashboard() {
   const aiMode = useAiMode();
   // 見せる画面のモード：切り替えの演出で画面が覆われてから変わる（会話・声の行き先は aiMode ですぐ変わる）
   const { shown: shownMode, overlay: modeOverlay, playBoot } = useModeTransition(aiMode);
+  // 一度開いた E.D.I.T.H. の画面は取っておく（KeptEdith）
+  const [edithKept, setEdithKept] = useState(false);
+  useEffect(() => {
+    if (shownMode === "edith") setEdithKept(true);
+  }, [shownMode]);
   // E.D.I.T.H. に切り替え始めたら（幕が閉じる間に）、3D 地球儀の部品の読み込みを先に始める（EARTH を映す設定のときだけ）
   useEffect(() => {
     if (aiMode !== "edith" || shownMode === "edith") return;
@@ -880,8 +901,9 @@ export function Dashboard() {
       {/* モードが切り替わるときの演出（F.R.I.D.A.Y. / K.A.R.E.N. / E.D.I.T.H.） */}
       {modeOverlay}
       {/* K.A.R.E.N.（クリエイティブ AI）の画面。F.R.I.D.A.Y. の画面は裏でそのまま（戻ったら続きから） */}
-      {shownMode === "edith" && view === "home" && (
-        <EdithHud
+      {(edithKept || (shownMode === "edith" && view === "home")) && (
+        <KeptEdith
+          active={shownMode === "edith" && view === "home"}
           messages={chat.messages}
           voiceState={voice.state}
           voiceInterim={voice.diag || voice.interim}

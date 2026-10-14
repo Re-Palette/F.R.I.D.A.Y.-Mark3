@@ -209,9 +209,10 @@ function useDeviceMetrics(): DeviceMetrics {
 }
 
 /** 画面の描画の速さ（1 秒ごとに実際に数えた FPS。隠れている間は数えない） */
-function useFrameRate(len = 36): number[] {
+function useFrameRate(active: boolean, len = 36): number[] {
   const [hist, setHist] = useState<number[]>([]);
   useEffect(() => {
+    if (!active) return;
     let frames = 0;
     let raf = 0;
     let last = performance.now();
@@ -236,7 +237,7 @@ function useFrameRate(len = 36): number[] {
       cancelAnimationFrame(raf);
       clearInterval(iv);
     };
-  }, [len]);
+  }, [active, len]);
   return hist;
 }
 
@@ -286,6 +287,8 @@ const MODE_HINT: Record<VoiceState, string> = {
 type Link = "online" | "offline" | "checking";
 
 interface Props {
+  /** 見えている（false のときは画面を隠して取っておく間：描画・計測を止める） */
+  active?: boolean;
   messages: UiMessage[];
   voiceState: VoiceState;
   voiceInterim: string;
@@ -319,7 +322,8 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   const now = useNow();
   const sys = useSystemStatus();
   const metrics = useDeviceMetrics();
-  const fps = useFrameRate();
+  const hudActive = props.active ?? true;
+  const fps = useFrameRate(hudActive);
   const [display, setDisplay] = useStored<DisplaySettings>(DISPLAY_KEY, parseDisplay, DEFAULT_DISPLAY);
   // 中央の映像（映っている・つないでいる・切れた間は、選んだ形の枠。それ以外は円の待機画面）
   const feed = useEdithFeed();
@@ -373,7 +377,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
   }, [camFocus, camsActive, camQuery?.lat, camQuery?.lon]); // eslint-disable-line react-hooks/exhaustive-deps
   const [city3d, setCity3d] = useState<{ state: "off" | "loading" | "ready" | "error"; message?: string }>({ state: "off" });
   const earthData = useEarthData({
-    active: earthActive,
+    active: earthActive && hudActive,
     quakes: earth.quakes,
     sats: earth.sats,
     satGroup: earth.satGroup,
@@ -898,7 +902,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             {earthMounted && (
               <div className="egev-earth" hidden={!earthActive}>
                 <EdithEarth
-                  active={earthActive}
+                  active={earthActive && hudActive}
                   quakes={quakeItems}
                   showQuakes={earth.quakes}
                   sats={satElements}
@@ -970,7 +974,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             )}
             {weatherMounted && (
               <div className="egev-weather" hidden={!weatherActive}>
-                <EdithWeather active={weatherActive} apiKey={earthData.config?.windyMapKey ?? null} configLoading={!earthData.config} overlay={weather.overlay} center={weatherCenter} />
+                <EdithWeather active={weatherActive && hudActive} apiKey={earthData.config?.windyMapKey ?? null} configLoading={!earthData.config} overlay={weather.overlay} center={weatherCenter} />
               </div>
             )}
           </div>
@@ -1420,7 +1424,7 @@ export const EdithHud = memo(function EdithHud(props: Props) {
             <span className="erdock__flat" aria-hidden="true" />
           </div>
           <div className="emap" title="ホログラムの地図（ドラッグで回す・ダブルクリックで寄る）">
-            <EdithGlobe points={points} selectedId={selected} onSelect={setSelected} autoRotate={autoRotate} resetKey={resetKey} onView={setView} />
+            <EdithGlobe points={points} selectedId={selected} onSelect={setSelected} autoRotate={autoRotate} resetKey={resetKey} onView={setView} paused={!hudActive} />
             <span className="emap__ctrl">
               <button type="button" onClick={() => setResetKey((k) => k + 1)} title="初期の視点（東京）に戻す" aria-label="初期の視点に戻す"><I n="reset" s={12} /></button>
               <button type="button" onClick={() => setAutoRotate((v) => !v)} aria-pressed={autoRotate} title={autoRotate ? "自動回転を止める" : "自動回転する"} aria-label="自動回転の切り替え"><I n="rotate" s={12} /></button>

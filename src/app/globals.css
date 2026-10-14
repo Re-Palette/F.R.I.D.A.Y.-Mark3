@@ -3976,3 +3976,12 @@ body[data-holo-open] .app * {
 .settings__select option {
   background: #0b0d10;
 }
+
+/* 取っておく画面（一度開いた E.D.I.T.H.）。見えていない間は描かない */
+.mode-keep {
+  display: contents;
+}
+
+.mode-keep[data-off] {
+  display: none;
+}

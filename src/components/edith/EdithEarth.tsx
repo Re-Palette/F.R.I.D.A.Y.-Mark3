@@ -128,6 +128,23 @@ const SHIP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http
 /** 飛行機の形（上が北。向きに合わせて回す） */
 const PLANE_SVG = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M16 2 L18.2 12 L29 17 L29 19.6 L18.2 17 L17.6 25 L21 27.6 L21 29.4 L16 28 L11 29.4 L11 27.6 L14.4 25 L13.8 17 L3 19.6 L3 17 L13.8 12 Z" fill="#ffd27a" stroke="#1a0d00" stroke-width="1.1"/></svg>')}`;
 
+/**
+ * 作った地球儀は、E.D.I.T.H. の画面を離れても捨てずに取っておき、戻ったらそのまま使う。
+ * 作り直しは WebGL の準備・描き方の組み立てで重く、性能の低いパソコンではモードの切り替えのたびに数秒止まるため。
+ * 取っておく間は画面の外の見えない置き場に移し、描画は止める（印・重ねた画像は片付ける）。
+ */
+let pooled: { viewer: CesiumNS.Viewer; el: HTMLElement; credit: HTMLElement } | null = null;
+let lot: HTMLDivElement | null = null;
+function parkingLot(): HTMLDivElement {
+  if (!lot) {
+    lot = document.createElement("div");
+    lot.style.cssText = "position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden;visibility:hidden;pointer-events:none";
+    lot.setAttribute("aria-hidden", "true");
+    document.body.appendChild(lot);
+  }
+  return lot;
+}
+
 function EdithEarthImpl(p: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const creditRef = useRef<HTMLDivElement>(null);
@@ -171,11 +188,26 @@ function EdithEarthImpl(p: Props) {
     const release = holdReveal();
     let handler: CesiumNS.ScreenSpaceEventHandler | null = null;
     const offs: (() => void)[] = [];
+    // 出典の表示先（地球儀と一緒に取っておけるよう、React の外の要素にする）
+    let creditEl: HTMLElement | null = null;
     void loadCesium()
       .then((C) => {
         if (disposed || viewerRef.current) return;
         cesiumRef.current = C;
         let viewer: CesiumNS.Viewer;
+        // 前に作った地球儀があれば、それを使う（作り直さない）
+        const reuse = pooled && !pooled.viewer.isDestroyed() ? pooled : null;
+        pooled = null;
+        if (reuse) {
+          viewer = reuse.viewer;
+          creditEl = reuse.credit;
+          host.appendChild(reuse.el);
+          creditRef.current?.appendChild(creditEl);
+          viewer.scene.globe.show = true;
+          viewer.resize();
+        } else {
+        creditEl = document.createElement("div");
+        creditRef.current?.appendChild(creditEl);
         try {
           viewer = new C.Viewer(host, {
             // 地球の画像：Cesium に同梱の Natural Earth II（パブリックドメイン）。外部の地図サービス・Cesium ion は使わない
@@ -196,13 +228,14 @@ function EdithEarthImpl(p: Props) {
             showRenderLoopErrors: false,
             requestRenderMode: true,
             maximumRenderTimeChange: Infinity,
-            creditContainer: creditRef.current ?? undefined,
+            creditContainer: creditEl,
             contextOptions: { webgl: { alpha: true } },
           });
         } catch {
           release();
           report("error", "3D 地球儀を作れませんでした（WebGL の初期化に失敗）。");
           return;
+        }
         }
         if (disposed) {
           viewer.destroy();
@@ -226,7 +259,7 @@ function EdithEarthImpl(p: Props) {
           base.brightness = 0.92;
           base.saturation = 0.9;
         }
-        viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(HOME.lon, HOME.lat, HOME.height) });
+        if (!reuse) viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(HOME.lon, HOME.lat, HOME.height) });
         // 描画に失敗した：地球儀の代わりに理由を出す（画面のほかの部分はそのまま）
         offs.push(scene.renderError.addEventListener(() => report("error", "3D 地球儀の描画に失敗しました。")));
         // クリックで選ぶ（何も無いところは選ばない）・操作したら自動回転を少し止める
@@ -276,6 +309,8 @@ function EdithEarthImpl(p: Props) {
       handler?.destroy();
       const v = viewerRef.current;
       viewerRef.current = null;
+      const layers = [...overlays.current.values()];
+      const tileset = cityTileset.current?.tileset ?? null;
       quakeEntities.current.clear();
       satEntities.current.clear();
       overlays.current.forEach((o) => o.off());
@@ -286,7 +321,22 @@ function EdithEarthImpl(p: Props) {
       camEntities.current.clear();
       cityTileset.current = null;
       orbitEntity.current = null;
-      if (v && !v.isDestroyed()) v.destroy();
+      if (v && !v.isDestroyed()) {
+        // 捨てずに取っておく（印・重ねた画像・街の 3D は片付け、描画を止めて見えない置き場へ）
+        const el = host.querySelector<HTMLElement>(":scope > .cesium-viewer");
+        if (!pooled && el && creditEl) {
+          try {
+            v.entities.removeAll();
+            for (const o of layers) v.imageryLayers.remove(o.layer, true);
+            if (tileset) v.scene.primitives.remove(tileset);
+            v.useDefaultRenderLoop = false;
+            parkingLot().append(el, creditEl);
+            pooled = { viewer: v, el, credit: creditEl };
+          } catch {
+            v.destroy();
+          }
+        } else v.destroy();
+      } else creditEl?.remove();
       setReady(false);
     };
     // 地球儀は 1 度だけ作る（props の変化では作り直さない）

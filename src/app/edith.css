@@ -40,7 +40,7 @@
 }
 
 /* F.R.I.D.A.Y. の画面は裏でそのまま（見えない・触れない） */
-.app[data-ai="edith"] > :not(.edith) {
+.app[data-ai="edith"] > :not(.edith):not(.mode-keep) {
   visibility: hidden;
 }
 /* 見えない裏の画面（背景の粒・F.R.I.D.A.Y. の画面・サイドバー）のアニメーションも止める（見えないのに動かし続けて重くなるので）。
