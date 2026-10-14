@@ -11,10 +11,10 @@ const LANGSEARCH_ENDPOINT = "https://api.langsearch.com/v1/web-search";
 const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 const CACHE_MS = 10 * 60_000;
 const CACHE_MAX = 50;
-/** 検索結果の数（多すぎると要約が遅くなる） */
-const COUNT = 8;
-/** 1 件あたり AI に渡す本文の長さ */
-const TEXT_CHARS = 1200;
+/** 検索結果の数（多いほど AI が読むのに時間がかかり、返事が遅くなる） */
+const COUNT = 5;
+/** 1 件あたり AI に渡す本文の長さ（長いほど返事が遅くなる） */
+const TEXT_CHARS = 600;
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 type Env = Record<string, string | undefined>;
@@ -85,7 +85,7 @@ const stripTags = (s: string) =>
     .trim();
 
 /** 検索結果を 1 つにそろえる（URL の重複・見出しの無いものは除く） */
-function collect(items: { title?: string; url?: string; parts: string[]; age?: string | null; news?: boolean }[], max: number): SearchResult[] {
+function collect(items: { title?: string; url?: string; parts: string[]; age?: string | null; news?: boolean }[], max: number, chars: number): SearchResult[] {
   const seen = new Set<string>();
   const out: SearchResult[] = [];
   for (const it of items) {
@@ -94,21 +94,26 @@ function collect(items: { title?: string; url?: string; parts: string[]; age?: s
     if (!url || !/^https?:\/\//.test(url) || !title || seen.has(url)) continue;
     seen.add(url);
     const parts = it.parts.map(stripTags).filter(Boolean);
-    out.push({ title, url, snippet: [...new Set(parts)].join(" … ").slice(0, TEXT_CHARS), age: it.age?.trim() || null, news: Boolean(it.news) });
+    out.push({ title, url, snippet: [...new Set(parts)].join(" … ").slice(0, chars), age: it.age?.trim() || null, news: Boolean(it.news) });
     if (out.length >= max) break;
   }
   return out;
 }
 
-async function langSearch(q: string, key: string, fetchImpl: FetchLike, signal?: AbortSignal): Promise<SearchResult[]> {
+interface Size {
+  count: number;
+  chars: number;
+}
+
+async function langSearch(q: string, key: string, size: Size, fetchImpl: FetchLike, signal?: AbortSignal): Promise<SearchResult[]> {
   const res = await fetchImpl(LANGSEARCH_ENDPOINT, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       query: q,
-      count: COUNT,
+      count: size.count,
       ...(RECENT.test(q) ? { freshness: "oneWeek" } : {}),
-      contents: { text: { max_characters: TEXT_CHARS } },
+      contents: { text: { max_characters: size.chars } },
     }),
     signal,
   });
@@ -127,7 +132,8 @@ async function langSearch(q: string, key: string, fetchImpl: FetchLike, signal?:
       parts: [p.text ?? p.summary ?? p.snippet ?? ""],
       age: p.datePublished ? p.datePublished.slice(0, 10) : null,
     })),
-    COUNT,
+    size.count,
+    size.chars,
   );
 }
 
@@ -140,10 +146,10 @@ interface BraveItem {
   page_age?: string;
 }
 
-async function braveSearch(q: string, key: string, fetchImpl: FetchLike, signal?: AbortSignal): Promise<SearchResult[]> {
+async function braveSearch(q: string, key: string, size: Size, fetchImpl: FetchLike, signal?: AbortSignal): Promise<SearchResult[]> {
   const params = new URLSearchParams({
     q,
-    count: String(COUNT),
+    count: String(size.count),
     country: "JP",
     search_lang: "jp",
     ui_lang: "ja-JP",
@@ -165,25 +171,35 @@ async function braveSearch(q: string, key: string, fetchImpl: FetchLike, signal?
     news,
   });
   // ニュースがあれば先に（最新の話題のとき役に立つ）。ただし 3 件まで
-  return collect([...(data.news?.results ?? []).slice(0, 3).map((it) => item(it, true)), ...(data.web?.results ?? []).map((it) => item(it, false))], COUNT);
+  return collect([...(data.news?.results ?? []).slice(0, 3).map((it) => item(it, true)), ...(data.web?.results ?? []).map((it) => item(it, false))], size.count, size.chars);
 }
 
-/** 検索する。キーが無いときは null。失敗したときは例外（呼ぶ側が Google 検索に戻す） */
-export async function webSearch(query: string, opts: { env?: Env; fetchImpl?: FetchLike; signal?: AbortSignal; now?: () => number } = {}): Promise<WebSearch | null> {
+/**
+ * 検索する。キーが無いときは null。失敗したときは例外（呼ぶ側が Google 検索に戻す）。
+ * count・chars で結果の数と 1 件の長さを変えられる（声の会話は少なめにして、返事を速くする）
+ */
+export async function webSearch(
+  query: string,
+  opts: { env?: Env; fetchImpl?: FetchLike; signal?: AbortSignal; now?: () => number; count?: number; chars?: number } = {},
+): Promise<WebSearch | null> {
   const env = opts.env ?? process.env;
   const provider = searchProvider(env);
   const q = query.trim();
   if (!provider || !q) return null;
   const now = opts.now ?? Date.now;
-  const cacheKey = `${provider}:${q}`;
+  const size: Size = { count: opts.count ?? COUNT, chars: opts.chars ?? TEXT_CHARS };
+  const cacheKey = `${provider}:${size.count}:${size.chars}:${q}`;
   const hit = cache.get(cacheKey);
   if (hit && now() - hit.at < CACHE_MS) return hit.value;
 
   const fetchImpl = opts.fetchImpl ?? fetch;
+  const started = now();
   const results =
     provider === "langsearch"
-      ? await langSearch(q, env.LANGSEARCH_API_KEY!.trim(), fetchImpl, opts.signal)
-      : await braveSearch(q, (env.BRAVE_SEARCH_API_KEY?.trim() || env.BRAVE_API_KEY?.trim())!, fetchImpl, opts.signal);
+      ? await langSearch(q, env.LANGSEARCH_API_KEY!.trim(), size, fetchImpl, opts.signal)
+      : await braveSearch(q, (env.BRAVE_SEARCH_API_KEY?.trim() || env.BRAVE_API_KEY?.trim())!, size, fetchImpl, opts.signal);
+  // かかった時間を残す（Vercel のログで、遅いのが検索か AI かを見分ける）
+  console.info(`[friday] web-search ${provider} ${now() - started}ms ${results.length}件`);
   const value: WebSearch = { query: q, provider, results };
 
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);

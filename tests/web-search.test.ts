@@ -70,7 +70,8 @@ describe("Web 検索：検索する", () => {
     assert.equal(seen!.url, "https://api.langsearch.com/v1/web-search");
     assert.equal(seen!.auth, "Bearer lk");
     assert.equal(seen!.body.query, q);
-    assert.deepEqual(seen!.body.contents, { text: { max_characters: 1200 } });
+    assert.deepEqual(seen!.body.contents, { text: { max_characters: 600 } });
+    assert.equal(seen!.body.count, 5);
     assert.equal(seen!.body.freshness, undefined, "ニュース・今日のこと以外は期間を絞らない");
     assert.deepEqual(out.results.map((r) => r.url), ["https://news.example.jp/a", "https://www.boj.or.jp/"]);
     assert.equal(out.results[0].snippet, "日本銀行は13日、政策金利を 0.5% に据え置いた。");

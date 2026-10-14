@@ -62,7 +62,7 @@ async function calendarForTurn(ctx: AgentContext, latest: string, budget: number
 }
 
 /** 検索 API（LangSearch・Brave）の結果を待てる時間。間に合わなければ Gemini の Google 検索で答える */
-const SEARCH_BUDGET_MS = { text: 5000, voice: 3000 };
+const SEARCH_BUDGET_MS = { text: 3000, voice: 2000 };
 
 /** 振り返り・日記の材料集めに待てる時間（頼まれたときだけなので長め） */
 const REVIEW_BUDGET_MS = 3000;
@@ -198,7 +198,7 @@ export const chatAgent: Agent = {
     const searchTask: Promise<WebSearch | null> =
       search && !briefing && searchProvider()
         ? within(
-            webSearch(searchQuery(latest, [...ctx.messages].reverse().find((m, i) => i > 0 && m.role === "user")?.content), { signal: ctx.signal }),
+            webSearch(searchQuery(latest, [...ctx.messages].reverse().find((m, i) => i > 0 && m.role === "user")?.content), { signal: ctx.signal, ...(ctx.voice ? { count: 4, chars: 400 } : {}) }),
             ctx.voice ? SEARCH_BUDGET_MS.voice : SEARCH_BUDGET_MS.text,
             null,
             "web-search",

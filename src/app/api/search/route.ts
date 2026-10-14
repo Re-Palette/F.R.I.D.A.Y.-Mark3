@@ -14,7 +14,8 @@ export async function GET(req: Request): Promise<Response> {
   if (!q) return Response.json({ ok: false, error: "検索の言葉が空です。" }, { status: 400, headers });
   if (!searchProvider()) return Response.json({ ok: false, error: "検索 API のキー（LANGSEARCH_API_KEY）が設定されていません。" }, { status: 503, headers });
   try {
-    const found = await webSearch(q, { signal: AbortSignal.any([req.signal, AbortSignal.timeout(8000)]) });
+    // 声の会話（Live）から呼ぶので、少なめ・短めにして返事を速くする。待つのは 3 秒まで
+    const found = await webSearch(q, { signal: AbortSignal.any([req.signal, AbortSignal.timeout(3000)]), count: 4, chars: 400 });
     const results = (found?.results ?? []).map((r) => ({ title: r.title, url: r.url, snippet: r.snippet, age: r.age }));
     return Response.json({ ok: true, query: found?.query ?? q, count: results.length, results }, { headers });
   } catch (err) {
