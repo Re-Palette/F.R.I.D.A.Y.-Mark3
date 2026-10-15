@@ -20,6 +20,8 @@ const MAX_UTTER_MS = 30_000;
 const PRE_ROLL_MS = 350;
 /** これだけ黙ったら、話し終わりの判定を待たずに文字起こしを先に始める */
 const EARLY_SEND_MS = 200;
+/** 呼びかけ待ちで送る、声が続いた長さの下限（これより短い物音は呼びかけではないので送らない） */
+const MIN_WAKE_VOICED_MS = 200;
 /** 画面の音声操作が使っていない AudioContext（毎回作り直さない） */
 let fallbackCtx: AudioContext | null = null;
 
@@ -213,7 +215,10 @@ export class RecordedRecognition implements RecognitionLike {
       return all;
     };
     // 少し黙った時点で、話し終わりを待たずに文字起こしを先に始める（続きを話したら取り消す）
+    // 先送りは 1 発言につき 1 回まで。取り消しても、送った音声はもうサーバーに届いている（転送量は戻らない）ので、
+    // 続きを話したあとは先送りせず、話し終わったときに発言の全部を 1 回だけ送る（途中までを何度も送り直さない）
     let early: { controller: AbortController; promise: Promise<string> } | null = null;
+    let earlySent = false;
     const cancelEarly = () => {
       early?.controller.abort();
       early = null;
@@ -256,7 +261,8 @@ export class RecordedRecognition implements RecognitionLike {
           silentMs = 0;
           cancelEarly();
         } else silentMs += frameMs;
-        if (!early && !this.onaudio && silentMs >= EARLY_SEND_MS && spokeMs - silentMs >= 350) {
+        if (!early && !earlySent && !this.onaudio && silentMs >= EARLY_SEND_MS && spokeMs - silentMs >= 350) {
+          earlySent = true;
           const controller = new AbortController();
           early = { controller, promise: sendForText(concat(), controller.signal, purpose) };
           early.promise.catch(() => {}); // 取り消したときのエラーは無視（使うときに改めて受け取る）
@@ -269,6 +275,13 @@ export class RecordedRecognition implements RecognitionLike {
     if (id !== this.session) return cancelEarly();
     // 短すぎる音（せき・物音）は送らない
     if (!utterance || utterance.length < RATE * 0.35) {
+      cancelEarly();
+      return this.finish(id);
+    }
+    // 呼びかけ待ちの間は、声が実際に続いた長さ（話し始めの前の余白・終わりの無音を除く）で判断する。
+    // 上の長さには話し始めの前の余白（約 0.35 秒）が入るので、短い物音でも通ってしまうため。
+    // 呼びかけの名前（フライデー・イーディス・カレン）はこれより長いので、聞き逃さない。会話中の短い返事（はい）には使わない
+    if (purpose === "wake" && spokeMs - silentMs < MIN_WAKE_VOICED_MS) {
       cancelEarly();
       return this.finish(id);
     }
